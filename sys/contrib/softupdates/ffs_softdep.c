@@ -52,7 +52,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)ffs_softdep.c	9.17 (McKusick) 2/11/98
+ *	@(#)ffs_softdep.c	9.19 (McKusick) 2/11/98
  */
 
 /*
@@ -1995,7 +1995,7 @@ softdep_setup_directory_add(bp, dp, diroffset, newinum, newdirbp)
 			WORKITEM_FREE(mkdir2, M_MKDIR);
 		} else {
 			LIST_INSERT_HEAD(&mkdirlisthd, mkdir2, md_mkdirs);
-			WORKLIST_INSERT(&inodedep->id_inowait,&mkdir2->md_list);
+			WORKLIST_INSERT(&inodedep->id_bufwait,&mkdir2->md_list);
 		}
 	}
 	/*
@@ -2007,11 +2007,16 @@ softdep_setup_directory_add(bp, dp, diroffset, newinum, newdirbp)
 	dap->da_pagedep = pagedep;
 	LIST_INSERT_HEAD(&pagedep->pd_diraddhd[DIRADDHASH(offset)], dap,
 	    da_pdlist);
+	/*
+ 	 * Link into its inodedep. Put it on the id_bufwait list if the inode
+ 	 * is not yet written. If it is written, do the post-inode write
+ 	 * processing to put it on the id_pendinghd list.
+ 	 */
 	if (inodedep_lookup(fs, newinum, DEPALLOC, &inodedep) == 1 &&
 	    (inodedep->id_state & ALLCOMPLETE) == ALLCOMPLETE)
 		WORKLIST_INSERT(&inodedep->id_pendinghd, &dap->da_list);
 	else
-		WORKLIST_INSERT(&inodedep->id_inowait, &dap->da_list);
+		WORKLIST_INSERT(&inodedep->id_bufwait, &dap->da_list);
 	FREE_LOCK(&lk);
 }
 
@@ -2271,7 +2276,7 @@ softdep_setup_directory_change(bp, dp, ip, newinum, isrmdir)
 		LIST_INSERT_HEAD(
 		    &dirrem->dm_pagedep->pd_diraddhd[DIRADDHASH(offset)],
 		    dap, da_pdlist);
-		WORKLIST_INSERT(&inodedep->id_inowait, &dap->da_list);
+		WORKLIST_INSERT(&inodedep->id_bufwait, &dap->da_list);
 	} else if ((dirrem->dm_state & COMPLETE) == 0) {
 		LIST_INSERT_HEAD(&dirrem->dm_pagedep->pd_dirremhd, dirrem,
 		    dm_next);
@@ -3418,8 +3423,8 @@ softdep_fsync(vp)
 		 */
 		error = bread(pvp, lbn, blksize(fs, VTOI(pvp), lbn), p->p_ucred,
 		    &bp);
-		vput(pvp);
 		ret = VOP_BWRITE(bp);
+		vput(pvp);
 		if (error != 0)
 			return (error);
 		if (ret != 0)
@@ -3687,8 +3692,11 @@ flush_inodedep_deps(fs, ino)
 			if (adp->ad_state & DEPCOMPLETE)
 				continue;
 			bp = adp->ad_buf;
-			if (getdirtybuf(&bp, waitfor) == 0)
+			if (getdirtybuf(&bp, waitfor) == 0) {
+				if (waitfor == MNT_NOWAIT)
+					continue;
 				break;
+			}
 			FREE_LOCK(&lk);
 			if (waitfor == MNT_NOWAIT) {
 				bawrite(bp);
@@ -3706,8 +3714,11 @@ flush_inodedep_deps(fs, ino)
 			if (adp->ad_state & DEPCOMPLETE)
 				continue;
 			bp = adp->ad_buf;
-			if (getdirtybuf(&bp, waitfor) == 0)
+			if (getdirtybuf(&bp, waitfor) == 0) {
+				if (waitfor == MNT_NOWAIT)
+					continue;
 				break;
+			}
 			FREE_LOCK(&lk);
 			if (waitfor == MNT_NOWAIT) {
 				bawrite(bp);
