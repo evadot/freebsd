@@ -52,8 +52,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *
- *	from: @(#)ffs_softdep.c	9.14 (McKusick) 1/15/98
+ *	@(#)ffs_softdep.c	9.17 (McKusick) 2/11/98
  */
 
 /*
@@ -691,6 +690,7 @@ top:
 	inodedep->id_buf = NULL;
 	LIST_INIT(&inodedep->id_pendinghd);
 	LIST_INIT(&inodedep->id_inowait);
+	LIST_INIT(&inodedep->id_bufwait);
 	TAILQ_INIT(&inodedep->id_inoupdt);
 	TAILQ_INIT(&inodedep->id_newinoupdt);
 	ACQUIRE_LOCK(&lk);
@@ -1457,7 +1457,7 @@ softdep_setup_freeblocks(ip, length)
 	 * Add the freeblks structure to the list of operations that
 	 * must await the zero'ed inode being written to disk.
 	 */
-	WORKLIST_INSERT(&inodedep->id_inowait, &freeblks->fb_list);
+	WORKLIST_INSERT(&inodedep->id_bufwait, &freeblks->fb_list);
 	/*
 	 * Because the file length has been truncated to zero, any
 	 * pending block allocation dependency structures associated
@@ -1713,6 +1713,7 @@ free_inodedep(inodedep)
 	if ((inodedep->id_state & ONWORKLIST) != 0 ||
 	    (inodedep->id_state & ALLCOMPLETE) != ALLCOMPLETE ||
 	    LIST_FIRST(&inodedep->id_pendinghd) != NULL ||
+	    LIST_FIRST(&inodedep->id_bufwait) != NULL ||
 	    LIST_FIRST(&inodedep->id_inowait) != NULL ||
 	    TAILQ_FIRST(&inodedep->id_inoupdt) != NULL ||
 	    TAILQ_FIRST(&inodedep->id_newinoupdt) != NULL ||
@@ -2322,12 +2323,8 @@ handle_workitem_remove(dirrem)
 	 */
 	if ((dirrem->dm_state & RMDIR) == 0) {
 		ip->i_nlink--;
-		if (ip->i_nlink < ip->i_effnlink) {
-#ifdef DIAGNOSTIC
-			vprint("handle_workitem_remove: bad file delta", vp);
-#endif
-			ip->i_effnlink = ip->i_nlink;
-		}
+		if (ip->i_nlink < ip->i_effnlink)
+			panic("handle_workitem_remove: bad file delta");
 		ip->i_flag |= IN_CHANGE;
 		vput(vp);
 		WORKITEM_FREE(dirrem, M_DIRREM);
@@ -2982,7 +2979,7 @@ handle_written_inodeblock(inodedep, bp)
 	 * before the old ones have been deleted.
 	 */
 	filefree = NULL;
-	while ((wk = LIST_FIRST(&inodedep->id_inowait)) != NULL) {
+	while ((wk = LIST_FIRST(&inodedep->id_bufwait)) != NULL) {
 		WORKLIST_REMOVE(wk);
 		switch (wk->wk_type) {
 
@@ -3029,8 +3026,12 @@ handle_written_inodeblock(inodedep, bp)
 			/* NOTREACHED */
 		}
 	}
-	if (filefree != NULL)
+	if (filefree != NULL) {
+		if (free_inodedep(inodedep) == 0)
+			panic("handle_written_inodeblock: live inodedep");
 		add_to_worklist(filefree);
+		return (0);
+	}
 
 	/*
 	 * If no outstanding dependencies, free it.
@@ -3189,6 +3190,7 @@ softdep_load_inodeblock(ip)
 	}
 	if (inodedep->id_nlinkdelta != 0) {
 		ip->i_effnlink -= inodedep->id_nlinkdelta;
+		ip->i_flag |= IN_MODIFIED;
 		inodedep->id_nlinkdelta = 0;
 		(void) free_inodedep(inodedep);
 	}
@@ -3212,6 +3214,7 @@ softdep_update_inodeblock(ip, bp, waitfor)
 	int waitfor;		/* 1 => update must be allowed */
 {
 	struct inodedep *inodedep;
+	struct worklist *wk;
 	int error, gotit;
 
 	/*
@@ -3257,6 +3260,16 @@ softdep_update_inodeblock(ip, bp, waitfor)
 	merge_inode_lists(inodedep);
 	if (TAILQ_FIRST(&inodedep->id_inoupdt) != NULL)
 		handle_allocdirect_partdone(TAILQ_FIRST(&inodedep->id_inoupdt));
+	/*
+	 * Now that the inode has been pushed into the buffer, the
+	 * operations dependent on the inode being written to disk
+	 * can be moved to the id_bufwait so that they will be
+	 * processed when the buffer I/O completes.
+	 */
+	while ((wk = LIST_FIRST(&inodedep->id_inowait)) != NULL) {
+		WORKLIST_REMOVE(wk);
+		WORKLIST_INSERT(&inodedep->id_bufwait, wk);
+	}
 	/*
 	 * Newly allocated inodes cannot be written until the bitmap
 	 * that allocates them have been written (indicated by
@@ -3338,6 +3351,7 @@ softdep_fsync(vp)
 		if (inodedep_lookup(fs, ip->i_number, 0, &inodedep) == 0)
 			break;
 		if (LIST_FIRST(&inodedep->id_inowait) != NULL ||
+		    LIST_FIRST(&inodedep->id_bufwait) != NULL ||
 		    TAILQ_FIRST(&inodedep->id_inoupdt) != NULL ||
 		    TAILQ_FIRST(&inodedep->id_newinoupdt) != NULL)
 			panic("softdep_fsync: pending ops");
