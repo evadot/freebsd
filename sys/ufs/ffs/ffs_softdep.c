@@ -52,7 +52,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)ffs_softdep.c	9.19 (McKusick) 2/11/98
+ *	from: @(#)ffs_softdep.c	9.21 (McKusick) 2/15/98
  */
 
 /*
@@ -128,6 +128,8 @@ static	int newblk_lookup __P((struct fs *, ufs_daddr_t, int,
 static	int inodedep_lookup __P((struct fs *, ino_t, int, struct inodedep **));
 static	int pagedep_lookup __P((struct inode *, ufs_lbn_t, int,
 	    struct pagedep **));
+static	void pause_timer __P((void *));
+static	int checklimit __P((long *, int));
 static	void add_to_worklist __P((struct worklist *));
 
 /*
@@ -373,6 +375,20 @@ workitem_free(item, type)
  */
 static struct workhead softdep_workitem_pending;
 static int softdep_worklist_busy;
+static int max_softdeps;	/* maximum number of structs before slowdown */
+static int tickdelay = 2;	/* number of ticks to pause during slowdown */
+static int max_limit_hit;	/* number of times slowdown imposed */
+static int rush_requests;	/* number of times I/O speeded up */
+static int proc_waiting;	/* tracks whether we have a timeout posted */
+static pid_t filesys_syncer_pid;/* records pid of filesystem syncer process */
+#ifdef DEBUG
+#include <vm/vm.h>
+#include <sys/sysctl.h>
+struct ctldebug debug4 = { "max_softdeps", &max_softdeps };
+struct ctldebug debug5 = { "tickdelay", &tickdelay };
+struct ctldebug debug6 = { "max_limit_hit", &max_limit_hit };
+struct ctldebug debug7 = { "rush_requests", &rush_requests };
+#endif /* DEBUG */
 
 /*
  * Add an item to the end of the work queue.
@@ -410,10 +426,16 @@ int
 softdep_process_worklist(matchmnt)
 	struct mount *matchmnt;
 {
+	struct proc *p = curproc;
 	struct worklist *wk;
 	struct fs *matchfs;
 	int matchcnt;
 
+	/*
+	 * Record the process identifier of our caller so that we can
+	 * give this process preferential treatment in checklimit below.
+	 */
+	filesys_syncer_pid = p->p_pid;
 	matchcnt = 0;
 	matchfs = NULL;
 	if (matchmnt != NULL)
@@ -537,6 +559,71 @@ softdep_flushfiles(oldmnt, flags, p)
 }
 
 /*
+ * A large burst of file addition or deletion activity can drive the
+ * memory load excessively high. Therefore we deliberately slow things
+ * down and speed up the I/O processing if we find ourselves with too
+ * many dependencies in progress.
+ */
+static int
+checklimit(resource, islocked)
+	long *resource;
+	int islocked;
+{
+	struct proc *p = curproc;
+
+	/*
+	 * If we are under our limit, just proceed.
+	 */
+	if (*resource < max_softdeps)
+		return (0);
+	/*
+	 * We never hold up the filesystem syncer process.
+	 */
+	if (p->p_pid == filesys_syncer_pid)
+		return (0);
+	/*
+	 * Our first approach is to speed up the syncer process.
+	 * We never push it to speed up more than half of its
+	 * normal turn time, otherwise it could take over the cpu.
+	 */
+	if (rushjob < syncdelay / 2) {
+		rushjob += 1;
+		rush_requests += 1;
+		return (0);
+	}
+	/*
+	 * Every trick has failed, so we pause momentarily to let
+	 * the filesystem syncer process catch up.
+	 */
+	if (islocked == 0)
+		ACQUIRE_LOCK(&lk);
+	if (proc_waiting == 0) {
+		proc_waiting = 1;
+		timeout(pause_timer, NULL, tickdelay > 2 ? tickdelay : 2);
+	}
+	FREE_LOCK_INTERLOCKED(&lk);
+	(void) tsleep((caddr_t)&proc_waiting, PPAUSE | PCATCH, "softupdate", 0);
+	ACQUIRE_LOCK_INTERLOCKED(&lk);
+	if (islocked == 0)
+		FREE_LOCK(&lk);
+	max_limit_hit += 1;
+	return (1);
+}
+
+/*
+ * Awaken processes pausing in checklimit and clear proc_waiting
+ * to indicate that there is no longer a timer running.
+ */
+void
+pause_timer(arg)
+	void *arg;
+{
+
+	proc_waiting = 0;
+	wakeup(&proc_waiting);
+}
+
+/*
  * Structure hashing.
  * 
  * There are three types of structures that can be looked up:
@@ -635,7 +722,8 @@ top:
  * Structures and routines associated with inodedep caching.
  */
 LIST_HEAD(inodedep_hashhead, inodedep) *inodedep_hashtbl;
-u_long	inodedep_hash;		/* size of hash table - 1 */
+static u_long	inodedep_hash;	/* size of hash table - 1 */
+static long	num_inodedep;	/* number of inodedep allocated */
 #define	INODEDEP_HASH(fs, inum) \
       (&inodedep_hashtbl[((((register_t)(fs)) >> 13) + (inum)) & inodedep_hash])
 static struct sema inodedep_in_progress;
@@ -655,11 +743,13 @@ inodedep_lookup(fs, inum, flags, inodedeppp)
 {
 	struct inodedep *inodedep;
 	struct inodedep_hashhead *inodedephd;
+	int firsttry;
 
 #ifdef DEBUG
 	if (lk.lkt_held == -1)
 		panic("inodedep_lookup: lock not held");
 #endif
+	firsttry = 1;
 	inodedephd = INODEDEP_HASH(fs, inum);
 top:
 	for (inodedep = LIST_FIRST(inodedephd); inodedep;
@@ -674,10 +764,15 @@ top:
 		*inodedeppp = NULL;
 		return (0);
 	}
+	if (firsttry && checklimit(&num_inodedep, 1) == 1) {
+		firsttry = 0;
+		goto top;
+	}
 	if (sema_get(&inodedep_in_progress, &lk) == 0) {
 		ACQUIRE_LOCK(&lk);
 		goto top;
 	}
+	num_inodedep += 1;
 	MALLOC(inodedep, struct inodedep *, sizeof(struct inodedep),
 		M_INODEDEP, M_WAITOK);
 	inodedep->id_list.wk_type = M_INODEDEP;
@@ -761,11 +856,11 @@ softdep_initialize()
 
 	LIST_INIT(&mkdirlisthd);
 	LIST_INIT(&softdep_workitem_pending);
-	pagedep_hashtbl = hashinit(desiredvnodes / 10, M_PAGEDEP,
+	max_softdeps = desiredvnodes * 8;
+	pagedep_hashtbl = hashinit(desiredvnodes / 5, M_PAGEDEP,
 	    &pagedep_hash);
 	sema_init(&pagedep_in_progress, "pagedep", PRIBIO, 0);
-	inodedep_hashtbl = hashinit(desiredvnodes / 2, M_INODEDEP,
-	    &inodedep_hash);
+	inodedep_hashtbl = hashinit(desiredvnodes, M_INODEDEP, &inodedep_hash);
 	sema_init(&inodedep_in_progress, "inodedep", PRIBIO, 0);
 	newblk_hashtbl = hashinit(64, M_NEWBLK, &newblk_hash);
 	sema_init(&newblk_in_progress, "newblk", PRIBIO, 0);
@@ -1398,6 +1493,7 @@ setup_allocindir_phase2(bp, ip, aip)
  * later release and zero the inode so that the calling routine
  * can release it.
  */
+static long num_freeblks;	/* number of freeblks allocated */
 void
 softdep_setup_freeblocks(ip, length)
 	struct inode *ip;	/* The inode whose length is to be reduced */
@@ -1414,6 +1510,8 @@ softdep_setup_freeblocks(ip, length)
 	fs = ip->i_fs;
 	if (length != 0)
 		panic("softde_setup_freeblocks: non-zero length");
+	(void) checklimit(&num_freeblks, 0);
+	num_freeblks += 1;
 	MALLOC(freeblks, struct freeblks *, sizeof(struct freeblks),
 		M_FREEBLKS, M_WAITOK);
 	bzero(freeblks, sizeof(struct freeblks));
@@ -1640,6 +1738,7 @@ free_allocdirect(adphead, adp, delay)
  * Prepare an inode to be freed. The actual free operation is not
  * done until the zero'ed inode has been written to disk.
  */
+static long num_freefile;	/* number of freefile allocated */
 void
 softdep_freefile(ap)
 	struct vop_vfree_args /* {
@@ -1655,6 +1754,8 @@ softdep_freefile(ap)
 	/*
 	 * This sets up the inode de-allocation dependency.
 	 */
+	(void) checklimit(&num_freefile, 0);
+	num_freefile += 1;
 	MALLOC(freefile, struct freefile *, sizeof(struct freefile),
 		M_FREEFILE, M_WAITOK);
 	freefile->fx_list.wk_type = M_FREEFILE;
@@ -1721,6 +1822,7 @@ free_inodedep(inodedep)
 		return (0);
 	LIST_REMOVE(inodedep, id_hash);
 	WORKITEM_FREE(inodedep, M_INODEDEP);
+	num_inodedep -= 1;
 	return (1);
 }
 
@@ -1789,6 +1891,7 @@ handle_workitem_freeblocks(freeblks)
 		softdep_error("handle_workitem_freeblks", allerror);
 #endif /* DIAGNOSTIC */
 	WORKITEM_FREE(freeblks, M_FREEBLKS);
+	num_freeblks -= 1;
 }
 
 /*
@@ -2398,6 +2501,7 @@ handle_workitem_freefile(freefile)
 	if ((error = ffs_freefile(&args)) != 0)
 		softdep_error("handle_workitem_freefile", error);
 	WORKITEM_FREE(freefile, M_FREEFILE);
+	num_freefile -= 1;
 }
 
 /*
