@@ -8,6 +8,9 @@ config.h.in
 configure
 contrib
 docutil
+doc/arm/latex-fixup.pl
+doc/xsl
+lib/tests
 
 # Windows directories
 bin/check/win32
@@ -31,6 +34,7 @@ win32utils
 # Various ports to other OSs
 lib/bind/port/aix32
 lib/bind/port/aix4
+lib/bind/port/aix5
 lib/bind/port/aux3
 lib/bind/port/bsdos
 lib/bind/port/bsdos2
