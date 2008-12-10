@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_if.c,v 1.47 2007/07/13 09:17:48 markus Exp $ */
+/*	$OpenBSD: pf_if.c,v 1.51 2007/11/07 17:28:40 mpf Exp $ */
 
 /*
  * Copyright 2005 Henning Brauer <henning@openbsd.org>
@@ -41,6 +41,7 @@
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/time.h>
+#include <sys/pool.h>
 
 #include <net/if.h>
 #include <net/if_types.h>
@@ -110,10 +111,9 @@ pfi_kif_get(const char *kif_name)
 		return (kif);
 
 	/* create new one */
-	if ((kif = malloc(sizeof(*kif), PFI_MTYPE, M_DONTWAIT)) == NULL)
+	if ((kif = malloc(sizeof(*kif), PFI_MTYPE, M_DONTWAIT|M_ZERO)) == NULL)
 		return (NULL);
 
-	bzero(kif, sizeof(*kif));
 	strlcpy(kif->pfik_name, kif_name, sizeof(kif->pfik_name));
 	kif->pfik_tzero = time_second;
 	TAILQ_INIT(&kif->pfik_dynaddrs);
@@ -603,49 +603,57 @@ pfi_if_compare(struct pfi_kif *p, struct pfi_kif *q)
 }
 
 void
-pfi_fill_oldstatus(struct pf_status *pfs)
+pfi_update_status(const char *name, struct pf_status *pfs)
 {
 	struct pfi_kif		*p;
 	struct pfi_kif_cmp 	 key;
+	struct ifg_member	 p_member, *ifgm;
+	TAILQ_HEAD(, ifg_member) ifg_members;
 	int			 i, j, k, s;
 
-	strlcpy(key.pfik_name, pfs->ifname, sizeof(key.pfik_name));
+	strlcpy(key.pfik_name, name, sizeof(key.pfik_name));
 	s = splsoftnet();
 	p = RB_FIND(pfi_ifhead, &pfi_ifs, (struct pfi_kif *)&key);
 	if (p == NULL) {
 		splx(s);
 		return;
 	}
-	bzero(pfs->pcounters, sizeof(pfs->pcounters));
-	bzero(pfs->bcounters, sizeof(pfs->bcounters));
-	for (i = 0; i < 2; i++)
-		for (j = 0; j < 2; j++)
-			for (k = 0; k < 2; k++) {
-				pfs->pcounters[i][j][k] =
-					p->pfik_packets[i][j][k];
-				pfs->bcounters[i][j] +=
-					p->pfik_bytes[i][j][k];
-			}
-	splx(s);
-}
-
-int
-pfi_clr_istats(const char *name)
-{
-	struct pfi_kif	*p;
-	int		 s;
-
-	s = splsoftnet();
-	RB_FOREACH(p, pfi_ifhead, &pfi_ifs) {
-		if (pfi_skip_if(name, p))
+	if (p->pfik_group != NULL) {
+		bcopy(&p->pfik_group->ifg_members, &ifg_members,
+		    sizeof(ifg_members));
+	} else {
+		/* build a temporary list for p only */
+		bzero(&p_member, sizeof(p_member));
+		p_member.ifgm_ifp = p->pfik_ifp;
+		TAILQ_INIT(&ifg_members);
+		TAILQ_INSERT_TAIL(&ifg_members, &p_member, ifgm_next);
+	}
+	if (pfs) {
+		bzero(pfs->pcounters, sizeof(pfs->pcounters));
+		bzero(pfs->bcounters, sizeof(pfs->bcounters));
+	}
+	TAILQ_FOREACH(ifgm, &ifg_members, ifgm_next) {
+		if (ifgm->ifgm_ifp == NULL)
 			continue;
-		bzero(p->pfik_packets, sizeof(p->pfik_packets));
-		bzero(p->pfik_bytes, sizeof(p->pfik_bytes));
-		p->pfik_tzero = time_second;
+		p = (struct pfi_kif *)ifgm->ifgm_ifp->if_pf_kif;
+
+		/* just clear statistics */
+		if (pfs == NULL) {
+			bzero(p->pfik_packets, sizeof(p->pfik_packets));
+			bzero(p->pfik_bytes, sizeof(p->pfik_bytes));
+			p->pfik_tzero = time_second;
+			continue;
+		}
+		for (i = 0; i < 2; i++)
+			for (j = 0; j < 2; j++)
+				for (k = 0; k < 2; k++) {
+					pfs->pcounters[i][j][k] +=
+						p->pfik_packets[i][j][k];
+					pfs->bcounters[i][j] +=
+						p->pfik_bytes[i][j][k];
+				}
 	}
 	splx(s);
-
-	return (0);
 }
 
 int

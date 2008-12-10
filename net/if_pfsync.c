@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_pfsync.c,v 1.83 2007/06/26 14:44:12 mcbride Exp $	*/
+/*	$OpenBSD: if_pfsync.c,v 1.89 2008/01/12 17:08:33 mpf Exp $	*/
 
 /*
  * Copyright (c) 2002 Michael Shalayeff
@@ -36,6 +36,7 @@
 #include <sys/ioctl.h>
 #include <sys/timeout.h>
 #include <sys/kernel.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 #include <net/if_types.h>
@@ -45,6 +46,7 @@
 #include <netinet/if_ether.h>
 #include <netinet/tcp.h>
 #include <netinet/tcp_seq.h>
+#include <sys/pool.h>
 
 #ifdef	INET
 #include <netinet/in_systm.h>
@@ -124,9 +126,9 @@ pfsync_clone_create(struct if_clone *ifc, int unit)
 		return (EINVAL);
 
 	pfsync_sync_ok = 1;
-	if ((pfsyncif = malloc(sizeof(*pfsyncif), M_DEVBUF, M_NOWAIT)) == NULL)
+	if ((pfsyncif = malloc(sizeof(*pfsyncif), M_DEVBUF,
+	    M_NOWAIT|M_ZERO)) == NULL)
 		return (ENOMEM);
-	bzero(pfsyncif, sizeof(*pfsyncif));
 	pfsyncif->sc_mbuf = NULL;
 	pfsyncif->sc_mbuf_net = NULL;
 	pfsyncif->sc_mbuf_tdb = NULL;
@@ -140,6 +142,10 @@ pfsync_clone_create(struct if_clone *ifc, int unit)
 	pfsyncif->sc_ureq_sent = 0;
 	pfsyncif->sc_bulk_send_next = NULL;
 	pfsyncif->sc_bulk_terminator = NULL;
+	pfsyncif->sc_imo.imo_membership = (struct in_multi **)malloc(
+	    (sizeof(struct in_multi *) * IP_MIN_MEMBERSHIPS), M_IPMOPTS,
+	    M_WAITOK|M_ZERO);
+	pfsyncif->sc_imo.imo_max_memberships = IP_MIN_MEMBERSHIPS;
 	ifp = &pfsyncif->sc_if;
 	snprintf(ifp->if_xname, sizeof ifp->if_xname, "pfsync%d", unit);
 	ifp->if_softc = pfsyncif;
@@ -171,10 +177,21 @@ pfsync_clone_create(struct if_clone *ifc, int unit)
 int
 pfsync_clone_destroy(struct ifnet *ifp)
 {
+	struct pfsync_softc *sc = ifp->if_softc;
+
+	timeout_del(&sc->sc_tmo);
+	timeout_del(&sc->sc_tdb_tmo);
+	timeout_del(&sc->sc_bulk_tmo);
+	timeout_del(&sc->sc_bulkfail_tmo);
+#if NCARP > 0
+	if (!pfsync_sync_ok)
+		carp_group_demote_adj(&sc->sc_if, -1);
+#endif
 #if NBPFILTER > 0
 	bpfdetach(ifp);
 #endif
 	if_detach(ifp);
+	free(pfsyncif->sc_imo.imo_membership, M_IPMOPTS);
 	free(pfsyncif, M_DEVBUF);
 	pfsyncif = NULL;
 	return (0);
@@ -461,9 +478,9 @@ pfsync_input(struct mbuf *m, ...)
 			    sp->direction > PF_OUT ||
 			    (sp->af != AF_INET && sp->af != AF_INET6)) {
 				if (pf_status.debug >= PF_DEBUG_MISC)
-					printf("pfsync_insert: PFSYNC_ACT_INS: "
+					printf("pfsync_input: PFSYNC_ACT_INS: "
 					    "invalid value\n");
-				pfsyncstats.pfsyncs_badstate++;
+				pfsyncstats.pfsyncs_badval++;
 				continue;
 			}
 
@@ -495,9 +512,9 @@ pfsync_input(struct mbuf *m, ...)
 			    sp->src.state > PF_TCPS_PROXY_DST ||
 			    sp->dst.state > PF_TCPS_PROXY_DST) {
 				if (pf_status.debug >= PF_DEBUG_MISC)
-					printf("pfsync_insert: PFSYNC_ACT_UPD: "
+					printf("pfsync_input: PFSYNC_ACT_UPD: "
 					    "invalid value\n");
-				pfsyncstats.pfsyncs_badstate++;
+				pfsyncstats.pfsyncs_badval++;
 				continue;
 			}
 
@@ -559,7 +576,7 @@ pfsync_input(struct mbuf *m, ...)
 					     : "partial"), sfail,
 					    betoh64(st->id),
 					    ntohl(st->creatorid));
-				pfsyncstats.pfsyncs_badstate++;
+				pfsyncstats.pfsyncs_stale++;
 
 				if (!(sp->sync_flags & PFSTATE_STALE)) {
 					/* we have a better state, send it */
@@ -626,10 +643,10 @@ pfsync_input(struct mbuf *m, ...)
 			    up->src.state > PF_TCPS_PROXY_DST ||
 			    up->dst.state > PF_TCPS_PROXY_DST) {
 				if (pf_status.debug >= PF_DEBUG_MISC)
-					printf("pfsync_insert: "
+					printf("pfsync_input: "
 					    "PFSYNC_ACT_UPD_C: "
 					    "invalid value\n");
-				pfsyncstats.pfsyncs_badstate++;
+				pfsyncstats.pfsyncs_badval++;
 				continue;
 			}
 
@@ -685,7 +702,7 @@ pfsync_input(struct mbuf *m, ...)
 					    "creatorid: %08x\n", sfail,
 					    betoh64(st->id),
 					    ntohl(st->creatorid));
-				pfsyncstats.pfsyncs_badstate++;
+				pfsyncstats.pfsyncs_stale++;
 
 				/* we have a better state, send it out */
 				if ((!stale || update_requested) &&
@@ -1750,3 +1767,22 @@ pfsync_update_tdb(struct tdb *tdb, int output)
 	return (ret);
 }
 #endif
+
+int
+pfsync_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
+    size_t newlen)
+{
+	/* All sysctl names at this level are terminal. */
+	if (namelen != 1)
+		return (ENOTDIR);
+
+	switch (name[0]) {
+	case PFSYNCCTL_STATS:
+		if (newp != NULL)
+			return (EPERM);
+		return (sysctl_struct(oldp, oldlenp, newp, newlen,
+		    &pfsyncstats, sizeof(pfsyncstats)));
+	default:
+		return (ENOPROTOOPT);
+	}
+}

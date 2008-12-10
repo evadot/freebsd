@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfvar.h,v 1.254 2007/07/13 09:17:48 markus Exp $ */
+/*	$OpenBSD: pfvar.h,v 1.259 2007/12/02 12:08:04 pascoe Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -58,7 +58,6 @@ struct ip6_hdr;
 #endif
 
 enum	{ PF_INOUT, PF_IN, PF_OUT };
-enum	{ PF_LAN_EXT, PF_EXT_GWY, PF_ID };
 enum	{ PF_PASS, PF_DROP, PF_SCRUB, PF_NOSCRUB, PF_NAT, PF_NONAT,
 	  PF_BINAT, PF_NOBINAT, PF_RDR, PF_NORDR, PF_SYNPROXY_DROP };
 enum	{ PF_RULESET_SCRUB, PF_RULESET_FILTER, PF_RULESET_NAT,
@@ -112,7 +111,8 @@ enum	{ PF_LIMIT_STATES, PF_LIMIT_SRC_NODES, PF_LIMIT_FRAGS,
 enum	{ PF_POOL_NONE, PF_POOL_BITMASK, PF_POOL_RANDOM,
 	  PF_POOL_SRCHASH, PF_POOL_ROUNDROBIN };
 enum	{ PF_ADDR_ADDRMASK, PF_ADDR_NOROUTE, PF_ADDR_DYNIFTL,
-	  PF_ADDR_TABLE, PF_ADDR_RTLABEL, PF_ADDR_URPFFAILED };
+	  PF_ADDR_TABLE, PF_ADDR_RTLABEL, PF_ADDR_URPFFAILED,
+	  PF_ADDR_RANGE };
 #define PF_POOL_TYPEMASK	0x0f
 #define PF_POOL_STICKYADDR	0x20
 #define	PF_WSCALE_FLAG		0x80
@@ -329,6 +329,9 @@ struct pfi_dynaddr {
 		    !pfr_match_addr((aw)->p.tbl, (x), (af))) ||		\
 		((aw)->type == PF_ADDR_DYNIFTL &&			\
 		    !pfi_match_addr((aw)->p.dyn, (x), (af))) || 	\
+		((aw)->type == PF_ADDR_RANGE &&				\
+		    !pf_match_addr_range(&(aw)->v.a.addr,		\
+		    &(aw)->v.a.mask, (x), (af))) || 			\
 		((aw)->type == PF_ADDR_ADDRMASK &&			\
 		    !PF_AZERO(&(aw)->v.a.mask, (af)) &&			\
 		    !PF_MATCHA(0, &(aw)->v.a.addr,			\
@@ -1272,10 +1275,6 @@ struct pf_altq {
 	u_int32_t		 qid;		/* return value */
 };
 
-struct pf_tag {
-	u_int16_t	tag;		/* tag id */
-};
-
 struct pf_tagname {
 	TAILQ_ENTRY(pf_tagname)	entries;
 	char			name[PF_TAG_NAME_SIZE];
@@ -1333,8 +1332,7 @@ struct pfioc_natlook {
 };
 
 struct pfioc_state {
-	u_int32_t 	 nr;
-	void		*state;
+	struct pfsync_state	state;
 };
 
 struct pfioc_src_node_kill {
@@ -1580,7 +1578,7 @@ extern int			 pf_insert_src_node(struct pf_src_node **,
 void				 pf_src_tree_remove_state(struct pf_state *);
 extern struct pf_state		*pf_find_state_byid(struct pf_state_cmp *);
 extern struct pf_state		*pf_find_state_all(struct pf_state_key_cmp *,
-				    u_int8_t, int *);
+				    u_int, int *);
 extern void			 pf_print_state(struct pf_state *);
 extern void			 pf_print_flags(u_int8_t);
 extern u_int16_t		 pf_cksum_fixup(u_int16_t, u_int16_t, u_int16_t,
@@ -1611,6 +1609,8 @@ int	pflog_packet(struct pfi_kif *, struct mbuf *, sa_family_t, u_int8_t,
 	    u_int8_t, struct pf_rule *, struct pf_rule *, struct pf_ruleset *,
 	    struct pf_pdesc *);
 int	pf_match_addr(u_int8_t, struct pf_addr *, struct pf_addr *,
+	    struct pf_addr *, sa_family_t);
+int	pf_match_addr_range(struct pf_addr *, struct pf_addr *,
 	    struct pf_addr *, sa_family_t);
 int	pf_match(u_int8_t, u_int32_t, u_int32_t, u_int32_t);
 int	pf_match_port(u_int8_t, u_int16_t, u_int16_t, u_int16_t);
@@ -1692,8 +1692,7 @@ int		 pfi_match_addr(struct pfi_dynaddr *, struct pf_addr *,
 int		 pfi_dynaddr_setup(struct pf_addr_wrap *, sa_family_t);
 void		 pfi_dynaddr_remove(struct pf_addr_wrap *);
 void		 pfi_dynaddr_copyout(struct pf_addr_wrap *);
-void		 pfi_fill_oldstatus(struct pf_status *);
-int		 pfi_clr_istats(const char *);
+void		 pfi_update_status(const char *, struct pf_status *);
 int		 pfi_get_ifaces(const char *, struct pfi_kif *, int *);
 int		 pfi_set_flags(const char *, int);
 int		 pfi_clear_flags(const char *, int);

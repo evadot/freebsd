@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_pflog.c,v 1.24 2007/05/26 17:13:30 jason Exp $	*/
+/*	$OpenBSD: if_pflog.c,v 1.27 2007/12/20 02:53:02 brad Exp $	*/
 /*
  * The authors of this code are John Ioannidis (ji@tla.org),
  * Angelos D. Keromytis (kermit@csd.uch.gr) and 
@@ -107,9 +107,9 @@ pflog_clone_create(struct if_clone *ifc, int unit)
 	if (unit >= PFLOGIFS_MAX)
 		return (EINVAL);
 
-	if ((pflogif = malloc(sizeof(*pflogif), M_DEVBUF, M_NOWAIT)) == NULL)
+	if ((pflogif = malloc(sizeof(*pflogif),
+	    M_DEVBUF, M_NOWAIT|M_ZERO)) == NULL)
 		return (ENOMEM);
-	bzero(pflogif, sizeof(*pflogif));
 
 	pflogif->sc_unit = unit;
 	ifp = &pflogif->sc_if;
@@ -191,9 +191,6 @@ int
 pflogioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
 	switch (cmd) {
-	case SIOCSIFADDR:
-	case SIOCAIFADDR:
-	case SIOCSIFDSTADDR:
 	case SIOCSIFFLAGS:
 		if (ifp->if_flags & IFF_UP)
 			ifp->if_flags |= IFF_RUNNING;
@@ -201,7 +198,7 @@ pflogioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			ifp->if_flags &= ~IFF_RUNNING;
 		break;
 	default:
-		return (EINVAL);
+		return (ENOTTY);
 	}
 
 	return (0);

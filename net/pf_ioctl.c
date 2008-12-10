@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_ioctl.c,v 1.182 2007/06/24 11:17:13 mcbride Exp $ */
+/*	$OpenBSD: pf_ioctl.c,v 1.193 2007/12/02 12:08:04 pascoe Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -160,7 +160,7 @@ pfattach(int num)
 	pool_sethardlimit(pf_pool_limits[PF_LIMIT_STATES].pp,
 	    pf_pool_limits[PF_LIMIT_STATES].limit, NULL, 0);
 
-	if (ctob(physmem) <= 100*1024*1024)
+	if (ptoa(physmem) <= 100*1024*1024)
 		pf_pool_limits[PF_LIMIT_TABLE_ENTRIES].limit =
 		    PFR_KENTRY_HIWAT_SMALL;
 
@@ -379,11 +379,9 @@ tagname2tag(struct pf_tags *head, char *tagname)
 		return (0);
 
 	/* allocate and fill new struct pf_tagname */
-	tag = (struct pf_tagname *)malloc(sizeof(struct pf_tagname),
-	    M_TEMP, M_NOWAIT);
+	tag = malloc(sizeof(*tag), M_TEMP, M_NOWAIT|M_ZERO);
 	if (tag == NULL)
 		return (0);
-	bzero(tag, sizeof(struct pf_tagname));
 	strlcpy(tag->name, tagname, sizeof(tag->name));
 	tag->tag = new_tagid;
 	tag->ref++;
@@ -912,7 +910,6 @@ pf_state_import(struct pfsync_state *sp, struct pf_state_key *sk,
 	/* copy to state */
 	memcpy(&s->id, &sp->id, sizeof(sp->id));
 	s->creatorid = sp->creatorid;
-	strlcpy(sp->ifname, s->kif->pfik_name, sizeof(sp->ifname));
 	pf_state_peer_from_pfsync(&sp->src, &s->src);
 	pf_state_peer_from_pfsync(&sp->dst, &s->dst);
 
@@ -921,6 +918,9 @@ pf_state_import(struct pfsync_state *sp, struct pf_state_key *sk,
 	s->anchor.ptr = NULL;
 	s->rt_kif = NULL;
 	s->creation = time_second;
+	s->expire = time_second;
+	if (sp->expire > 0)
+		s->expire -= pf_default_rule.timeout[sp->timeout] - sp->expire;
 	s->pfsync_time = 0;
 	s->packets[0] = s->packets[1] = 0;
 	s->bytes[0] = s->bytes[1] = 0;
@@ -1633,7 +1633,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 
 	case DIOCADDSTATE: {
 		struct pfioc_state	*ps = (struct pfioc_state *)addr;
-		struct pfsync_state 	*sp = (struct pfsync_state *)ps->state;
+		struct pfsync_state 	*sp = &ps->state;
 		struct pf_state		*s;
 		struct pf_state_key	*sk;
 		struct pfi_kif		*kif;
@@ -1650,6 +1650,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 		bzero(s, sizeof(struct pf_state));
 		if ((sk = pf_alloc_state_key(s)) == NULL) {
+			pool_put(&pf_state_pl, s);
 			error = ENOMEM;
 			break;
 		}
@@ -1664,30 +1665,28 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		if (pf_insert_state(kif, s)) {
 			pfi_kif_unref(kif, PFI_KIF_REF_NONE);
 			pool_put(&pf_state_pl, s);
-			pool_put(&pf_state_key_pl, sk);
-			error = ENOMEM;
+			error = EEXIST;
+			break;
 		}
+		pf_default_rule.states++;
 		break;
 	}
 
 	case DIOCGETSTATE: {
 		struct pfioc_state	*ps = (struct pfioc_state *)addr;
 		struct pf_state		*s;
-		u_int32_t		 nr;
+		struct pf_state_cmp	 id_key;
 
-		nr = 0;
-		RB_FOREACH(s, pf_state_tree_id, &tree_id) {
-			if (nr >= ps->nr)
-				break;
-			nr++;
-		}
+		bcopy(ps->state.id, &id_key.id, sizeof(id_key.id));
+		id_key.creatorid = ps->state.creatorid;
+
+		s = pf_find_state_byid(&id_key);
 		if (s == NULL) {
-			error = EBUSY;
+			error = ENOENT;
 			break;
 		}
 
-		pf_state_export((struct pfsync_state *)&ps->state,
-		    s->state_key, s);
+		pf_state_export(&ps->state, s->state_key, s);
 		break;
 	}
 
@@ -1735,7 +1734,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	case DIOCGETSTATUS: {
 		struct pf_status *s = (struct pf_status *)addr;
 		bcopy(&pf_status, s, sizeof(struct pf_status));
-		pfi_fill_oldstatus(s);
+		pfi_update_status(s->ifname, s);
 		break;
 	}
 
@@ -1744,10 +1743,6 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 
 		if (pi->ifname[0] == 0) {
 			bzero(pf_status.ifname, IFNAMSIZ);
-			break;
-		}
-		if (ifunit(pi->ifname) == NULL) {
-			error = EINVAL;
 			break;
 		}
 		strlcpy(pf_status.ifname, pi->ifname, IFNAMSIZ);
@@ -1760,7 +1755,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		bzero(pf_status.scounters, sizeof(pf_status.scounters));
 		pf_status.since = time_second;
 		if (*pf_status.ifname)
-			pfi_clr_istats(pf_status.ifname);
+			pfi_update_status(pf_status.ifname, NULL);
 		break;
 	}
 
@@ -1793,13 +1788,13 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 				key.ext.port = pnl->dport;
 				PF_ACPY(&key.gwy.addr, &pnl->saddr, pnl->af);
 				key.gwy.port = pnl->sport;
-				state = pf_find_state_all(&key, PF_EXT_GWY, &m);
+				state = pf_find_state_all(&key, PF_IN, &m);
 			} else {
 				PF_ACPY(&key.lan.addr, &pnl->daddr, pnl->af);
 				key.lan.port = pnl->dport;
 				PF_ACPY(&key.ext.addr, &pnl->saddr, pnl->af);
 				key.ext.port = pnl->sport;
-				state = pf_find_state_all(&key, PF_LAN_EXT, &m);
+				state = pf_find_state_all(&key, PF_OUT, &m);
 			}
 			if (m > 1)
 				error = E2BIG;	/* more than one state */
@@ -1968,6 +1963,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 				pool_put(&pf_altq_pl, altq);
 				break;
 			}
+			altq->altq_disc = NULL;
 			TAILQ_FOREACH(a, pf_altqs_inactive, entries) {
 				if (strncmp(a->ifname, altq->ifname,
 				    IFNAMSIZ) == 0 && a->qname[0] == 0) {
@@ -2547,10 +2543,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = ENODEV;
 			goto fail;
 		}
-		ioe = (struct pfioc_trans_e *)malloc(sizeof(*ioe),
-		    M_TEMP, M_WAITOK);
-		table = (struct pfr_table *)malloc(sizeof(*table),
-		    M_TEMP, M_WAITOK);
+		ioe = malloc(sizeof(*ioe), M_TEMP, M_WAITOK);
+		table = malloc(sizeof(*table), M_TEMP, M_WAITOK);
 		for (i = 0; i < io->size; i++) {
 			if (copyin(io->array+i, ioe, sizeof(*ioe))) {
 				free(table, M_TEMP);
@@ -2616,10 +2610,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = ENODEV;
 			goto fail;
 		}
-		ioe = (struct pfioc_trans_e *)malloc(sizeof(*ioe),
-		    M_TEMP, M_WAITOK);
-		table = (struct pfr_table *)malloc(sizeof(*table),
-		    M_TEMP, M_WAITOK);
+		ioe = malloc(sizeof(*ioe), M_TEMP, M_WAITOK);
+		table = malloc(sizeof(*table), M_TEMP, M_WAITOK);
 		for (i = 0; i < io->size; i++) {
 			if (copyin(io->array+i, ioe, sizeof(*ioe))) {
 				free(table, M_TEMP);
@@ -2680,10 +2672,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = ENODEV;
 			goto fail;
 		}
-		ioe = (struct pfioc_trans_e *)malloc(sizeof(*ioe),
-		    M_TEMP, M_WAITOK);
-		table = (struct pfr_table *)malloc(sizeof(*table),
-		    M_TEMP, M_WAITOK);
+		ioe = malloc(sizeof(*ioe), M_TEMP, M_WAITOK);
+		table = malloc(sizeof(*table), M_TEMP, M_WAITOK);
 		/* first makes sure everything will succeed */
 		for (i = 0; i < io->size; i++) {
 			if (copyin(io->array+i, ioe, sizeof(*ioe))) {
