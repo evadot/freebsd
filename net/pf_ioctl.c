@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_ioctl.c,v 1.193 2007/12/02 12:08:04 pascoe Exp $ */
+/*	$OpenBSD: pf_ioctl.c,v 1.209 2008/06/29 08:42:15 mcbride Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -36,6 +36,7 @@
  */
 
 #include "pfsync.h"
+#include "pflog.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -109,10 +110,9 @@ int			 pf_setup_pfsync_matching(struct pf_ruleset *);
 void			 pf_hash_rule(MD5_CTX *, struct pf_rule *);
 void			 pf_hash_rule_addr(MD5_CTX *, struct pf_rule_addr *);
 int			 pf_commit_rules(u_int32_t, int, char *);
-void			 pf_state_export(struct pfsync_state *,
-			    struct pf_state_key *, struct pf_state *);
-void			 pf_state_import(struct pfsync_state *,
-			    struct pf_state_key *, struct pf_state *);
+int			 pf_addr_setup(struct pf_ruleset *,
+			    struct pf_addr_wrap *, sa_family_t);
+void			 pf_addr_copyout(struct pf_addr_wrap *);
 
 struct pf_rule		 pf_default_rule;
 struct rwlock		 pf_consistency_lock = RWLOCK_INITIALIZER("pfcnslk");
@@ -147,8 +147,10 @@ pfattach(int num)
 	    "pfsrctrpl", NULL);
 	pool_init(&pf_state_pl, sizeof(struct pf_state), 0, 0, 0, "pfstatepl",
 	    NULL);
-	pool_init(&pf_state_key_pl, sizeof(struct pf_state_key), 0, 0, 0, 
+	pool_init(&pf_state_key_pl, sizeof(struct pf_state_key), 0, 0, 0,
 	    "pfstatekeypl", NULL);
+	pool_init(&pf_state_item_pl, sizeof(struct pf_state_item), 0, 0, 0,
+	    "pfstateitempl", NULL);
 	pool_init(&pf_altq_pl, sizeof(struct pf_altq), 0, 0, 0, "pfaltqpl",
 	    &pool_allocator_nointr);
 	pool_init(&pf_pooladdr_pl, sizeof(struct pf_pooladdr), 0, 0, 0,
@@ -160,7 +162,7 @@ pfattach(int num)
 	pool_sethardlimit(pf_pool_limits[PF_LIMIT_STATES].pp,
 	    pf_pool_limits[PF_LIMIT_STATES].limit, NULL, 0);
 
-	if (ptoa(physmem) <= 100*1024*1024)
+	if (physmem <= atop(100*1024*1024))
 		pf_pool_limits[PF_LIMIT_TABLE_ENTRIES].limit =
 		    PFR_KENTRY_HIWAT_SMALL;
 
@@ -309,7 +311,7 @@ void
 pf_rm_rule(struct pf_rulequeue *rulequeue, struct pf_rule *rule)
 {
 	if (rulequeue != NULL) {
-		if (rule->states <= 0) {
+		if (rule->states_cur <= 0) {
 			/*
 			 * XXX - we need to remove the table *before* detaching
 			 * the rule to make sure the table code does not delete
@@ -325,7 +327,7 @@ pf_rm_rule(struct pf_rulequeue *rulequeue, struct pf_rule *rule)
 		rule->nr = -1;
 	}
 
-	if (rule->states > 0 || rule->src_nodes > 0 ||
+	if (rule->states_cur > 0 || rule->src_nodes > 0 ||
 	    rule->entries.tqe_prev != NULL)
 		return;
 	pf_tag_unref(rule->tag);
@@ -841,91 +843,6 @@ pf_commit_rules(u_int32_t ticket, int rs_num, char *anchor)
 	return (0);
 }
 
-void
-pf_state_export(struct pfsync_state *sp, struct pf_state_key *sk,
-   struct pf_state *s) 
-{
-	int secs = time_second;
-	bzero(sp, sizeof(struct pfsync_state));
-
-	/* copy from state key */
-	sp->lan.addr = sk->lan.addr;
-	sp->lan.port = sk->lan.port;
-	sp->gwy.addr = sk->gwy.addr;
-	sp->gwy.port = sk->gwy.port;
-	sp->ext.addr = sk->ext.addr;
-	sp->ext.port = sk->ext.port;
-	sp->proto = sk->proto;
-	sp->af = sk->af;
-	sp->direction = sk->direction;
-
-	/* copy from state */
-	memcpy(&sp->id, &s->id, sizeof(sp->id));
-	sp->creatorid = s->creatorid;
-	strlcpy(sp->ifname, s->kif->pfik_name, sizeof(sp->ifname));
-	pf_state_peer_to_pfsync(&s->src, &sp->src);
-	pf_state_peer_to_pfsync(&s->dst, &sp->dst);
-
-	sp->rule = s->rule.ptr->nr;
-	sp->nat_rule = (s->nat_rule.ptr == NULL) ?  -1 : s->nat_rule.ptr->nr;
-	sp->anchor = (s->anchor.ptr == NULL) ?  -1 : s->anchor.ptr->nr;
-
-	pf_state_counter_to_pfsync(s->bytes[0], sp->bytes[0]);
-	pf_state_counter_to_pfsync(s->bytes[1], sp->bytes[1]);
-	pf_state_counter_to_pfsync(s->packets[0], sp->packets[0]);
-	pf_state_counter_to_pfsync(s->packets[1], sp->packets[1]);
-	sp->creation = secs - s->creation;
-	sp->expire = pf_state_expires(s);
-	sp->log = s->log;
-	sp->allow_opts = s->allow_opts;
-	sp->timeout = s->timeout;
-
-	if (s->src_node)
-		sp->sync_flags |= PFSYNC_FLAG_SRCNODE;
-	if (s->nat_src_node)
-		sp->sync_flags |= PFSYNC_FLAG_NATSRCNODE;
-
-	if (sp->expire > secs)
-		sp->expire -= secs;
-	else
-		sp->expire = 0;
-
-}
-
-void
-pf_state_import(struct pfsync_state *sp, struct pf_state_key *sk,
-   struct pf_state *s) 
-{
-	/* copy to state key */
-	sk->lan.addr = sp->lan.addr;
-	sk->lan.port = sp->lan.port;
-	sk->gwy.addr = sp->gwy.addr;
-	sk->gwy.port = sp->gwy.port;
-	sk->ext.addr = sp->ext.addr;
-	sk->ext.port = sp->ext.port;
-	sk->proto = sp->proto;
-	sk->af = sp->af;
-	sk->direction = sp->direction;
-
-	/* copy to state */
-	memcpy(&s->id, &sp->id, sizeof(sp->id));
-	s->creatorid = sp->creatorid;
-	pf_state_peer_from_pfsync(&sp->src, &s->src);
-	pf_state_peer_from_pfsync(&sp->dst, &s->dst);
-
-	s->rule.ptr = &pf_default_rule;
-	s->nat_rule.ptr = NULL;
-	s->anchor.ptr = NULL;
-	s->rt_kif = NULL;
-	s->creation = time_second;
-	s->expire = time_second;
-	if (sp->expire > 0)
-		s->expire -= pf_default_rule.timeout[sp->timeout] - sp->expire;
-	s->pfsync_time = 0;
-	s->packets[0] = s->packets[1] = 0;
-	s->bytes[0] = s->bytes[1] = 0;
-}
-
 int
 pf_setup_pfsync_matching(struct pf_ruleset *rs)
 {
@@ -964,6 +881,25 @@ pf_setup_pfsync_matching(struct pf_ruleset *rs)
 	MD5Final(digest, &ctx);
 	memcpy(pf_status.pf_chksum, digest, sizeof(pf_status.pf_chksum));
 	return (0);
+}
+
+int
+pf_addr_setup(struct pf_ruleset *ruleset, struct pf_addr_wrap *addr,
+    sa_family_t af)
+{
+	if (pfi_dynaddr_setup(addr, af) ||
+	    pf_tbladdr_setup(ruleset, addr))
+		return (EINVAL);
+
+	return (0);
+}
+
+void
+pf_addr_copyout(struct pf_addr_wrap *addr)
+{
+	pfi_dynaddr_copyout(addr);
+	pf_tbladdr_copyout(addr);
+	pf_rtlabel_copyout(addr);
 }
 
 int
@@ -1067,7 +1003,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			}
 			return (EACCES);
 		case DIOCGETRULE:
-			if (((struct pfioc_rule *)addr)->action == PF_GET_CLR_CNTR)
+			if (((struct pfioc_rule *)addr)->action ==
+			    PF_GET_CLR_CNTR)
 				return (EACCES);
 			break;
 		default:
@@ -1136,7 +1073,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = EBUSY;
 			break;
 		}
-		rule = pool_get(&pf_rule_pl, PR_NOWAIT);
+		rule = pool_get(&pf_rule_pl, PR_WAITOK|PR_LIMITFAIL);
 		if (rule == NULL) {
 			error = ENOMEM;
 			break;
@@ -1148,7 +1085,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		rule->kif = NULL;
 		TAILQ_INIT(&rule->rpool.list);
 		/* initialize refcounting */
-		rule->states = 0;
+		rule->states_cur = 0;
 		rule->src_nodes = 0;
 		rule->entries.tqe_prev = NULL;
 #ifndef INET
@@ -1215,13 +1152,9 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		if (pf_rtlabel_add(&rule->src.addr) ||
 		    pf_rtlabel_add(&rule->dst.addr))
 			error = EBUSY;
-		if (pfi_dynaddr_setup(&rule->src.addr, rule->af))
+		if (pf_addr_setup(ruleset, &rule->src.addr, rule->af))
 			error = EINVAL;
-		if (pfi_dynaddr_setup(&rule->dst.addr, rule->af))
-			error = EINVAL;
-		if (pf_tbladdr_setup(ruleset, &rule->src.addr))
-			error = EINVAL;
-		if (pf_tbladdr_setup(ruleset, &rule->dst.addr))
+		if (pf_addr_setup(ruleset, &rule->dst.addr, rule->af))
 			error = EINVAL;
 		if (pf_anchor_setup(rule, ruleset, pr->anchor_call))
 			error = EINVAL;
@@ -1318,12 +1251,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = EBUSY;
 			break;
 		}
-		pfi_dynaddr_copyout(&pr->rule.src.addr);
-		pfi_dynaddr_copyout(&pr->rule.dst.addr);
-		pf_tbladdr_copyout(&pr->rule.src.addr);
-		pf_tbladdr_copyout(&pr->rule.dst.addr);
-		pf_rtlabel_copyout(&pr->rule.src.addr);
-		pf_rtlabel_copyout(&pr->rule.dst.addr);
+		pf_addr_copyout(&pr->rule.src.addr);
+		pf_addr_copyout(&pr->rule.dst.addr);
 		for (i = 0; i < PF_SKIP_COUNT; ++i)
 			if (rule->skip[i].ptr == NULL)
 				pr->rule.skip[i].nr = -1;
@@ -1335,6 +1264,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			rule->evaluations = 0;
 			rule->packets[0] = rule->packets[1] = 0;
 			rule->bytes[0] = rule->bytes[1] = 0;
+			rule->states_tot = 0;
 		}
 		break;
 	}
@@ -1385,7 +1315,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		}
 
 		if (pcr->action != PF_CHANGE_REMOVE) {
-			newrule = pool_get(&pf_rule_pl, PR_NOWAIT);
+			newrule = pool_get(&pf_rule_pl, PR_WAITOK|PR_LIMITFAIL);
 			if (newrule == NULL) {
 				error = ENOMEM;
 				break;
@@ -1395,7 +1325,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			newrule->cpid = p->p_pid;
 			TAILQ_INIT(&newrule->rpool.list);
 			/* initialize refcounting */
-			newrule->states = 0;
+			newrule->states_cur = 0;
 			newrule->entries.tqe_prev = NULL;
 #ifndef INET
 			if (newrule->af == AF_INET) {
@@ -1459,13 +1389,9 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			if (pf_rtlabel_add(&newrule->src.addr) ||
 			    pf_rtlabel_add(&newrule->dst.addr))
 				error = EBUSY;
-			if (pfi_dynaddr_setup(&newrule->src.addr, newrule->af))
+			if (pf_addr_setup(ruleset, &newrule->src.addr, newrule->af))
 				error = EINVAL;
-			if (pfi_dynaddr_setup(&newrule->dst.addr, newrule->af))
-				error = EINVAL;
-			if (pf_tbladdr_setup(ruleset, &newrule->src.addr))
-				error = EINVAL;
-			if (pf_tbladdr_setup(ruleset, &newrule->dst.addr))
+			if (pf_addr_setup(ruleset, &newrule->dst.addr, newrule->af))
 				error = EINVAL;
 			if (pf_anchor_setup(newrule, ruleset, pcr->anchor_call))
 				error = EINVAL;
@@ -1556,7 +1482,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	case DIOCCLRSTATES: {
 		struct pf_state		*s, *nexts;
 		struct pfioc_state_kill *psk = (struct pfioc_state_kill *)addr;
-		int			 killed = 0;
+		u_int			 killed = 0;
 
 		for (s = RB_MIN(pf_state_tree_id, &tree_id); s; s = nexts) {
 			nexts = RB_NEXT(pf_state_tree_id, &tree_id, s);
@@ -1571,7 +1497,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 				killed++;
 			}
 		}
-		psk->psk_af = killed;
+		psk->psk_killed = killed;
 #if NPFSYNC
 		pfsync_clear_states(pf_status.hostid, psk->psk_ifname);
 #endif
@@ -1581,21 +1507,41 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	case DIOCKILLSTATES: {
 		struct pf_state		*s, *nexts;
 		struct pf_state_key	*sk;
-		struct pf_state_host	*src, *dst;
+		struct pf_addr		*srcaddr, *dstaddr;
+		u_int16_t		 srcport, dstport;
 		struct pfioc_state_kill	*psk = (struct pfioc_state_kill *)addr;
-		int			 killed = 0;
+		u_int			 killed = 0;
+
+		if (psk->psk_pfcmp.id) {
+			if (psk->psk_pfcmp.creatorid == 0)
+				psk->psk_pfcmp.creatorid = pf_status.hostid;
+			if ((s = pf_find_state_byid(&psk->psk_pfcmp))) {
+#if NPFSYNC > 0
+				/* send immediate delete of state */
+				pfsync_delete_state(s);
+				s->sync_flags |= PFSTATE_NOSYNC;
+#endif
+				pf_unlink_state(s);
+				psk->psk_killed = 1;
+			}
+			break;
+		}
 
 		for (s = RB_MIN(pf_state_tree_id, &tree_id); s;
 		    s = nexts) {
 			nexts = RB_NEXT(pf_state_tree_id, &tree_id, s);
-			sk = s->state_key;
+			sk = s->key[PF_SK_WIRE];
 
-			if (sk->direction == PF_OUT) {
-				src = &sk->lan;
-				dst = &sk->ext;
+			if (s->direction == PF_OUT) {
+				srcaddr = &sk->addr[1];
+				dstaddr = &sk->addr[0];
+				srcport = sk->port[0];
+				dstport = sk->port[0];
 			} else {
-				src = &sk->ext;
-				dst = &sk->lan;
+				srcaddr = &sk->addr[0];
+				dstaddr = &sk->addr[1];
+				srcport = sk->port[0];
+				dstport = sk->port[0];
 			}
 			if ((!psk->psk_af || sk->af == psk->psk_af)
 			    && (!psk->psk_proto || psk->psk_proto ==
@@ -1603,19 +1549,21 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			    PF_MATCHA(psk->psk_src.neg,
 			    &psk->psk_src.addr.v.a.addr,
 			    &psk->psk_src.addr.v.a.mask,
-			    &src->addr, sk->af) &&
+			    srcaddr, sk->af) &&
 			    PF_MATCHA(psk->psk_dst.neg,
 			    &psk->psk_dst.addr.v.a.addr,
 			    &psk->psk_dst.addr.v.a.mask,
-			    &dst->addr, sk->af) &&
+			    dstaddr, sk->af) &&
 			    (psk->psk_src.port_op == 0 ||
 			    pf_match_port(psk->psk_src.port_op,
 			    psk->psk_src.port[0], psk->psk_src.port[1],
-			    src->port)) &&
+			    srcport)) &&
 			    (psk->psk_dst.port_op == 0 ||
 			    pf_match_port(psk->psk_dst.port_op,
 			    psk->psk_dst.port[0], psk->psk_dst.port[1],
-			    dst->port)) &&
+			    dstport)) &&
+			    (!psk->psk_label[0] || (s->rule.ptr->label[0] &&
+			    !strcmp(psk->psk_label, s->rule.ptr->label))) &&
 			    (!psk->psk_ifname[0] || !strcmp(psk->psk_ifname,
 			    s->kif->pfik_name))) {
 #if NPFSYNC > 0
@@ -1627,48 +1575,20 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 				killed++;
 			}
 		}
-		psk->psk_af = killed;
+		psk->psk_killed = killed;
 		break;
 	}
 
 	case DIOCADDSTATE: {
 		struct pfioc_state	*ps = (struct pfioc_state *)addr;
-		struct pfsync_state 	*sp = &ps->state;
-		struct pf_state		*s;
-		struct pf_state_key	*sk;
-		struct pfi_kif		*kif;
+		struct pfsync_state	*sp = &ps->state;
 
 		if (sp->timeout >= PFTM_MAX &&
 		    sp->timeout != PFTM_UNTIL_PACKET) {
 			error = EINVAL;
 			break;
 		}
-		s = pool_get(&pf_state_pl, PR_NOWAIT);
-		if (s == NULL) {
-			error = ENOMEM;
-			break;
-		}
-		bzero(s, sizeof(struct pf_state));
-		if ((sk = pf_alloc_state_key(s)) == NULL) {
-			pool_put(&pf_state_pl, s);
-			error = ENOMEM;
-			break;
-		}
-		pf_state_import(sp, sk, s);
-		kif = pfi_kif_get(sp->ifname);
-		if (kif == NULL) {
-			pool_put(&pf_state_pl, s);
-			pool_put(&pf_state_key_pl, sk);
-			error = ENOENT;
-			break;
-		}
-		if (pf_insert_state(kif, s)) {
-			pfi_kif_unref(kif, PFI_KIF_REF_NONE);
-			pool_put(&pf_state_pl, s);
-			error = EEXIST;
-			break;
-		}
-		pf_default_rule.states++;
+		error = pfsync_state_import(sp, PFSYNC_SI_IOCTL);
 		break;
 	}
 
@@ -1686,7 +1606,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			break;
 		}
 
-		pf_state_export(&ps->state, s->state_key, s);
+		pfsync_state_export(&ps->state, s);
 		break;
 	}
 
@@ -1711,9 +1631,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			if (state->timeout != PFTM_UNLINKED) {
 				if ((nr+1) * sizeof(*p) > (unsigned)ps->ps_len)
 					break;
-
-				pf_state_export(pstore,
-				    state->state_key, state);
+				pfsync_state_export(pstore, state);
 				error = copyout(pstore, p, sizeof(*p));
 				if (error) {
 					free(pstore, M_TEMP);
@@ -1765,9 +1683,11 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		struct pf_state		*state;
 		struct pf_state_key_cmp	 key;
 		int			 m = 0, direction = pnl->direction;
+		int			 sidx, didx;
 
-		key.af = pnl->af;
-		key.proto = pnl->proto;
+		/* NATLOOK src and dst are reversed, so reverse sidx/didx */
+		sidx = (direction == PF_IN) ? 1 : 0;
+		didx = (direction == PF_IN) ? 0 : 1;
 
 		if (!pnl->proto ||
 		    PF_AZERO(&pnl->saddr, pnl->af) ||
@@ -1777,44 +1697,23 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		    (!pnl->dport || !pnl->sport)))
 			error = EINVAL;
 		else {
-			/*
-			 * userland gives us source and dest of connection,
-			 * reverse the lookup so we ask for what happens with
-			 * the return traffic, enabling us to find it in the
-			 * state tree.
-			 */
-			if (direction == PF_IN) {
-				PF_ACPY(&key.ext.addr, &pnl->daddr, pnl->af);
-				key.ext.port = pnl->dport;
-				PF_ACPY(&key.gwy.addr, &pnl->saddr, pnl->af);
-				key.gwy.port = pnl->sport;
-				state = pf_find_state_all(&key, PF_IN, &m);
-			} else {
-				PF_ACPY(&key.lan.addr, &pnl->daddr, pnl->af);
-				key.lan.port = pnl->dport;
-				PF_ACPY(&key.ext.addr, &pnl->saddr, pnl->af);
-				key.ext.port = pnl->sport;
-				state = pf_find_state_all(&key, PF_OUT, &m);
-			}
+			key.af = pnl->af;
+			key.proto = pnl->proto;
+			PF_ACPY(&key.addr[sidx], &pnl->saddr, pnl->af);
+			key.port[sidx] = pnl->sport;
+			PF_ACPY(&key.addr[didx], &pnl->daddr, pnl->af);
+			key.port[didx] = pnl->dport;
+
+			state = pf_find_state_all(&key, direction, &m);
+
 			if (m > 1)
 				error = E2BIG;	/* more than one state */
 			else if (state != NULL) {
-				sk = state->state_key;
-				if (direction == PF_IN) {
-					PF_ACPY(&pnl->rsaddr, &sk->lan.addr,
-					    sk->af);
-					pnl->rsport = sk->lan.port;
-					PF_ACPY(&pnl->rdaddr, &pnl->daddr,
-					    pnl->af);
-					pnl->rdport = pnl->dport;
-				} else {
-					PF_ACPY(&pnl->rdaddr, &sk->gwy.addr,
-					    sk->af);
-					pnl->rdport = sk->gwy.port;
-					PF_ACPY(&pnl->rsaddr, &pnl->saddr,
-					    pnl->af);
-					pnl->rsport = pnl->sport;
-				}
+				sk = state->key[sidx];
+				PF_ACPY(&pnl->rsaddr, &sk->addr[sidx], sk->af);
+				pnl->rsport = sk->port[sidx];
+				PF_ACPY(&pnl->rdaddr, &sk->addr[didx], sk->af);
+				pnl->rdport = sk->port[didx];
 			} else
 				error = ENOENT;
 		}
@@ -1946,7 +1845,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = EBUSY;
 			break;
 		}
-		altq = pool_get(&pf_altq_pl, PR_NOWAIT);
+		altq = pool_get(&pf_altq_pl, PR_WAITOK|PR_LIMITFAIL);
 		if (altq == NULL) {
 			error = ENOMEM;
 			break;
@@ -2086,7 +1985,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			error = EINVAL;
 			break;
 		}
-		pa = pool_get(&pf_pooladdr_pl, PR_NOWAIT);
+		pa = pool_get(&pf_pooladdr_pl, PR_WAITOK|PR_LIMITFAIL);
 		if (pa == NULL) {
 			error = ENOMEM;
 			break;
@@ -2147,9 +2046,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			break;
 		}
 		bcopy(pa, &pp->addr, sizeof(struct pf_pooladdr));
-		pfi_dynaddr_copyout(&pp->addr.addr);
-		pf_tbladdr_copyout(&pp->addr.addr);
-		pf_rtlabel_copyout(&pp->addr.addr);
+		pf_addr_copyout(&pp->addr.addr);
 		break;
 	}
 
@@ -2182,7 +2079,8 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 			break;
 		}
 		if (pca->action != PF_CHANGE_REMOVE) {
-			newpa = pool_get(&pf_pooladdr_pl, PR_NOWAIT);
+			newpa = pool_get(&pf_pooladdr_pl,
+			    PR_WAITOK|PR_LIMITFAIL);
 			if (newpa == NULL) {
 				error = ENOMEM;
 				break;
@@ -2849,22 +2747,22 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 	case DIOCKILLSRCNODES: {
 		struct pf_src_node	*sn;
 		struct pf_state		*s;
-		struct pfioc_src_node_kill *psnk = \
-			(struct pfioc_src_node_kill *) addr;
-		int			killed = 0;
+		struct pfioc_src_node_kill *psnk =
+		    (struct pfioc_src_node_kill *)addr;
+		u_int			killed = 0;
 
 		RB_FOREACH(sn, pf_src_tree, &tree_src_tracking) {
-        		if (PF_MATCHA(psnk->psnk_src.neg, \
-				      &psnk->psnk_src.addr.v.a.addr, \
-				      &psnk->psnk_src.addr.v.a.mask, \
-				      &sn->addr, sn->af) &&
-			    PF_MATCHA(psnk->psnk_dst.neg, \
-				      &psnk->psnk_dst.addr.v.a.addr, \
-				      &psnk->psnk_dst.addr.v.a.mask, \
-				      &sn->raddr, sn->af)) {
+			if (PF_MATCHA(psnk->psnk_src.neg,
+				&psnk->psnk_src.addr.v.a.addr,
+				&psnk->psnk_src.addr.v.a.mask,
+				&sn->addr, sn->af) &&
+			    PF_MATCHA(psnk->psnk_dst.neg,
+				&psnk->psnk_dst.addr.v.a.addr,
+				&psnk->psnk_dst.addr.v.a.mask,
+				&sn->raddr, sn->af)) {
 				/* Handle state to src_node linkage */
 				if (sn->states != 0) {
-					RB_FOREACH(s, pf_state_tree_id, 
+					RB_FOREACH(s, pf_state_tree_id,
 					    &tree_id) {
 						if (s->src_node == sn)
 							s->src_node = NULL;
@@ -2881,7 +2779,7 @@ pfioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		if (killed > 0)
 			pf_purge_expired_src_nodes(1);
 
-		psnk->psnk_af = killed;
+		psnk->psnk_killed = killed;
 		break;
 	}
 

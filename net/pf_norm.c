@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_norm.c,v 1.111 2007/12/30 10:32:24 mglocker Exp $ */
+/*	$OpenBSD: pf_norm.c,v 1.113 2008/05/07 07:07:29 markus Exp $ */
 
 /*
  * Copyright 2001 Niels Provos <provos@citi.umich.edu>
@@ -827,6 +827,7 @@ pf_normalize_ip(struct mbuf **m0, int dir, struct pfi_kif *kif, u_short *reason,
 	u_int16_t		 max;
 	int			 ip_len;
 	int			 ip_off;
+	int			 tag = -1;
 
 	r = TAILQ_FIRST(pf_main_ruleset.rules[PF_RULESET_SCRUB].active.ptr);
 	while (r != NULL) {
@@ -847,6 +848,8 @@ pf_normalize_ip(struct mbuf **m0, int dir, struct pfi_kif *kif, u_short *reason,
 		    (struct pf_addr *)&h->ip_dst.s_addr, AF_INET,
 		    r->dst.neg, NULL))
 			r = r->skip[PF_SKIP_DST_ADDR].ptr;
+		else if (r->match_tag && !pf_match_tag(m, r, &tag))
+			r = TAILQ_NEXT(r, entries);
 		else
 			break;
 	}
@@ -989,6 +992,17 @@ pf_normalize_ip(struct mbuf **m0, int dir, struct pfi_kif *kif, u_short *reason,
 		h->ip_sum = pf_cksum_fixup(h->ip_sum, ip_ttl, h->ip_ttl, 0);
 	}
 
+	/* Enforce tos */
+	if (r->rule_flag & PFRULE_SET_TOS) {
+		u_int16_t	ov, nv;
+
+		ov = *(u_int16_t *)h;
+		h->ip_tos = r->set_tos;
+		nv = *(u_int16_t *)h;
+
+		h->ip_sum = pf_cksum_fixup(h->ip_sum, ov, nv, 0);
+	}
+
 	if (r->rule_flag & PFRULE_RANDOMID) {
 		u_int16_t ip_id = h->ip_id;
 
@@ -1007,6 +1021,16 @@ pf_normalize_ip(struct mbuf **m0, int dir, struct pfi_kif *kif, u_short *reason,
 
 		h->ip_ttl = r->min_ttl;
 		h->ip_sum = pf_cksum_fixup(h->ip_sum, ip_ttl, h->ip_ttl, 0);
+	}
+	/* Enforce tos */
+	if (r->rule_flag & PFRULE_SET_TOS) {
+		u_int16_t	ov, nv;
+
+		ov = *(u_int16_t *)h;
+		h->ip_tos = r->set_tos;
+		nv = *(u_int16_t *)h;
+
+		h->ip_sum = pf_cksum_fixup(h->ip_sum, ov, nv, 0);
 	}
 	if ((r->rule_flag & (PFRULE_FRAGCROP|PFRULE_FRAGDROP)) == 0)
 		pd->flags |= PFDESC_IP_REAS;

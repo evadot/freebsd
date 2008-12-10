@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_table.c,v 1.72 2007/12/20 20:07:41 reyk Exp $	*/
+/*	$OpenBSD: pf_table.c,v 1.78 2008/06/14 03:50:14 art Exp $	*/
 
 /*
  * Copyright (c) 2002 Cedric Berger
@@ -127,6 +127,7 @@ struct pfr_walktree {
 struct pool		 pfr_ktable_pl;
 struct pool		 pfr_kentry_pl;
 struct pool		 pfr_kentry_pl2;
+struct pool		 pfr_kcounters_pl;
 struct sockaddr_in	 pfr_sin;
 struct sockaddr_in6	 pfr_sin6;
 union sockaddr_union	 pfr_mask;
@@ -190,11 +191,13 @@ void
 pfr_initialize(void)
 {
 	pool_init(&pfr_ktable_pl, sizeof(struct pfr_ktable), 0, 0, 0,
-	    "pfrktable", &pool_allocator_oldnointr);
+	    "pfrktable", NULL);
 	pool_init(&pfr_kentry_pl, sizeof(struct pfr_kentry), 0, 0, 0,
-	    "pfrkentry", &pool_allocator_oldnointr);
+	    "pfrkentry", NULL);
 	pool_init(&pfr_kentry_pl2, sizeof(struct pfr_kentry), 0, 0, 0,
 	    "pfrkentry2", NULL);
+	pool_init(&pfr_kcounters_pl, sizeof(struct pfr_kcounters), 0, 0, 0,
+	    "pfrkcounters", NULL);
 
 	pfr_sin.sin_len = sizeof(pfr_sin);
 	pfr_sin.sin_family = AF_INET;
@@ -808,12 +811,11 @@ pfr_create_kentry(struct pfr_addr *ad, int intr)
 	struct pfr_kentry	*ke;
 
 	if (intr)
-		ke = pool_get(&pfr_kentry_pl2, PR_NOWAIT);
+		ke = pool_get(&pfr_kentry_pl2, PR_NOWAIT | PR_ZERO);
 	else
-		ke = pool_get(&pfr_kentry_pl, PR_NOWAIT);
+		ke = pool_get(&pfr_kentry_pl, PR_WAITOK|PR_ZERO|PR_LIMITFAIL);
 	if (ke == NULL)
 		return (NULL);
-	bzero(ke, sizeof(*ke));
 
 	if (ad->pfra_af == AF_INET)
 		FILLIN_SIN(ke->pfrke_sa.sin, ad->pfra_ip4addr);
@@ -840,6 +842,8 @@ pfr_destroy_kentries(struct pfr_kentryworkq *workq)
 void
 pfr_destroy_kentry(struct pfr_kentry *ke)
 {
+	if (ke->pfrke_counters)
+		pool_put(&pfr_kcounters_pl, ke->pfrke_counters);
 	if (ke->pfrke_intrpool)
 		pool_put(&pfr_kentry_pl2, ke);
 	else
@@ -924,8 +928,10 @@ pfr_clstats_kentries(struct pfr_kentryworkq *workq, long tzero, int negchange)
 		s = splsoftnet();
 		if (negchange)
 			p->pfrke_not = !p->pfrke_not;
-		bzero(p->pfrke_packets, sizeof(p->pfrke_packets));
-		bzero(p->pfrke_bytes, sizeof(p->pfrke_bytes));
+		if (p->pfrke_counters) {
+			pool_put(&pfr_kcounters_pl, p->pfrke_counters);
+			p->pfrke_counters = NULL;
+		}
 		splx(s);
 		p->pfrke_tzero = tzero;
 	}
@@ -988,9 +994,9 @@ pfr_route_kentry(struct pfr_ktable *kt, struct pfr_kentry *ke)
 	s = splsoftnet();
 	if (KENTRY_NETWORK(ke)) {
 		pfr_prepare_network(&mask, ke->pfrke_af, ke->pfrke_net);
-		rn = rn_addroute(&ke->pfrke_sa, &mask, head, ke->pfrke_node);
+		rn = rn_addroute(&ke->pfrke_sa, &mask, head, ke->pfrke_node, 0);
 	} else
-		rn = rn_addroute(&ke->pfrke_sa, NULL, head, ke->pfrke_node);
+		rn = rn_addroute(&ke->pfrke_sa, NULL, head, ke->pfrke_node, 0);
 	splx(s);
 
 	return (rn == NULL ? -1 : 0);
@@ -1075,10 +1081,16 @@ pfr_walktree(struct radix_node *rn, void *arg)
 			pfr_copyout_addr(&as.pfras_a, ke);
 
 			s = splsoftnet();
-			bcopy(ke->pfrke_packets, as.pfras_packets,
-			    sizeof(as.pfras_packets));
-			bcopy(ke->pfrke_bytes, as.pfras_bytes,
-			    sizeof(as.pfras_bytes));
+			if (ke->pfrke_counters) {
+				bcopy(ke->pfrke_counters->pfrkc_packets,
+				    as.pfras_packets, sizeof(as.pfras_packets));
+				bcopy(ke->pfrke_counters->pfrkc_bytes,
+				    as.pfras_bytes, sizeof(as.pfras_bytes));
+			} else {
+				bzero(as.pfras_packets, sizeof(as.pfras_packets));
+				bzero(as.pfras_bytes, sizeof(as.pfras_bytes));
+				as.pfras_a.pfra_fback = PFR_FB_NOCOUNT;
+			}
 			splx(s);
 			as.pfras_tzero = ke->pfrke_tzero;
 
@@ -1888,10 +1900,9 @@ pfr_create_ktable(struct pfr_table *tbl, long tzero, int attachruleset)
 	struct pfr_ktable	*kt;
 	struct pf_ruleset	*rs;
 
-	kt = pool_get(&pfr_ktable_pl, PR_NOWAIT);
+	kt = pool_get(&pfr_ktable_pl, PR_WAITOK | PR_ZERO | PR_LIMITFAIL);
 	if (kt == NULL)
 		return (NULL);
-	bzero(kt, sizeof(*kt));
 	kt->pfrkt_t = *tbl;
 
 	if (attachruleset) {
@@ -2043,9 +2054,15 @@ pfr_update_stats(struct pfr_ktable *kt, struct pf_addr *a, sa_family_t af,
 	}
 	kt->pfrkt_packets[dir_out][op_pass]++;
 	kt->pfrkt_bytes[dir_out][op_pass] += len;
-	if (ke != NULL && op_pass != PFR_OP_XPASS) {
-		ke->pfrke_packets[dir_out][op_pass]++;
-		ke->pfrke_bytes[dir_out][op_pass] += len;
+	if (ke != NULL && op_pass != PFR_OP_XPASS &&
+	    (kt->pfrkt_flags & PFR_TFLAG_COUNTERS)) {
+		if (ke->pfrke_counters == NULL)
+			ke->pfrke_counters = pool_get(&pfr_kcounters_pl,
+			    PR_NOWAIT | PR_ZERO);
+		if (ke->pfrke_counters != NULL) {
+			ke->pfrke_counters->pfrkc_packets[dir_out][op_pass]++;
+			ke->pfrke_counters->pfrkc_bytes[dir_out][op_pass] += len;
+		}
 	}
 }
 
