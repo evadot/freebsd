@@ -30,51 +30,74 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- *  Top - a top users display for Berkeley Unix
- *
- *  General (global) definitions
- */
+/* hash.m4h */
 
-#ifndef _TOP_H_
-#define _TOP_H_
+/* Interface definition for hash.c */
 
-#include <sys/time.h>
+/* The file hash.h is generated from hash.m4h via the preprocessor M4 */
 
-/* Maximum number of columns allowed for display */
-#define MAX_COLS	255
+#ifndef _HASH_H
+#define _HASH_H
 
-/* Log base 2 of 1024 is 10 (2^10 == 1024) */
-#define LOG1024		10
+#include <sys/types.h>
 
-/* Special atoi routine returns either a non-negative number or one of: */
-#define Infinity	-1
-#define Invalid		-2
+typedef struct pidthr_t {
+    pid_t k_pid;
+    id_t k_thr;
+} pidthr_t;
 
-/* maximum number we can have */
-#define Largest		0x7fffffff
+typedef struct llistitem {
+    void *datum;
+    struct llistitem *next;
+} llistitem;
 
-/*
- * The entire display is based on these next numbers being defined as is.
- */
+typedef struct llist {
+    llistitem *head;
+    unsigned int count;
+} llist;
 
-#define NUM_AVERAGES    3
+typedef struct bucket {
+    llist list;
+} bucket_t;
 
-struct ext_decl {
-    int (*f_minibar)(char *, int);
-    int (*f_display)(char *, int);
-};
+typedef struct hash_table {
+    int num_buckets;
+    bucket_t *buckets;
+} hash_table;
 
-/*
- *  "Table_size" defines the size of the hash tables used to map uid to
- *  username.  Things will work best if the number is a prime number.
- *  We use a number that should be suitable for most installations.
- */
-#ifndef Table_size
-#define Table_size	8191
+typedef struct hash_pos {
+    int num_buckets;
+    int curr;
+    bucket_t *hash_bucket;
+    llistitem *ll_item;
+    llistitem *ll_last;
+} hash_pos;
+
+hash_table *hash_create(int num);
+void hash_sizeinfo(unsigned int *sizes, int max, hash_table *ht);
+
+define(`HASH_TYPE_TMPL', `
+typedef struct hash_item_$1 {
+    $2 key;
+    void *value;
+} hash_item_$1;
+
+void *hash_add_$1(hash_table *ht, $2 key, void *value);
+void *hash_replace_$1(hash_table *ht, $2 key, void *value);
+void *hash_lookup_$1(hash_table *ht, $2 key);
+void *hash_remove_$1(hash_table *ht, $2 key);
+hash_item_$1 *hash_first_$1(hash_table *ht, hash_pos *pos);
+hash_item_$1 *hash_next_$1(hash_pos *pos);
+void *hash_remove_pos_$1(hash_pos *pos);
+')
+
+HASH_TYPE_TMPL(`uint', `unsigned int')
+HASH_TYPE_TMPL(`pid', `pid_t')
+HASH_TYPE_TMPL(`string', `char *')
+HASH_TYPE_TMPL(`pidthr', `pidthr_t')
+#if HAVE_LWPID_T
+HASH_TYPE_TMPL(`lwpid', `lwpid_t')
 #endif
 
-void gettime(struct timeval *);
-void quit(int);
 
-#endif /* _TOP_H_ */
+#endif

@@ -31,50 +31,61 @@
  */
 
 /*
- *  Top - a top users display for Berkeley Unix
+ * Top - a top users display for Unix
  *
- *  General (global) definitions
+ * Definition of the color interface.
  */
 
-#ifndef _TOP_H_
-#define _TOP_H_
+#ifndef _COLOR_H_
+#define _COLOR_H_
 
-#include <sys/time.h>
+#define COLOR_ANSI_SLOTS 20
 
-/* Maximum number of columns allowed for display */
-#define MAX_COLS	255
+int color_env_parse(char *env);
+int color_tag(char *tag);
+int color_test(int tagidx, int value);
+char *color_setstr(int color);
+void color_dump(FILE *f);
+int color_activate(int i);
 
-/* Log base 2 of 1024 is 10 (2^10 == 1024) */
-#define LOG1024		10
-
-/* Special atoi routine returns either a non-negative number or one of: */
-#define Infinity	-1
-#define Invalid		-2
-
-/* maximum number we can have */
-#define Largest		0x7fffffff
 
 /*
- * The entire display is based on these next numbers being defined as is.
+ * These color tag names are currently in use
+ * (or reserved for future use):
+ *
+ * cpu, size, res, time, 1min, 5min, 15min, host
  */
-
-#define NUM_AVERAGES    3
-
-struct ext_decl {
-    int (*f_minibar)(char *, int);
-    int (*f_display)(char *, int);
-};
 
 /*
- *  "Table_size" defines the size of the hash tables used to map uid to
- *  username.  Things will work best if the number is a prime number.
- *  We use a number that should be suitable for most installations.
+ * Valid ANSI values for colors are:
+ *
+ * 0	Reset all attributes
+ * 1	Bright
+ * 2	Dim
+ * 4	Underscore	
+ * 5	Blink
+ * 7	Reverse
+ * 8	Hidden
+ * 
+ * 	Foreground Colours
+ * 30	Black
+ * 31	Red
+ * 32	Green
+ * 33	Yellow
+ * 34	Blue
+ * 35	Magenta
+ * 36	Cyan
+ * 37	White
+ * 
+ * 	Background Colours
+ * 40	Black
+ * 41	Red
+ * 42	Green
+ * 43	Yellow
+ * 44	Blue
+ * 45	Magenta
+ * 46	Cyan
+ * 47	White
  */
-#ifndef Table_size
-#define Table_size	8191
-#endif
 
-void gettime(struct timeval *);
-void quit(int);
-
-#endif /* _TOP_H_ */
+#endif /*_COLOR_H_ */

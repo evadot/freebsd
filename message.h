@@ -30,51 +30,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- *  Top - a top users display for Berkeley Unix
- *
- *  General (global) definitions
- */
+/* interface declaration for display messages */
+/* This is a small subset of the interface from display.c that
+   just contains the calls for displaying messages.  Do not include
+   this and display.h at the same time. */
 
-#ifndef _TOP_H_
-#define _TOP_H_
+#ifndef _MESSAGE_H
+#define _MESSAGE_H
 
-#include <sys/time.h>
+void error_message(char *msgfmt, ...);
+void clear_message();
 
-/* Maximum number of columns allowed for display */
-#define MAX_COLS	255
-
-/* Log base 2 of 1024 is 10 (2^10 == 1024) */
-#define LOG1024		10
-
-/* Special atoi routine returns either a non-negative number or one of: */
-#define Infinity	-1
-#define Invalid		-2
-
-/* maximum number we can have */
-#define Largest		0x7fffffff
-
-/*
- * The entire display is based on these next numbers being defined as is.
- */
-
-#define NUM_AVERAGES    3
-
-struct ext_decl {
-    int (*f_minibar)(char *, int);
-    int (*f_display)(char *, int);
-};
-
-/*
- *  "Table_size" defines the size of the hash tables used to map uid to
- *  username.  Things will work best if the number is a prime number.
- *  We use a number that should be suitable for most installations.
- */
-#ifndef Table_size
-#define Table_size	8191
-#endif
-
-void gettime(struct timeval *);
-void quit(int);
-
-#endif /* _TOP_H_ */
+#endif /* _MESSAGE_H_ */
