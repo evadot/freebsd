@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf_osfp.c,v 1.15 2008/06/14 02:22:13 henning Exp $ */
+/*	$OpenBSD: pf_osfp.c,v 1.14 2008/06/12 18:17:01 henning Exp $ */
 
 /*
  * Copyright (c) 2003 Mike Frantzen <frantzen@w4g.org>

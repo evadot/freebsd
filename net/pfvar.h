@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfvar.h,v 1.276 2008/07/03 15:46:23 henning Exp $ */
+/*	$OpenBSD: pfvar.h,v 1.282 2009/01/29 15:12:28 pyr Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -59,7 +59,7 @@ struct ip6_hdr;
 
 enum	{ PF_INOUT, PF_IN, PF_OUT };
 enum	{ PF_PASS, PF_DROP, PF_SCRUB, PF_NOSCRUB, PF_NAT, PF_NONAT,
-	  PF_BINAT, PF_NOBINAT, PF_RDR, PF_NORDR, PF_SYNPROXY_DROP };
+	  PF_BINAT, PF_NOBINAT, PF_RDR, PF_NORDR, PF_SYNPROXY_DROP, PF_DEFER };
 enum	{ PF_RULESET_SCRUB, PF_RULESET_FILTER, PF_RULESET_NAT,
 	  PF_RULESET_BINAT, PF_RULESET_RDR, PF_RULESET_MAX };
 enum	{ PF_OP_NONE, PF_OP_IRG, PF_OP_EQ, PF_OP_NE, PF_OP_LT,
@@ -627,6 +627,7 @@ struct pf_rule {
 /* rule flags again */
 #define PFRULE_IFBOUND		0x00010000	/* if-bound */
 #define PFRULE_STATESLOPPY	0x00020000	/* sloppy state tracking */
+#define PFRULE_PFLOW		0x00040000
 
 #define PFSTATE_HIWAT		10000	/* default state table size */
 #define PFSTATE_ADAPT_START	6000	/* default adaptive timeout start */
@@ -741,6 +742,7 @@ struct pf_state {
 	u_int8_t		 direction;
 	u_int8_t		 pad[3];
 
+	TAILQ_ENTRY(pf_state)	 sync_list;
 	TAILQ_ENTRY(pf_state)	 entry_list;
 	RB_ENTRY(pf_state)	 entry_id;
 	struct pf_state_peer	 src;
@@ -764,11 +766,15 @@ struct pf_state {
 	u_int8_t		 state_flags;
 #define	PFSTATE_ALLOWOPTS	0x01
 #define	PFSTATE_SLOPPY		0x02
+#define	PFSTATE_PFLOW		0x04
+#define	PFSTATE_NOSYNC		0x08
+#define	PFSTATE_ACK		0x10
 	u_int8_t		 timeout;
-	u_int8_t		 sync_flags;
-#define	PFSTATE_NOSYNC	 0x01
-#define	PFSTATE_FROMSYNC 0x02
-#define	PFSTATE_STALE	 0x04
+	u_int8_t		 sync_state; /* PFSYNC_S_x */
+
+	/* XXX */
+	u_int8_t		 sync_updates;
+	u_int8_t		_tail[3];
 };
 
 /*
@@ -825,8 +831,6 @@ struct pfsync_state {
 	u_int8_t	 updates;
 } __packed;
 
-#define PFSYNC_FLAG_COMPRESS	0x01
-#define PFSYNC_FLAG_STALE	0x02
 #define PFSYNC_FLAG_SRCNODE	0x04
 #define PFSYNC_FLAG_NATSRCNODE	0x08
 
@@ -1003,7 +1007,6 @@ struct pfr_kentry {
 	u_int8_t		 pfrke_net;
 	u_int8_t		 pfrke_not;
 	u_int8_t		 pfrke_mark;
-	u_int8_t		 pfrke_intrpool;
 };
 #define pfrke_counters	u.pfrke_counters
 #define pfrke_route	u.pfrke_route
@@ -1656,6 +1659,7 @@ void	pf_change_a(void *, u_int16_t *, u_int32_t, u_int8_t);
 int	pflog_packet(struct pfi_kif *, struct mbuf *, sa_family_t, u_int8_t,
 	    u_int8_t, struct pf_rule *, struct pf_rule *, struct pf_ruleset *,
 	    struct pf_pdesc *);
+void	pf_send_deferred_syn(struct pf_state *);
 int	pf_match_addr(u_int8_t, struct pf_addr *, struct pf_addr *,
 	    struct pf_addr *, sa_family_t);
 int	pf_match_addr_range(struct pf_addr *, struct pf_addr *,
@@ -1685,6 +1689,7 @@ int	pf_routable(struct pf_addr *addr, sa_family_t af, struct pfi_kif *);
 int	pf_rtlabel_match(struct pf_addr *, sa_family_t, struct pf_addr_wrap *);
 int	pf_socket_lookup(int, struct pf_pdesc *);
 struct pf_state_key *pf_alloc_state_key(int);
+void	pf_pkt_addr_changed(struct mbuf *);
 int	pf_state_key_attach(struct pf_state_key *, struct pf_state *, int);
 void	pfr_initialize(void);
 int	pfr_match_addr(struct pfr_ktable *, struct pf_addr *, sa_family_t);
@@ -1694,7 +1699,7 @@ int	pfr_pool_get(struct pfr_ktable *, int *, struct pf_addr *,
 	    struct pf_addr **, struct pf_addr **, sa_family_t);
 void	pfr_dynaddr_update(struct pfr_ktable *, struct pfi_dynaddr *);
 struct pfr_ktable *
-	pfr_attach_table(struct pf_ruleset *, char *);
+	pfr_attach_table(struct pf_ruleset *, char *, int);
 void	pfr_detach_table(struct pfr_ktable *);
 int	pfr_clr_tables(struct pfr_table *, int *, int);
 int	pfr_add_tables(struct pfr_table *, int, int *, int);
@@ -1808,6 +1813,32 @@ void	pf_osfp_initialize(void);
 int	pf_osfp_match(struct pf_osfp_enlist *, pf_osfp_t);
 struct pf_os_fingerprint *
 	pf_osfp_validate(void);
+
+#ifdef _KERNEL
+void			 pf_print_host(struct pf_addr *, u_int16_t, u_int8_t);
+
+void			 pf_step_into_anchor(int *, struct pf_ruleset **, int,
+			    struct pf_rule **, struct pf_rule **, int *);
+int			 pf_step_out_of_anchor(int *, struct pf_ruleset **,
+			     int, struct pf_rule **, struct pf_rule **,
+			     int *);
+
+int			 pf_map_addr(u_int8_t, struct pf_rule *,
+			    struct pf_addr *, struct pf_addr *,
+			    struct pf_addr *, struct pf_src_node **);
+struct pf_rule		*pf_get_translation(struct pf_pdesc *, struct mbuf *,
+			    int, int, struct pfi_kif *, struct pf_src_node **,
+			    struct pf_state_key **, struct pf_state_key **,
+			    struct pf_state_key **, struct pf_state_key **,
+			    struct pf_addr *, struct pf_addr *,
+			    u_int16_t, u_int16_t);
+
+int			 pf_state_key_setup(struct pf_pdesc *, struct pf_rule *,
+			    struct pf_state_key **, struct pf_state_key **,
+			    struct pf_state_key **, struct pf_state_key **,
+			    struct pf_addr *, struct pf_addr *,
+			    u_int16_t, u_int16_t);
+#endif /* _KERNEL */
 
 
 #endif /* _NET_PFVAR_H_ */
