@@ -1,56 +1,54 @@
 
-	    FreeBSD maintainer's guide to updating BIND 9
-	    =============================================
+	    FreeBSD maintainer's guide to updating BIND 9.4.x
+	    =================================================
 
 1) Obtain the latest source distribution from the ISC's FTP server
    (ftp://ftp.isc.org/isc/bind9/)
 
 2) Check out the head of the subversion "vendor branch"
 
-	svn co $REPO/vendor/bind9/dist
-
-	NOTE: For RELENG_6 (BIND 9.3.x) s/dist/dist-9.3/ throughout this file
+	svn co $REPO/vendor/bind9/dist-9.4
 
 3) Unpack the tarball in a suitable directory:
 
-	tar zxvf bind-9.<x.y>.tar.gz -X dist/FREEBSD-Xlist
+	tar zxvf bind-9.4.<x>.tar.gz -X dist-9.4/FREEBSD-Xlist
 
 	Check to see if any files have been added or deleted using
-	diff -ur dist bind-9.<x.y> -x \.svn | grep 'Only in'
+	diff -ur dist-9.4 bind-9.4.<x> -x \.svn | grep 'Only in'
 
 4) Copy new files over the old ones:
 
-	cp -Rp bind-9.<x.y>/* dist/
+	cp -Rp bind-9.4.<x>/* dist-9.4/
 
 5) Double-check for changes using 'svn status'
 
 6) Use 'svn add' and 'svn rm' to bring dist up to date for files found above.
    Update FREEBSD-Xlist as needed.
-   The files in vendor/bind9/dist should now look exactly like those in the
+   The files in vendor/bind9/dist-9.4 should now look exactly like those in the
       ISC sources, minus the files/directories in FREEBSD-Xlist above.
    Carefully check the output of 'svn status' and 'svn diff'
       It's not if you're paranoid, it's if you are paranoid enough
 
 7) Commit the update to the vendor files:
 
-	cd dist ; svn ci -m "Vendor import of BIND 9.X.Y"
-	svn cp $REPO/vendor/bind9/dist $REPO/vendor/bind9/${version}
+	cd dist-9.4 ; svn ci -m "Vendor import of BIND 9.4.X"
+	svn cp $REPO/vendor/bind9/dist-9.4 $REPO/vendor/bind9/${version}
 	   (this is a server-side operation, you dont have to check it out)
 
-8) Update the files in src/contrib/bind9:
+8) Update the files in stable/7/contrib/bind9:
 
-	cd head/contrib/bind9
+	cd stable/7/contrib/bind9
 
 	Make sure you are up to date:
 	svn update ; svn status
 
-	svn merge $REPO/vendor/bind9/dist .
+	svn merge $REPO/vendor/bind9/dist-9.4 .
 	Resolve conflicts (if any)
 	Carefully check the output of 'svn status' and 'svn diff'
 
-	NOTE: You may need 2 copies of head/contrib/bind9 at this point,
+	NOTE: You may need 2 copies of stable/7/contrib/bind9 at this point,
 	      one to do the work in steps 9 and 10 below, and a clean
-	      version to commit in step 13.
+	      version to commit in step 16.
 
 9) Remove any references to the {bin,lib}/tests and docutil
    directories from the configure and Makefile templates:
@@ -73,14 +71,14 @@
 		--with-openssl=/usr --with-randomdev=/dev/random
 
    Note that we intentionally disable IPv6 support on the configure
-   command line; src/lib/bind/config.mk will re-enable it at compile
+   command line; stable/7/lib/bind/config.mk will re-enable it at compile
    time if WITHOUT_INET6 is not defined.
 
-11) Copy the following generated files to src/lib/bind:
+11) Copy the following generated files to stable/7/lib/bind:
 
-	Path in src/contrib/bind9		Path in src/lib/bind
+	Path in stable/7/contrib/bind9		Path in stable/7/lib/bind
 	------------------------------------------------------------
-	s=/usr/src/lib/bind
+	s=../../lib/bind
 	cp config.h				${s}/config.h
 	cp lib/bind/config.h			${s}/bind/config.h
 	cp lib/bind/port_after.h		${s}/bind/port_after.h
@@ -92,46 +90,46 @@
    Do not commit any other file that was modified or created in
    steps 6) or 7).
 
-12) cd src/lib/bind/dns && make -DMAINTAINER_MODE generate && rm gen
+12) cd stable/7/lib/bind/dns && make -DMAINTAINER_MODE generate && rm gen
 
 13) Test build the updated files with a clean /usr/obj and empty src.conf
 
    The following directories contain Makefiles for bits and pieces of
    BIND 9:
 
-	FreeBSD directory		ISC directory
+	FreeBSD directory			ISC directory
 	========================================================
-	src/lib/bind			bind9/lib
-	src/lib/bind/bind		bind9/lib/bind
-	src/lib/bind/bind9		bind9/lib/bind9
-	src/lib/bind/dns		bind9/lib/dns
-	src/lib/bind/isc		bind9/lib/isc
-	src/lib/bind/isccc		bind9/lib/isccc
-	src/lib/bind/isccfg		bind9/lib/isccfg
-	src/lib/bind/lwres		bind9/lib/lwres
-	src/share/doc/bind9		bind9/doc/{arm,misc}
-	src/usr.bin/dig			bind9/bin/dig
-	src/usr.bin/host		bind9/bin/dig
-	src/usr.bin/nslookup		bind9/bin/dig
-	src/usr.bin/nsupdate		bind9/bin/nsupdate
-	src/usr.sbin/dnssec-keygen	bind9/bin/dnssec
-	src/usr.sbin/dnssec-signzone	bind9/bin/dnssec
-	src/usr.sbin/named		bind9/bin/named
-	src/usr.sbin/named-checkconf	bind9/bin/check
-	src/usr.sbin/named-checkzone	bind9/bin/check
-	src/usr.sbin/rndc		bind9/bin/rndc
-	src/usr.sbin/rndc-confgen	bind9/bin/rndc
+	stable/7/lib/bind			bind9/lib
+	stable/7/lib/bind/bind			bind9/lib/bind
+	stable/7/lib/bind/bind9			bind9/lib/bind9
+	stable/7/lib/bind/dns			bind9/lib/dns
+	stable/7/lib/bind/isc			bind9/lib/isc
+	stable/7/lib/bind/isccc			bind9/lib/isccc
+	stable/7/lib/bind/isccfg		bind9/lib/isccfg
+	stable/7/lib/bind/lwres			bind9/lib/lwres
+	stable/7/share/doc/bind9		bind9/doc/{arm,misc}
+	stable/7/usr.bin/dig			bind9/bin/dig
+	stable/7/usr.bin/host			bind9/bin/dig
+	stable/7/usr.bin/nslookup		bind9/bin/dig
+	stable/7/usr.bin/nsupdate		bind9/bin/nsupdate
+	stable/7/usr.sbin/dnssec-keygen		bind9/bin/dnssec
+	stable/7/usr.sbin/dnssec-signzone	bind9/bin/dnssec
+	stable/7/usr.sbin/named			bind9/bin/named
+	stable/7/usr.sbin/named-checkconf	bind9/bin/check
+	stable/7/usr.sbin/named-checkzone	bind9/bin/check
+	stable/7/usr.sbin/rndc			bind9/bin/rndc
+	stable/7/usr.sbin/rndc-confgen		bind9/bin/rndc
 
    Make sure that the lists of sources, headers and man pages in each
    FreeBSD Makefile accurately reflects those in the corresponding ISC
    Makefile.  Please strive to keep those lists in the same order and
    with line breaks in the same places to ease future comparisons.
 
-A) Build and test.
+14) Build and test.
 
-B) Lather, rinse, repeat.
+15) Lather, rinse, repeat.
 
-C) Commit when everything builds cleanly and works properly.
+16) Commit when everything builds cleanly and works properly.
 
 					-- des@FreeBSD.org
 					-- dougb@FreeBSD.org
