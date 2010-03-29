@@ -54,15 +54,15 @@
    directories from the configure and Makefile templates:
 
 	$ sed -i.orig -e '/\/tests/d; /docutil/d; /\/xsl/d;' \
-		configure.in Makefile.in */Makefile.in
+		configure.in Makefile.in */Makefile.in \
+		lib/bind/configure.in lib/bind/Makefile.in
 
    Please do not commit this change. You only need this to generate config.h.
 
 10) Generate and run configure:
 
 	aclocal ; autoheader ; autoconf
-	cd lib/bind
-	aclocal ; autoheader ; autoconf
+	cd lib/bind && aclocal ; autoheader ; autoconf
 	cd ../..
 	$ ./configure --prefix=/usr \
 		--infodir=/usr/share/info --mandir=/usr/share/man \
