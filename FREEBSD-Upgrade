@@ -7,32 +7,32 @@
 
 2) Check out the head of the subversion "vendor branch"
 
-	svn co $REPO/vendor/bind9/dist
+	svn co $REPO/vendor/bind9/dist-9.6
 
 3) Unpack the tarball in a suitable directory:
 
-	tar zxvf bind-9.<x.y>.tar.gz -X dist/FREEBSD-Xlist
+	tar zxvf bind-9.<x.y>.tar.gz -X dist-9.6/FREEBSD-Xlist
 
 	Check to see if any files have been added or deleted using
-	diff -ur dist bind-9.<x.y> -x \.svn | grep 'Only in'
+	diff -ur dist-9.6 bind-9.<x.y> -x \.svn | grep 'Only in'
 
 4) Copy new files over the old ones:
 
-	cp -Rp bind-9.<x.y>/* dist/
+	cp -Rp bind-9.<x.y>/* dist-9.6/
 
 5) Double-check for changes using 'svn status'
 
 6) Use 'svn add' and 'svn rm' to bring dist up to date for files found above.
    Update FREEBSD-Xlist as needed.
-   The files in vendor/bind9/dist should now look exactly like those in the
+   The files in vendor/bind9/dist-9.6 should now look exactly like those in the
       ISC sources, minus the files/directories in FREEBSD-Xlist above.
    Carefully check the output of 'svn status' and 'svn diff'
       It's not if you're paranoid, it's if you are paranoid enough
 
 7) Commit the update to the vendor files:
 
-	cd dist ; svn ci -m "Vendor import of BIND 9.X.Y"
-	svn cp $REPO/vendor/bind9/dist $REPO/vendor/bind9/${version}
+	cd dist-9.6 ; svn ci -m "Vendor import of BIND 9.X.Y"
+	svn cp $REPO/vendor/bind9/dist-9.6 $REPO/vendor/bind9/${version}
 	   (this is a server-side operation, you dont have to check it out)
 
 8) Update the files in src/contrib/bind9:
@@ -42,7 +42,7 @@
 	Make sure you are up to date:
 	svn update ; svn status
 
-	svn merge $REPO/vendor/bind9/dist .
+	svn merge $REPO/vendor/bind9/dist-9.6 .
 	Resolve conflicts (if any)
 	Carefully check the output of 'svn status' and 'svn diff'
 
