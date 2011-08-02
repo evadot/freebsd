@@ -11,8 +11,13 @@ isc-config.sh.docbook
 isc-config.sh.html
 
 # Tests
+Atffile
 bin/tests
+lib/Atffile
+lib/dns/Atffile
+lib/dns/tests
 lib/tests
+unit
 
 # Doc stuff
 doc/arm/latex-fixup.pl
