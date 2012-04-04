@@ -16,6 +16,7 @@ bin/tests
 lib/Atffile
 lib/dns/Atffile
 lib/dns/tests
+lib/isc/tests
 lib/tests
 unit
 
