@@ -7,7 +7,8 @@
 
 2) Check out the head of the subversion "vendor branch"
 
-	svn co $REPO/vendor/bind9/dist-9.6
+	REPO=svn+ssh://svn.freebsd.org/
+	svn co $REPO/base/vendor/bind9/dist-9.6
 
 3) Unpack the tarball in a suitable directory:
 
@@ -32,21 +33,21 @@
 7) Commit the update to the vendor files:
 
 	cd dist-9.6 ; svn ci -m "Vendor import of BIND 9.X.Y"
-	svn cp $REPO/vendor/bind9/dist-9.6 $REPO/vendor/bind9/${version}
+	svn cp $REPO/base/vendor/bind9/dist-9.6 $REPO/base/vendor/bind9/${version}
 	   (this is a server-side operation, you dont have to check it out)
 
 8) Update the files in src/contrib/bind9:
 
-	cd head/contrib/bind9
+	cd stable/8/contrib/bind9
 
 	Make sure you are up to date:
 	svn update ; svn status
 
-	svn merge $REPO/vendor/bind9/dist-9.6 .
+	svn merge $REPO/base/vendor/bind9/dist-9.6 .
 	Resolve conflicts (if any)
 	Carefully check the output of 'svn status' and 'svn diff'
 
-	NOTE: You may need 2 copies of head/contrib/bind9 at this point,
+	NOTE: You may need 2 copies of stable/8/contrib/bind9 at this point,
 	      one to do the work in steps 9 and 10 below, and a clean
 	      version to commit in step 16.
 
