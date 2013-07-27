@@ -1,32 +1,33 @@
 /* inputting files to be patched */
 
-/* $Id: inp.c,v 1.18 1997/07/21 17:59:46 eggert Exp $ */
+/* $Id: inp.c,v 1.25 2003/05/20 13:58:02 eggert Exp $ */
 
-/*
-Copyright 1986, 1988 Larry Wall
-Copyright 1991, 1992, 1993, 1997 Free Software Foundation, Inc.
+/* Copyright (C) 1986, 1988 Larry Wall
+   Copyright (C) 1991, 1992, 1993, 1997, 1998, 1999, 2002, 2003 Free
+   Software Foundation, Inc.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2, or (at your option)
-any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; see the file COPYING.
-If not, write to the Free Software Foundation,
-59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-*/
+   You should have received a copy of the GNU General Public License
+   along with this program; see the file COPYING.
+   If not, write to the Free Software Foundation,
+   59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #define XTERN extern
 #include <common.h>
 #include <backupfile.h>
 #include <pch.h>
+#include <quotearg.h>
 #include <util.h>
+#include <xalloc.h>
 #undef XTERN
 #define XTERN
 #include <inp.h>
@@ -47,25 +48,32 @@ static LINENUM lines_per_buf;		/* how many lines per buffer */
 static size_t tireclen;			/* length of records in tmp file */
 static size_t last_line_size;		/* size of last input line */
 
-static bool plan_a PARAMS ((char const *));/* yield FALSE if memory runs out */
-static void plan_b PARAMS ((char const *));
-static void report_revision PARAMS ((int));
-static void too_many_lines PARAMS ((char const *)) __attribute__((noreturn));
+static bool plan_a (char const *);	/* yield false if memory runs out */
+static void plan_b (char const *);
+static void report_revision (bool);
+static void too_many_lines (char const *) __attribute__((noreturn));
 
 /* New patch--prepare to edit another file. */
 
 void
-re_input()
+re_input (void)
 {
     if (using_plan_a) {
-	free (i_buffer);
-	free (i_ptr);
+      if (i_buffer)
+	{
+	  free (i_buffer);
+	  i_buffer = 0;
+	  free (i_ptr);
+	}
     }
     else {
 	close (tifd);
 	tifd = -1;
-	free(tibuf[0]);
-	tibuf[0] = 0;
+	if (tibuf[0])
+	  {
+	    free (tibuf[0]);
+	    tibuf[0] = 0;
+	  }
 	tiline[0] = tiline[1] = -1;
 	tireclen = 0;
     }
@@ -74,54 +82,49 @@ re_input()
 /* Construct the line index, somehow or other. */
 
 void
-scan_input(filename)
-char *filename;
+scan_input (char *filename)
 {
     using_plan_a = ! (debug & 16) && plan_a (filename);
     if (!using_plan_a)
 	plan_b(filename);
-    switch (verbosity)
+
+    if (verbosity != SILENT)
       {
-      case SILENT:
-	break;
+	filename = quotearg (filename);
 
-      case VERBOSE:
-	say ("Patching file `%s' using Plan %s...\n",
-	     filename, using_plan_a ? "A" : "B");
-	break;
-
-      case DEFAULT_VERBOSITY:
-	say ("patching file `%s'\n", filename);
-	break;
+	if (verbosity == VERBOSE)
+	  say ("Patching file %s using Plan %s...\n",
+	       filename, using_plan_a ? "A" : "B");
+	else
+	  say ("patching file %s\n", filename);
       }
 }
 
 /* Report whether a desired revision was found.  */
 
 static void
-report_revision (found_revision)
-     int found_revision;
+report_revision (bool found_revision)
 {
+  char const *rev = quotearg (revision);
+
   if (found_revision)
     {
       if (verbosity == VERBOSE)
-	say ("Good.  This file appears to be the %s version.\n", revision);
+	say ("Good.  This file appears to be the %s version.\n", rev);
     }
   else if (force)
     {
       if (verbosity != SILENT)
 	say ("Warning: this file doesn't appear to be the %s version -- patching anyway.\n",
-	     revision);
+	     rev);
     }
   else if (batch)
-    {
-      fatal ("This file doesn't appear to be the %s version -- aborting.",
-	     revision);
-    }
+    fatal ("This file doesn't appear to be the %s version -- aborting.",
+	   rev);
   else
     {
       ask ("This file doesn't appear to be the %s version -- patch anyway? [n] ",
-	   revision);
+	   rev);
       if (*buf != 'y')
 	fatal ("aborted");
     }
@@ -129,19 +132,16 @@ report_revision (found_revision)
 
 
 static void
-too_many_lines (filename)
-     char const *filename;
+too_many_lines (char const *filename)
 {
-  fatal ("File `%s' has too many lines.", filename);
+  fatal ("File %s has too many lines", quotearg (filename));
 }
 
 
 void
-get_input_file (filename, outname)
-     char const *filename;
-     char const *outname;
+get_input_file (char const *filename, char const *outname)
 {
-    int elsewhere = strcmp (filename, outname);
+    bool elsewhere = strcmp (filename, outname) != 0;
     char const *cs;
     char *diffbuf;
     char *getbuf;
@@ -168,18 +168,23 @@ get_input_file (filename, outname)
 		if (!elsewhere
 		    && (instat.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) != 0)
 		    /* Somebody can write to it.  */
-		    fatal ("file `%s' seems to be locked by somebody else under %s",
-			   filename, cs);
-		/* It might be checked out unlocked.  See if it's safe to
-		   check out the default version locked.  */
-		if (verbosity == VERBOSE)
-		    say ("Comparing file `%s' to default %s version...\n",
-			 filename, cs);
-		if (systemic (diffbuf) != 0)
+		  fatal ("File %s seems to be locked by somebody else under %s",
+			 quotearg (filename), cs);
+		if (diffbuf)
 		  {
-		    say ("warning: patching file `%s', which does not match default %s version\n",
-			 filename, cs);
-		    cs = 0;
+		    /* It might be checked out unlocked.  See if it's safe to
+		       check out the default version locked.  */
+
+		    if (verbosity == VERBOSE)
+		      say ("Comparing file %s to default %s version...\n",
+			   quotearg (filename), cs);
+
+		    if (systemic (diffbuf) != 0)
+		      {
+			say ("warning: Patching file %s, which does not match default %s version\n",
+			     quotearg (filename), cs);
+			cs = 0;
+		      }
 		  }
 	    }
 
@@ -188,12 +193,13 @@ get_input_file (filename, outname)
 	      inerrno = 0;
 
 	    free (getbuf);
-	    free (diffbuf);
+	    if (diffbuf)
+	      free (diffbuf);
 
     } else if (inerrno && !pch_says_nonexistent (reverse))
       {
 	errno = inerrno;
-	pfatal ("can't find file `%s'", filename);
+	pfatal ("Can't find file %s", quotearg (filename));
       }
 
     if (inerrno)
@@ -202,15 +208,15 @@ get_input_file (filename, outname)
 	instat.st_size = 0;
       }
     else if (! S_ISREG (instat.st_mode))
-      fatal ("`%s' is not a regular file -- can't patch", filename);
+      fatal ("File %s is not a regular file -- can't patch",
+	     quotearg (filename));
 }
 
 
 /* Try keeping everything in memory. */
 
 static bool
-plan_a(filename)
-     char const *filename;
+plan_a (char const *filename)
 {
   register char const *s;
   register char const *lim;
@@ -223,7 +229,7 @@ plan_a(filename)
      or if storage isn't available.  */
   if (! (size == instat.st_size
 	 && (buffer = malloc (size ? size : (size_t) 1))))
-    return FALSE;
+    return false;
 
   /* Read the input file, but don't bother reading it if it's empty.
      When creating files, the files do not actually exist.  */
@@ -232,7 +238,7 @@ plan_a(filename)
       int ifd = open (filename, O_RDONLY|binary_transput);
       size_t buffered = 0, n;
       if (ifd < 0)
-	pfatal ("can't open file `%s'", filename);
+	pfatal ("can't open file %s", quotearg (filename));
 
       while (size - buffered != 0)
 	{
@@ -249,7 +255,7 @@ plan_a(filename)
 	      /* Perhaps size is too large for this host.  */
 	      close (ifd);
 	      free (buffer);
-	      return FALSE;
+	      return false;
 	    }
 	  buffered += n;
 	}
@@ -269,7 +275,7 @@ plan_a(filename)
 	 && (ptr = (char const **) malloc ((size_t) iline * sizeof *ptr))))
     {
       free (buffer);
-      return FALSE;
+      return false;
     }
   iline = 0;
   for (s = buffer;  ;  s++)
@@ -286,7 +292,7 @@ plan_a(filename)
     {
       char const *rev = revision;
       int rev0 = rev[0];
-      int found_revision = 0;
+      bool found_revision = false;
       size_t revlen = strlen (rev);
 
       if (revlen <= size)
@@ -298,7 +304,7 @@ plan_a(filename)
 		&& (s == buffer || ISSPACE ((unsigned char) s[-1]))
 		&& (s + 1 == limrev || ISSPACE ((unsigned char) s[revlen])))
 	      {
-		found_revision = 1;
+		found_revision = true;
 		break;
 	      }
 	}
@@ -309,30 +315,32 @@ plan_a(filename)
   /* Plan A will work.  */
   i_buffer = buffer;
   i_ptr = ptr;
-  return TRUE;
+  return true;
 }
 
 /* Keep (virtually) nothing in memory. */
 
 static void
-plan_b(filename)
-     char const *filename;
+plan_b (char const *filename)
 {
   register FILE *ifp;
   register int c;
   register size_t len;
   register size_t maxlen;
-  register int found_revision;
+  register bool found_revision;
   register size_t i;
   register char const *rev;
   register size_t revlen;
   register LINENUM line = 1;
+  int exclusive;
 
   if (instat.st_size == 0)
     filename = NULL_DEVICE;
   if (! (ifp = fopen (filename, binary_transput ? "rb" : "r")))
-    pfatal ("can't open file `%s'", filename);
-  tifd = create_file (TMPINNAME, O_RDWR | O_BINARY, (mode_t) 0);
+    pfatal ("Can't open file %s", quotearg (filename));
+  exclusive = TMPINNAME_needs_removal ? 0 : O_EXCL;
+  TMPINNAME_needs_removal = 1;
+  tifd = create_file (TMPINNAME, O_RDWR | O_BINARY | exclusive, (mode_t) 0);
   i = 0;
   len = 0;
   maxlen = 1;
@@ -415,13 +423,11 @@ plan_b(filename)
   input_lines = line - 1;
 }
 
-/* Fetch a line from the input file. */
+/* Fetch a line from the input file.
+   WHICHBUF is ignored when the file is in memory.  */
 
 char const *
-ifetch (line, whichbuf, psize)
-register LINENUM line;
-int whichbuf;				/* ignored when file in memory */
-size_t *psize;
+ifetch (LINENUM line, bool whichbuf, size_t *psize)
 {
     register char const *q;
     register char const *p;
@@ -439,9 +445,9 @@ size_t *psize;
 	LINENUM baseline = line - offline;
 
 	if (tiline[0] == baseline)
-	    whichbuf = 0;
+	    whichbuf = false;
 	else if (tiline[1] == baseline)
-	    whichbuf = 1;
+	    whichbuf = true;
 	else {
 	    tiline[whichbuf] = baseline;
 	    if (lseek (tifd, (off_t) (baseline/lines_per_buf * tibufsize),

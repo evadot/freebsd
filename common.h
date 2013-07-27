@@ -1,47 +1,35 @@
 /* common definitions for `patch' */
 
-/* $Id: common.h,v 1.18 1997/06/13 06:28:37 eggert Exp $ */
+/* $Id: common.h,v 1.34 2003/05/19 06:57:36 eggert Exp $ */
 
-/*
-Copyright 1986, 1988 Larry Wall
-Copyright 1990, 1991, 1992, 1993, 1997 Free Software Foundation, Inc.
+/* Copyright (C) 1986, 1988 Larry Wall
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2, or (at your option)
-any later version.
+   Copyright (C) 1990, 1991, 1992, 1993, 1997, 1998, 1999, 2002, 2003
+   Free Software Foundation, Inc.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-See the GNU General Public License for more details.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
 
-You should have received a copy of the GNU General Public License
-along with this program; see the file COPYING.
-If not, write to the Free Software Foundation,
-59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-*/
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+   See the GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; see the file COPYING.
+   If not, write to the Free Software Foundation,
+   59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef DEBUGGING
 #define DEBUGGING 1
 #endif
 
-/* We must define `volatile' and `const' first (the latter inside config.h),
-   so that they're used consistently in all system includes.  */
-#ifndef __STDC__
-# ifndef volatile
-# define volatile
-# endif
-#endif
-
-/* Enable support for fseeko and ftello on hosts
-   where it is available but is turned off by default.
-   This must be defined before any system file is included.  */
-#define _LARGEFILE_SOURCE 1
-
 #include <config.h>
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <time.h>
@@ -80,15 +68,40 @@ If not, write to the Free Software Foundation,
 #ifndef S_IRUSR
 #define S_IRUSR (S_IROTH << 6)
 #endif
+#ifdef MKDIR_TAKES_ONE_ARG
+# define mkdir(name, mode) ((mkdir) (name))
+#endif
 
 #if HAVE_LIMITS_H
 # include <limits.h>
 #endif
+#ifndef CHAR_BIT
+#define CHAR_BIT 8
+#endif
+/* The extra casts work around common compiler bugs,
+   e.g. Cray C 5.0.3.0 time_t.  */
+#define TYPE_SIGNED(t) ((t) -1 < (t) 0)
+#define TYPE_MINIMUM(t) ((t) (TYPE_SIGNED (t) \
+			      ? (t) (~ (t) 0 << (sizeof (t) * CHAR_BIT - 1)) \
+			      : (t) 0))
+#define TYPE_MAXIMUM(t) ((t) ((t) ~ (t) 0 - TYPE_MINIMUM (t)))
+#ifndef CHAR_MAX
+#define CHAR_MAX TYPE_MAXIMUM (char)
+#endif
 #ifndef INT_MAX
-#define INT_MAX 2147483647
+#define INT_MAX TYPE_MAXIMUM (int)
 #endif
 #ifndef LONG_MIN
-#define LONG_MIN (-1-2147483647L)
+#define LONG_MIN TYPE_MINIMUM (long)
+#endif
+
+#if HAVE_INTTYPES_H
+# include <inttypes.h>
+#endif
+#ifndef SIZE_MAX
+/* On some nonstandard hosts, size_t is signed,
+   so SIZE_MAX != (size_t) -1.  */
+#define SIZE_MAX TYPE_MAXIMUM (size_t)
 #endif
 
 #include <ctype.h>
@@ -108,27 +121,6 @@ If not, write to the Free Software Foundation,
 #endif
 
 
-#ifndef FILESYSTEM_PREFIX_LEN
-#define FILESYSTEM_PREFIX_LEN(f) 0
-#endif
-
-#ifndef ISSLASH
-#define ISSLASH(c) ((c) == '/')
-#endif
-
-
-/* constants */
-
-/* AIX predefines these.  */
-#ifdef TRUE
-#undef TRUE
-#endif
-#ifdef FALSE
-#undef FALSE
-#endif
-#define TRUE 1
-#define FALSE 0
-
 /* handy definitions */
 
 #define strEQ(s1,s2) (!strcmp(s1, s2))
@@ -136,12 +128,11 @@ If not, write to the Free Software Foundation,
 
 /* typedefs */
 
-typedef int bool;			/* must promote to itself */
-typedef long LINENUM;			/* must be signed */
+typedef off_t LINENUM;			/* must be signed */
 
 /* globals */
 
-extern char const program_name[];
+XTERN char *program_name;	/* The name this program was run with. */
 
 XTERN char *buf;			/* general purpose buffer */
 XTERN size_t bufsize;			/* allocated size of buf */
@@ -159,9 +150,13 @@ XTERN bool posixly_correct;
 XTERN char const *origprae;
 XTERN char const *origbase;
 
-XTERN char const * volatile TMPOUTNAME;
 XTERN char const * volatile TMPINNAME;
+XTERN char const * volatile TMPOUTNAME;
 XTERN char const * volatile TMPPATNAME;
+
+XTERN int volatile TMPINNAME_needs_removal;
+XTERN int volatile TMPOUTNAME_needs_removal;
+XTERN int volatile TMPPATNAME_needs_removal;
 
 #ifdef DEBUGGING
 XTERN int debug;
@@ -171,14 +166,14 @@ XTERN int debug;
 XTERN bool force;
 XTERN bool batch;
 XTERN bool noreverse;
-XTERN int reverse;
+XTERN bool reverse;
 XTERN enum { DEFAULT_VERBOSITY, SILENT, VERBOSE } verbosity;
 XTERN bool skip_rest_of_patch;
 XTERN int strippath;
 XTERN bool canonicalize;
 XTERN int patch_get;
-XTERN int set_time;
-XTERN int set_utc;
+XTERN bool set_time;
+XTERN bool set_utc;
 
 enum diff
   {
@@ -194,26 +189,11 @@ XTERN enum diff diff_type;
 
 XTERN char *revision;			/* prerequisite revision, if any */
 
-#ifdef __STDC__
-# define GENERIC_OBJECT void
-#else
-# define GENERIC_OBJECT char
-#endif
-
 #if __GNUC__ < 2 || (__GNUC__ == 2 && __GNUC_MINOR__ < 6) || __STRICT_ANSI__
 # define __attribute__(x)
 #endif
 
-#ifndef PARAMS
-# ifdef __STDC__
-#  define PARAMS(args) args
-# else
-#  define PARAMS(args) ()
-# endif
-#endif
-
-GENERIC_OBJECT *xmalloc PARAMS ((size_t));
-void fatal_exit PARAMS ((int)) __attribute__ ((noreturn));
+void fatal_exit (int) __attribute__ ((noreturn));
 
 #include <errno.h>
 #if !STDC_HEADERS && !defined errno
@@ -226,24 +206,24 @@ extern int errno;
 # if !HAVE_MEMCHR
 #  define memcmp(s1, s2, n) bcmp (s1, s2, n)
 #  define memcpy(d, s, n) bcopy (s, d, n)
-GENERIC_OBJECT *memchr ();
+void *memchr ();
 # endif
 #endif
 
 #if STDC_HEADERS
 # include <stdlib.h>
 #else
-long atol ();
 char *getenv ();
-GENERIC_OBJECT *malloc ();
-GENERIC_OBJECT *realloc ();
+void *malloc ();
+void *realloc ();
 #endif
 
 #if HAVE_UNISTD_H
 # include <unistd.h>
-#endif
-#ifndef lseek
-off_t lseek ();
+#else
+# ifndef lseek
+   off_t lseek ();
+# endif
 #endif
 #ifndef SEEK_SET
 #define SEEK_SET 0
@@ -257,7 +237,7 @@ off_t lseek ();
 #ifndef STDERR_FILENO
 #define STDERR_FILENO 2
 #endif
-#if _LFS_LARGEFILE
+#if HAVE_FSEEKO
   typedef off_t file_offset;
 # define file_seek fseeko
 # define file_tell ftello
@@ -265,6 +245,13 @@ off_t lseek ();
   typedef long file_offset;
 # define file_seek fseek
 # define file_tell ftell
+#endif
+#if ! (HAVE_GETEUID || defined geteuid)
+# if ! (HAVE_GETUID || defined getuid)
+#  define geteuid() (-1)
+# else
+#  define geteuid() getuid ()
+# endif
 #endif
 
 #if HAVE_FCNTL_H
@@ -288,11 +275,14 @@ off_t lseek ();
 #ifndef O_CREAT
 #define O_CREAT 0
 #endif
+#ifndef O_EXCL
+#define O_EXCL 0
+#endif
 #ifndef O_TRUNC
 #define O_TRUNC 0
 #endif
 
-#if HAVE_SETMODE
+#if HAVE_SETMODE_DOS
   XTERN int binary_transput;	/* O_BINARY if binary i/o is desired */
 #else
 # define binary_transput 0

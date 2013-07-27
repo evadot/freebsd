@@ -1,3 +1,573 @@
+2003-05-20  Paul Eggert  <eggert@twinsun.com>
+
+	* NEWS, configure.ac (AC_INIT): Version 2.5.9 released.
+
+	* Makefile.in (HDRS): Add gettext.h.
+
+	Use bool, not int, for booleans.
+
+	* pch.c (pch_says_nonexistent): Returns int, not bool.
+
+	* configure.ac: Add AM_STDBOOL_H.
+
+	* Makefile.in (MISC): Add stdbool.h.in.
+	(stdbool.h): New rule.
+	(ACINCLUDE_INPUTS): Add stdbool.m4.
+	(mostlyclean): Remove stdbool.h.
+	(COMMON): New macro; use it instead of common.h for dependencies.
+
+	* common.h: Include <stdbool.h>.
+	Remove TRUE, FALSE, bool.  All uses changed to standard names.
+
+	* common.h (reverse, set_time, set_utc):
+	Use bool, not int, for booleans.
+	* pch.c (p_strip_trailing_cr, p_pass_comments_through,
+	prefix_components, pget_line, re_patch,
+	there_is_another_patch, intuit_diff_type, scan_linenum,
+	another_hunk, pget_line, pch_timestamp): Likewise.
+	* inp.h (ifetch): Likewise.
+	* util.c (move_file, version_controller, version_get, ok_to_reverse,
+	set_signals): Likewise.
+	* inp.c (report_revision, get_input_file, plan_a, plan_b, ifetch):
+	Likewise.
+	* util.h (ok_to_reverse, version_controller, version_get,
+	move_file, set_signals): Likewise.
+	* pch.h (another_hunk, pch_says_nonexistent, pch_timestamp):
+	Likewise.
+	* patch.c (struct outstate, numeric_string, make_backups,
+	backup_if_mismatch, remove_empty_files,
+	reverse_flag_specified, main, reinitialize_almost_everything,
+	get_some_switches, apply_hunk, init_output, copy_till):
+	Likewise.
+
+2003-05-18  Paul Eggert  <eggert@twinsun.com>
+
+	* pch.c (p_pass_comments_through): New var.
+	(pget_line): Accept new arg for pass_comments_through.
+	All callers changed.
+	(there_is_another_patch): Do not suggest -p for ed diffs.
+	(intuit_diff_type): Check ed command for correct syntax.
+	Do not set p_strip_trailing_cr merely because a -p line contains a CR.
+	(get_ed_command_letter): New function.
+	(do_ed_script): Use it.  Do not treat '#' data lines as comments in ed
+	scripts.
+
+	* util.c (move_file):
+	Don't assume that when 'rename(A,B)' succeeds then A no
+	longer exists.  This is not true of POSIX 1003.1-2001 rename when A
+	and B are links to the same file.
+	(fetchname): Fix test for file names with internal spaces.
+
+	* version.c: Don't include patchlevel.h.
+	(version): Use PACKAGE_NAME and PACKAGE_VERSION instead of obsolete
+	PROGRAM_NAME and PATCH_VERSION.
+	(copyright_string): Bump to 2003.
+
+	* common.h (FILESYSTEM_PREFIX_LEN, ISSLASH):
+	Remove; now done by 'configure'.
+	(PROGRAM_NAME): Remove; now done by 'configure' as PACKAGE_NAME.
+
+	* patch.c: Do not include <exitfail.h>.
+	(main): Set xalloc_exit_failure, not exit_failure.
+	Add "&& !skip_rest_of_patch" when deciding to continue ed scripts.
+	(option_help): Use PACKAGE_BUGREPORT rather than hardcoding.
+
+	* configure.ac (AC_PREREQ): Bump to 2.57.
+	(AC_GNU_SOURCE): Add, early on.
+	(gl_BACKUPFILE, gl_DIRNAME, gl_ERROR, gl_FUNC_MEMCHR, gl_FUNC_RMDIR,
+	gl_GETOPT, gl_PREREQ_XMALLOC, gl_QUOTE, gl_QUOTEARG): Add.
+	(jm_PREREQ_ADDEXT): Add, with definition.
+	(jm_PREREQ_DIRNAME, jm_PREREQ_ERROR, jm_PREREQ_MEMCHR,
+	jm_PREREQ_QUOTEARG): Remove.
+	(AC_REPLACE_FUNCS): Remove memchr, rename, rmdir).
+	(jm_FUNC_GLIBC_UNLOCKED_IO, jm_AC_DOS): Add.
+	(jm_CHECK_TYPE_STRUCT_DIRENT_D_INO): Do not call directly.
+	(AC_OUTPUT): Use new style, with AC_CONFIG_FILES.
+
+	Update to current CVS gnulib.
+
+	* exitfail.c, exitfail.h, patchlevel.h, rename.c, m4/c-bs-a.m4,
+	m4/jm-glibc-io.m4, m4/prereq.m4: Remove.
+	* m4/backupfile.m4, m4/dirname.m4, m4/dos.m4, m4/getopt.m4,
+	m4/memchr.m4, m4/onceonly.m4, m4/quote.m4, m4/quotearg.m4,
+	m4/rmdir.m4, m4/unlocked-io.m4, m4/xalloc.m4: New files.
+	* Makefile.in (LIBSRCS): Move error.c here from SRCS.
+	Remove rename.c.
+	(OBJS): Remove error.$(OBJEXT).
+	(HDRS): Remove exitfail.h, patchlevel.h.
+	(ACINCLUDE_INPUTS): Remove c-bs-a.m4, jm-glibc-io.m4, prereq.m4.
+	Add backupfile.m4, dirname.m4, dos.m4, getopt.m4, memchr.m4,
+	onceonly.m4, quote.m4, quotearg.m4, rmdir.m4, unlocked-io.m4,
+	xalloc.m4.
+	(patchlevel.h): Remove.  All uses removed.
+	(argmatch.$(OBJEXT), error.$(OBJEXT), quotesys.$(OBJEXT)),
+	xmalloc.$(OBJEXT)): Depend on gettext.h.
+	(dirname.$(OBJEXT), quote.$(OBJEXT), strncasecmp.$(OBJEXT)): New rules.
+	(patch.$(OBJEXT), xmalloc.$(OBJEXT)): Remove exitfail.h.
+	(rename.$(OBJEXT)): Remove.
+	(version.$(OBJEXT)): Remove util.h.
+	(xmalloc.$(OBJEXT)): Add error.h.
+
+2002-11-23  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (main): Don't check for zero-sized file after 'ed'
+	when skipping patch.  From Michael Fedrowitz.
+
+2002-06-03  Paul Eggert  <eggert@twinsun.com>
+
+	* configure.ac (AC_OUTPUT): Use new form, with AC_CONFIG_FILES,
+	instead of obsolescent form.  Patch from Art Haas.
+
+	* pch.c (intuit_diff_type): Do not warn about trailing white space
+	after Prereq: word.  Bug reported by Mike Castle.
+
+2002-06-02  Paul Eggert  <eggert@twinsun.com>
+
+	* NEWS, configure.ac (AC_INIT): Version 2.5.8 released.
+
+	* README: POSIX.2 -> POSIX.
+	* inp.c (report_revision): Don't modify 'revision', since
+	it gets freed later.  Bug reported by Mike Castle.
+
+2002-05-30  Paul Eggert  <eggert@twinsun.com>
+
+	* NEWS, configure.ac (AC_INIT): Version 2.5.7 released.
+
+	* Makefile.in (MISC): Remove README-alpha.
+	(patchlevel.h): Depend on configure, not configure.ac.
+
+	* INSTALL: Upgrade to Autoconf 2.53 version.
+
+2002-05-28  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (end_defined, apply_hunk): Output #endif without
+	the comment, as POSIX 1003.1-2001 requires.
+
+	* pch.c (there_is_another_patch): Flush stderr after perror.
+
+	* NEWS, configure.ac (AC_INIT): Version 2.5.6 released.
+
+	* strcasecmp.c, strncasecmp.c: New files, taken from fileutils.
+	* config.guess, config.sub: Remove.
+	* Makefile.in (LIBSRCS): Add strcasecmp.c, strncasecmp.c.
+	(MISC): Remove config.guess, config.sub.
+
+	The code already assumes C89 or better, so remove K&R stuff.
+	* common.h (volatile): Remove.
+	(GENERIC_OBJECT): Remove; all uses changed to 'void'.
+	(PARAMS): Remove; all uses changed to prototypes.
+	* configure.ac (AC_PROG_CC_STDC): Add.
+	* util.c (vararg_start): Remove.  All uses changed to va_start.
+	Always include <stdarg.h>.
+	
+	* configure.ac (AC_CANONICAL_HOST): Remove.
+	(AC_REPLACE_FUNCS): Add strncasecmp.
+	(AC_CHECK_DECLS): Add mktemp.
+	
+	* patch.c (main): Remove useless prototype decl.
+	(mktemp): Don't declare if HAVE_DECL_MKTEMP || defined mktemp.
+	(make_temp): Now accepts char, not int.
+	
+2002-05-26  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (not_defined): Prepend newline.  All uses changed.
+	(apply_hunk): Fix bug: -D was outputting #ifdef when it should
+	have been outputting #ifndef.  Bug report and partial fix by
+	Jason Short.
+
+	* pch.c (intuit_diff_type): When reading an ed diff, don't use
+	indent and trailing-CR-ness of "." line; instead, use that of the
+	command.  Bug reported by Anthony Towns; partial fix by Michael
+	Fedrowitz.
+	(intuit_diff_type): If the index line exists, don't report a
+	missing header.  Fix by Chip Salzenberg.
+
+2002-05-26  Alessandro Rubini  <rubini@gnu.org>
+
+	* patch.c (locate_hunk): Fixed updating of last_offset.
+
+2002-05-25  Paul Eggert  <eggert@twinsun.com>
+
+	* NEWS, README: Diffutils doc is up to date now.
+	Bug reporting address is now <bug-patch@gnu.org>.
+	* README: Describe '--disable-largefile'.
+
+	* NEWS-alpha, dirname.c, dirname.h, exitfail.c, exitfail.h,
+	quote.c, quote.h, unlocked-io.h: New files, taken from diffutils
+	and fileutils.
+
+	* argmatch.c: [STDC_HEADERS]: Include stdlib.h, for 'exit'.
+
+	* addext.c, argmatch.c, argmatch.h, backupfile.c, basename.c:
+	Update from diffutils and fileutils.
+
+	* ansi2knr.1, ansi2knr.c: Remove.
+
+	* common.h: HAVE_SETMODE && O_BINARY -> HAVE_SETMODE_DOS.
+	* patch.c (usage): Likewise.
+	* pch.c (open_patch_file): Likewise.
+
+	* configure.ac: Renamed from configure.in.  Add copyright notice.
+	(AC_PREREQ): Bump to 2.53.
+	(AC_INIT): Use 2.5x style.
+	(AC_CONFIG_SRCDIR): Add.
+	(PACKAGE, VERSION): Remove.
+	(AC_C_PROTOTYPES): Use this instead of AM_C_PROTOTYPES.
+	(jm_CHECK_TYPE_STRUCT_UTIMBUF): Use this instead of jm_STRUCT_UTIMBUF.
+	(jm_PREREQ_ADDEXT, jm_PREREQ_DIRNAME, jm_PREREQ_ERROR,
+	jm_PREREQ_MEMCHR, jm_PREREQ_QUOTEARG): Add.
+	(AC_CHECK_DECLS): Add free, getenv, malloc.
+	(AC_CHECK_FUNCS): Remove setmode.
+	(AC_FUNC_SETMODE_DOS): Add.
+	(jm_CHECK_TYPE_STRUCT_DIRENT_D_INO): Use this instead of
+	jm_STRUCT_DIRENT_D_INO.
+
+	* Makefile.in (OBJEXT): New var.
+	(PACKAGE_NAME): Renamed from PACKAGE.  All uses changed.
+	(PACKAGE_VERSION): Renamed from VERSION.  All uses changed.
+	(U): Remove.  All uses of "$U.o" changed to ".$(OBJEXT)".
+	(LIBSRCS): REmove getopt.c getopt1.c.  Add mkdir.c, rmdir.c.
+	(SRCS): Add dirname.c, exitfail.c, getopt.c, getopt1.c, quote.c.
+	Remove mkdir.c.
+	(OBJS): Keep in sync with SRCS.
+	(HDRS): Remove basename.h.
+	Add dirname.h, exitfail.h, quote.h, unlocked-io.h.
+	(MISC, configure, config.hin, patchlevel.h):
+	configure.ac renamed from configure.in.
+	(MISC): Add README-alpha. Remove ansi2knr.1, ansi2knr.c.
+	(.c.$(OBJEXT)): Renamed from .c.o.
+	(ACINCLUDE_INPUTS): Add c-bs-a.m4, error.m4, jm-glibc-io.m4,
+	mbstate_t.m4, mkdir.m4, mbrtowc.m4, prereq.m4, setmode.m4.
+	Remove ccstdc.m4, inttypes_h.m4, largefile.m4, protos.m4.
+	(mostlyclean): Don't clean ansi2knr.
+	(ansi2knr.o, ansi2knr): Remove.
+	Redo dependencies.
+
+	* patch.c: Include <exitfail.h>.
+	(main): Initialize exit_failure.
+
+	* patch.man: Update copyright notice.
+
+	* pch.c, util.c: Include <dirname.h>, not <basename.h>.
+
+	* version.c (copyright_string): Update copyright notice.
+
+2002-02-17  Paul Eggert  <eggert@twinsun.com>
+
+	* partime.c (parse_pattern_letter): Don't overrun buffer if it
+	contains only alphanumerics.  Bug reported by Winni
+	<Winni470@gmx.net>.
+
+2001-07-28  Paul Eggert  <eggert@sic.twinsun.com>
+
+	* util.c (fetchname), NEWS:
+	Allow file names with internal spaces, so long as they
+	don't contain tabs.
+
+	* pch.c (intuit_diff_type): Do not allow Prereq with multiple words.
+
+	* configure.in (AC_PREREQ): Bump to 2.50.
+	(AC_CHECK_FUNCS): Remove fseeko.
+	(AC_FUNC_FSEEKO): Add.
+	* Makefile.in (ACINCLUDE_INPUTS):
+	Remove largefile.m4; no longer needed with Autoconf 2.50.
+
+2001-02-07  "Tony E. Bennett" <tbennett@nvidia.com>
+
+	* util.c (PERFORCE_CO): New var.
+	(version_controller): Support Perforce.
+	* patch.man: Document this.
+
+2000-06-30  Paul Eggert  <eggert@sic.twinsun.com>
+
+	* patch.man: Ignore comment lines.
+
+	* NEWS, pch.c: Ignore lines beginning with "#".
+
+1999-10-24  Paul Eggert  <eggert@twinsun.com>
+
+	* pch.c (another_hunk): Report a fatal error if a regular
+	context hunk's pattern has a different number of unchanged
+	lines than the replacement.
+
+1999-10-18  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (main): If we skipped an ed patch, exit with nonzero status.
+
+1999-10-17  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (main): Apply do_ed_script even if dry_run, because
+	we need to make progress on the patch file.
+	* pch.c (do_ed_script): If skip_rest_of_patch is nonzero,
+	gobble up the patch without any other side effect.
+
+1999-10-12  Paul Eggert  <eggert@twinsun.com>
+
+	* NEWS, README: New bug reporting address.
+	* NEWS: Report change in 2.5.4 that we forgot to document.
+	* README: Document `configure --disable-largefile'.
+
+	* basename.c, COPYING, getopt.c, getopt.h, getopt1.c, m4/largefile.m4:
+	Update to latest version.
+	* Makefile.in (basename$U.o): Depend on basename.h.
+	(config.hin): Depend on $(srcdir)/aclocal.m4.
+
+	* ansi2knr.c, maketime.c, mkinstalldirs, partime.c: Fix $Id.
+
+	FreeBSD has an unrelated setmode function; work around this.
+	* common.h (binary_transput): Don't declare unless O_BINARY.
+	* patch.c (option_help, get_some_switches):
+	Don't use setmode unless O_BINARY.
+	* pch.c (open_patch_file): Don't invoke setmode unless O_BINARY.
+
+	Fix incompatiblities with error.c.
+	* common.h (program_name): Now XTERN char *, for compatibility
+	with error.c.  All uses changed.
+	(PROGRAM_NAME): New macro.
+	(PARAMS): Use ANSI C version only if defined PROTOTYPES
+	|| (defined __STDC__ && __STDC__), for compatibilty with error.c.
+	* util.c (vararg_start): Likewise.
+	* patch.c (program_name): Remove.
+	(main): Initialize program_name.
+	* version.c (version): Print PROGRAM_NAME, not program_name.
+
+	Accommodate mingw32 port, which has one-argument mkdir (yuck!)
+	and no geteuid.
+	* m4/mkdir.m4: New file.
+	* Makefile.in (ACINCLUDE_INPUTS): Add $(M4DIR)/mkdir.m4.
+	* configure.in (AC_CHECK_FUNCS): Add geteuid, getuid.
+	(PATCH_FUNC_MKDIR_TAKES_ONE_ARG): Add.
+	* common.h (mkdir): Define if mkdir takes one arg.
+	(geteuid): New macro, if not already defined.
+
+1999-10-11  Christopher R. Gabriel  <cgabriel@tin.it>
+
+	* patch.c (option_help): Updated bug report address
+	* configure.in (VERSION): Version 2.5.5 released.
+
+1999-09-01  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (main): Default simple_backup_suffix to ".orig".
+
+1999-10-08  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.man: Make it clear that `patch -o F' should not be
+	used if F is one of the files to be patched.
+
+1999-08-30  Paul Eggert  <eggert@twinsun.com>
+
+	Version 2.5.4 fixes a few minor bugs, converts C sources to
+	ANSI prototypes, and modernizes auxiliary sources and autoconf
+	scripts.
+
+	* configure.in (VERSION): Version 2.5.4 released.
+	(AC_CANONICAL_HOST): Add.
+	(AC_SYS_LARGEFILE): Add, replacing inline code.
+	(AC_EXEEXT): Add.
+	(jm_AC_HEADER_INTTYPES_H): Add, replacing inline code.
+	(AC_TYPE_PID_T): Add.
+	(jm_STRUCT_UTIMBUF): Add, replacing inline code.
+	(HAVE_MEMCHR): Remove obsolescent test; nobody uses NetBSD 1.0 now.
+	(getopt_long): Append $U to object file basenames.
+	(AC_CHECK_FUNCS): Add fseeko, setmode.  Remove mkdir.
+	(AC_REPLACE_FUNCS): Add mkdir, rmdir.
+	(jm_STRUCT_DIRENT_D_INO): Add, replacing inline code.
+
+	* Makefile.in (EXEEXT): New macro.
+	(mandir): New macro.
+	(man1dir): Define in terms of mandir.
+	(SRCS): Add mkdir.c, rmdir.c.
+	(OBJS): Change .o to $U.o for addext, argmatch, backupfile, basename,
+	error, inp, patch ,,pch, quotearg, util, version, xmalloc.
+	(HDRS): Add basename.h, patchlevel.h.
+	(MISC): Add ansi2knr.1, config.guess, config.sub.
+	(MISC, config.hin): Remove acconfig.h; no longer needed.
+	(DISTFILES_M4): New macro.
+	(all): patch -> patch$(EXEEXT).
+	(patch$(EXEEXT)): Renamed from patch.  All uses changed.
+	(uninstall): Remove manual page.
+	(configure): Depend on aclocal.m4.
+	(M4DIR, ACINCLUDE_INPUTS): New macros.
+	($(srcdir)/aclocal.m4): New rule.
+	(patchlevel.h): Depend on configure.in, not Makefile,
+	since we now distribute it.
+	(distclean): Don't remove patchlevel.h.
+	(dist): Distribute $(DISTFILES_M4).
+	(addext_.c argmatch_.c backupfile_.c basename_.c error_.c
+	getopt_.c getopt1_.c inp_.c malloc_.c mkdir_.c patch_.c pch_.c
+	rename_.c util_.c version_.c xmalloc_.c): Depend on ansi2knr.
+	Update dependencies to match sources.
+
+	* common.h (_LARGEFILE_SOURCE): Remove; now autoconfigured.
+	(file_offset): Depend on HAVE_FSEEKO, not _LFS_LARGEFILE.
+
+	* patch.c (version_control_context): New variable.
+	Convert to ANSI prototypes.
+	Adjust to new argmatch calling convention.
+	Similarly for get_version.
+	Complain about creating an existing file only if
+	pch_says_nonexistent returns 2 (not merely nonzero).
+	Similarly for time mismatch check.
+	(get_some_switches): Adjust to new get_version calling convention.
+	Similarly for argmatch.
+
+	* pch.c (<basename.h>): Include.
+	(intuit_diff_type): Improve quality of test for empty file.
+	(another_hunk): Don't assume off_t is no longer than long.
+
+	* util.h (backup_type): New decl.
+	* util.c (<basename.h>): Include.
+	(move_file): Adjust to new find_backup_file_name convention.
+	(doprogram, mkdir, rmdir): Remove; now in separate files.
+	(fetchame): Match "/dev/null", not NULL_DEVICE.
+	Ignore names that don't have enough slashes to strip off.
+
+	* version.c: Update copyright notice.
+
+1998-03-20  Paul Eggert  <eggert@twinsun.com>
+
+	* configure.in (VERSION): Bump to 2.5.3.
+	* quotearg.h (quotearg_quoting_options):
+	Remove; it ran afoul of the Borland C compiler.
+	Its address is now represented by the null pointer.
+	* quotearg.c (default_quoting_options):
+	Renamed from quotearg_quoting_options,
+	and now static instead of extern.
+	(clone_quoting_options, get_quoting_style, set_quoting_style,
+	set_char_quoting, quotearg_buffer):
+	Use default_quoting_options when passed a null pointer.
+	* patch.c (main, get_some_switches):
+	Pass a null pointer instead of address of quotearg_quoting_options.
+
+1998-03-17  Paul Eggert  <eggert@twinsun.com>
+
+	* patch.c (option_help): Update bug reporting address to gnu.org.
+	* patch.man: Fix copyright and bug reporting address.
+
+1998-03-16  Paul Eggert  <eggert@twinsun.com>
+
+	* configure.in (VERSION): Bump to 2.5.2.
+	(AC_CHECK_FUNCS): Add strerror.
+	(jm_FUNC_MALLOC, jm_FUNC_REALLOC): Add.
+	(AM_C_PROTOTYPES): Add.
+
+	* NEWS, patch.c (longopts, get_some_switches), patch.man:
+	Add --quoting-style, --posix options.
+
+	* Makefile.in (LIBSRCS): Add malloc.c, realloc.c.
+	(SRCS): Add error.c, quotesys.c, xmalloc.c.
+	(OBJS): Likewise.
+	(HDRS): Add error.h, quotesys.h, xalloc.h.
+	(MISC): Add AUTHORS, aclocal.m4, ansi2knr.c.
+	(clean): Use mostlyclean rule.
+	(argmatch.o, inp.o, patch.o, pch.o): Now also depends on quotearg.h.
+	(inp.o, patch.o, util.o): Now also depends on xalloc.h.
+	(error.o, quotearg.o, quotesys.o, xmalloc.o,
+	ansi2knr.o, ansi2knr, quotearg_.c, .c_.c): New rules.
+	(U): New macro.
+	(OBJS, quotearg$U.o): Rename quotearg.o to quotearg$U.o.
+	(mostlyclean): Remove ansi2knr, *_.c.
+	(.SUFFIXES): Add _.c.
+
+	* acconfig.h (PROTOTYPES): New undef.
+
+	* acconfig.h, configure.in (HAVE_INTTYPES_H, malloc, realloc):
+	New macros.
+
+	* aclocal.m4, error.c, error.h, malloc.c,
+	quotearg.h, quotearg.c, realloc.c, xalloc.h, xmalloc.c: New files.
+
+	* argmatch.c: Include <sys/types.h> before <argmatch.h>.
+	Include <quotearg.h>.
+
+	* argmatch.c (invalid_arg),
+	inp.c (scan_input, report_revision, too_many_lines, get_input_file,
+	plan_a),
+	patch.c (main, get_some_switches, numeric_string),
+	pch.c (open_patch_file, intuit_diff_type, do_ed_script):
+	util.c (move_file, create_file, copy_file, version_get, removedirs):
+	Quote output operands properly.
+
+	* common.h: Include <inttypes.h> if available.
+	(CHAR_BIT, TYPE_SIGNED, TYPE_MINIMUM, TYPE_MAXIMUM,
+	CHAR_MAX, INT_MAX, LONG_MIN, SIZE_MAX, O_EXCL): New macros.
+	(TMPINNAME_needs_removal, TMPOUTNAME_needs_removal,
+	TMPPATNAME_needs_removal): New variables.
+	(xmalloc): Remove decl; now in xalloc.h.
+
+	* inp.c: Include <quotearg.h>, <xalloc.h>.
+
+	* inp.c (get_input_file),
+	pch.c (intuit_diff_type),
+	util.c (version_controller):
+	Don't do diff operation if diffbuf is null; used by ClearCase support.
+
+	* inp.c (plan_b),
+	patch.c (init_reject),
+	pch.c (open_patch_file, do_ed_script):
+	Create temporary file with O_EXCL to avoid races.
+
+	* patch.c: Include <quotearg.h>, <xalloc.h>.
+	(create_output_file, init_output): New open_flags arg.
+	All callers changed.
+	(init_reject): No longer takes filename arg.  All callers changed.
+	(remove_if_needed): New function.
+	(cleanup): Use it to remove temporary files only if needed.
+	(TMPREJNAME_needs_removal): New var.
+	(main): Set xalloc_fail_func to memory_fatal; needed for xalloc.
+	Initialize quoting style from QUOTING_STYLE.
+	(longopts, get_some_switches): Offset longarg options by CHAR_MAX,
+	not 128; this is needed for EBCDIC ports.
+
+	* patch.c (main, locate_hunk, abort_hunk, spew_output),
+	pch.c (there_is_another_patch, intuit_diff_type, malformed,
+	another_hunk):
+	The LINENUM type now might be longer than long,
+	so print and read line numbers more carefully.
+
+	* patch.c (main),
+	pch.c (there_is_another_patch):
+	util.c (fetchname):
+	strippath now defaults to -1, so that we can distinguish unset
+	value from largest possible.
+
+	* patch.man: Clarify how file name is chosen from candidates.
+
+	* pch.c: Include <quotearg.h>.
+	(p_strip_trailing_cr): New variable.
+	(scan_linenum): New function.
+	(pget_line, re_patch, there_is_another_patch, intuit_diff_type,
+	get_line): Strip trailing CRs from context diffs that need this.
+	(best_name): Use SIZE_MAX instead of (size_t) -1 for max size_t.
+
+	* quotesys.c, quotearg.h: Renamed from quotearg.c and quotearg.h.
+	All uses changed.
+	* quotesys.h (__QUOTESYS_P): Renamed from __QUOTEARG_P.
+
+	* util.c: Include <quotearg.h>, <xalloc.h>.
+	(raise): Don't define if already defined.
+	(move_file): New arg from_needs_removal.  All callers changed.
+	(copy_file): New arg to_flags.  All callers changed.
+	(CLEARTOOL_CO): New constant.
+	(version_controller): Add ClearCase support.
+	(format_linenum): New function.
+	(fetchname): Allow any POSIX.1 time zone spec, which means
+	any local time offset in the range -25:00 < offset < +26:00.
+	Ignore the name if it doesn't have enough slashes to strip off.
+	(xmalloc): Remove; now in xmalloc.c.
+
+	* util.h (LINENUM_LENGTH_BOUND): New macro.
+	(format_linenum): New decl.
+
+	* version.c (copyright_string): Update years of copyrights.
+
+1997-09-03  Paul Eggert  <eggert@twinsun.com>
+
+	* configure.in (VERSION): Bump to 2.5.1.
+	* inp.c (re_input): Don't free buffers twice when input is garbled.
+	* patch.c (main): If skipping patch and Plan A fails, don't
+	bother trying Plan B.
+
 1997-08-31  Paul Eggert  <eggert@twinsun.com>
 
 	* configure.in (VERSION): Version 2.5 released.
@@ -1696,9 +2266,26 @@ Sun Dec 17 17:29:48 1989  Jim Kingdon  (kingdon at hobbes.ai.mit.edu)
 
 1984-11-09  Larry Wall  <sdcrdcf!lwall>
 	* patch.c: Initial revision
-
-Local Variables:
-mode: indented-text
-left-margin: 8
-version-control: never
-end:
+
+
+Copyright (C) 1984, 1985, 1986, 1987, 1988 Larry Wall.
+
+Copyright (C) 1989, 1990, 1991, 1992, 1993, 1997, 1998, 1999, 2000, 2001,
+2002 Free Software Foundation, Inc.
+
+This file is part of GNU Patch.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2, or (at your option)
+any later version.
+
+This program is distributed in the hope that they will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; see the file COPYING.  If not, write to
+the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+Boston, MA 02111-1307, USA.
