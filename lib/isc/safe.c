@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007, 2009, 2013  Internet Systems Consortium, Inc. ("ISC")
- * Copyright (C) 1999-2002  Internet Software Consortium.
+ * Copyright (C) 2013  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,25 +14,29 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: main.h,v 1.17 2009/09/29 23:48:03 tbox Exp $ */
-
-#ifndef NAMED_MAIN_H
-#define NAMED_MAIN_H 1
+/* $Id$ */
 
 /*! \file */
 
-#ifdef ISC_MAIN_HOOK
-#define main(argc, argv) bindmain(argc, argv)
+#include <config.h>
+
+#include <isc/safe.h>
+#include <isc/util.h>
+
+#ifdef _MSC_VER
+#pragma optimize("", off)
 #endif
 
-ISC_PLATFORM_NORETURN_PRE void
-ns_main_earlyfatal(const char *format, ...)
-ISC_FORMAT_PRINTF(1, 2) ISC_PLATFORM_NORETURN_POST;
+isc_boolean_t
+isc_safe_memcmp(const void *s1, const void *s2, size_t n) {
+	isc_uint8_t acc = 0;
 
-void
-ns_main_earlywarning(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
+	if (n != 0U) {
+		const isc_uint8_t *p1 = s1, *p2 = s2;
 
-void
-ns_main_setmemstats(const char *);
-
-#endif /* NAMED_MAIN_H */
+		do {
+			acc |= *p1++ ^ *p2++;
+		} while (--n != 0U);
+	}
+	return (ISC_TF(acc == 0));
+}

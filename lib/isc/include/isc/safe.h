@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007, 2009, 2013  Internet Systems Consortium, Inc. ("ISC")
- * Copyright (C) 1999-2002  Internet Software Consortium.
+ * Copyright (C) 2013  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,25 +14,23 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: main.h,v 1.17 2009/09/29 23:48:03 tbox Exp $ */
+/* $Id$ */
 
-#ifndef NAMED_MAIN_H
-#define NAMED_MAIN_H 1
+#ifndef ISC_SAFE_H
+#define ISC_SAFE_H 1
 
-/*! \file */
+/*! \file isc/safe.h */
 
-#ifdef ISC_MAIN_HOOK
-#define main(argc, argv) bindmain(argc, argv)
-#endif
+#include <isc/types.h>
 
-ISC_PLATFORM_NORETURN_PRE void
-ns_main_earlyfatal(const char *format, ...)
-ISC_FORMAT_PRINTF(1, 2) ISC_PLATFORM_NORETURN_POST;
+ISC_LANG_BEGINDECLS
 
-void
-ns_main_earlywarning(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
+isc_boolean_t
+isc_safe_memcmp(const void *s1, const void *s2, size_t n);
+/*%<
+ * Clone of libc memcmp() safe to differential timing attacks.
+ */
 
-void
-ns_main_setmemstats(const char *);
+ISC_LANG_ENDDECLS
 
-#endif /* NAMED_MAIN_H */
+#endif /* ISC_SAFE_H */
