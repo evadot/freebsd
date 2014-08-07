@@ -35,20 +35,21 @@ comm -23 old new
 # See that files to add makes sense
 comm -13 old new
 
-tar -cf - -C openssl-${OSSLVER} . | tar xf - -C dist-0.9.8
+tar -cf - -C openssl-${OSSLVER} . | tar -xf - -C dist-0.9.8
 cd dist-0.9.8
 comm -23 ../old ../new | xargs svn rm
+# Make sure to remove empty directories
 comm -13 ../old ../new | xargs svn --parents add
 
 svn stat
 svn ci
-svn cp $FSVN/vendor-crypto/openssl/dist-0.9.8 $FSVN/vendor-crypto/openssl/$OSSLVER
+svn cp ^/vendor-crypto/openssl/dist-0.9.8 ^/vendor-crypto/openssl/$OSSLVER
 
 # Merge to head
 mkdir ../head
 cd ../head
 svn co $FSVN/head/crypto/openssl crypto/openssl
-svn merge $FSVN/vendor-crypto/openssl/dist-0.9.8 crypto/openssl
+svn merge ^/vendor-crypto/openssl/dist-0.9.8 crypto/openssl
 
 # Resolve conflicts manually
 
