@@ -11,14 +11,14 @@ First, read http://wiki.freebsd.org/SubversionPrimer/VendorImports
 # Xlist
 setenv XLIST /FreeBSD/work/openssl/svn-FREEBSD-files/FREEBSD-Xlist
 setenv FSVN "svn+ssh://svn.freebsd.org/base"
-setenv OSSLVER 0.9.8za
-# OSSLTAG format: v0_9_8za
+setenv OSSLVER 0.9.8zb
+# OSSLTAG format: v0_9_8zb
 
 ###setenv OSSLTAG v`echo ${OSSLVER} | tr . _`
 
 cd /FreeBSD/work/openssl/merge
-fetch  http://www.openssl.org/source/openssl-${OSSLVER}.tar.gz \
-	http://www.openssl.org/source/openssl-${OSSLVER}.tar.gz.asc
+fetch http://www.openssl.org/source/openssl-${OSSLVER}.tar.gz \
+    http://www.openssl.org/source/openssl-${OSSLVER}.tar.gz.asc
 gpg --verify openssl-${OSSLVER}.tar.gz.asc openssl-${OSSLVER}.tar.gz
 
 svn co $FSVN/vendor-crypto/openssl/dist-0.9.8 dist-0.9.8
