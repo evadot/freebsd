@@ -1,6 +1,10 @@
-$NetBSD: NEWS,v 1.10 2014/10/31 04:06:54 lukem Exp $
+$NetBSD: NEWS,v 1.11 2014/11/03 21:48:49 lukem Exp $
 
-This is tnftp version 20141031.
+This is tnftp version 20141104.
+
+Changes in tnftp from 20141031 to 20141104:
+
+	Portability fixes.
 
 Changes in tnftp from 20130505 to 20141031:
 
