@@ -1,15 +1,15 @@
-#       $NetBSD: configure.ac,v 1.25 2013/05/05 13:50:50 lukem Exp $
+#       $NetBSD: configure.ac,v 1.26 2014/10/31 04:03:54 lukem Exp $
 #
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([tnftp], [20130505], [lukem@NetBSD.org])
+AC_INIT([tnftp], [20141031], [lukem@NetBSD.org])
 AC_PREREQ([2.69])
 
 AC_COPYRIGHT([
-Copyright (c) 1999-2013 The NetBSD Foundation, Inc.
+Copyright (c) 1999-2014 The NetBSD Foundation, Inc.
 All rights reserved.
 ])
-AC_REVISION([$Revision: 1.25 $])
+AC_REVISION([$Revision: 1.26 $])
 
 AS_SHELL_SANITIZE()
 

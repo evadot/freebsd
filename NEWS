@@ -1,6 +1,14 @@
-$NetBSD: NEWS,v 1.9 2013/05/05 13:53:38 lukem Exp $
+$NetBSD: NEWS,v 1.10 2014/10/31 04:06:54 lukem Exp $
 
-This is tnftp version 20130505.
+This is tnftp version 20141031.
+
+Changes in tnftp from 20130505 to 20141031:
+
+	Ignore special character behaviour in filenames not provided
+	by the user.
+	Fixes CVE-2014-8517.
+
+	Fix timeout on HTTP fetches.
 
 Changes in tnftp from 20100108 to 20130505:
 

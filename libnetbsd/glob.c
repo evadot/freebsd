@@ -1,4 +1,4 @@
-/*	$NetBSD: glob.c,v 1.11 2013/05/05 13:20:16 lukem Exp $	*/
+/*	$NetBSD: glob.c,v 1.12 2014/05/05 00:20:45 lukem Exp $	*/
 /*	from: NetBSD: glob.c,v 1.34 2013/02/21 18:17:43 christos Exp	*/
 
 /*
@@ -176,8 +176,8 @@ static void	 qprintf(const char *, Char *);
 #endif
 
 int
-glob(const char * __restrict pattern, int flags, int (*errfunc)(const char *,
-    int), glob_t * __restrict pglob)
+glob(const char * pattern, int flags, int (*errfunc)(const char *,
+    int), glob_t * pglob)
 {
 	const unsigned char *patnext;
 	int c;

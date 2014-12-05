@@ -1,4 +1,15 @@
-$NetBSD: ChangeLog,v 1.62 2013/05/05 13:53:38 lukem Exp $
+$NetBSD: ChangeLog,v 1.63 2014/10/31 04:13:56 lukem Exp $
+
+
+Fri Oct 31 04:07:38 UTC 2014	lukem
+
+	* Release as "tnftp 20141031".
+
+	* Merge NetBSD usr.bin/ftp from 20130220 to 20141026:
+		- Don't pay attention to special characters if they don't
+		  come from the command line (from jmcneill).
+		  Fixes CVE-2014-8517.
+		- PR/34796: Hauke Fath: ftp does not timeout on http fetches.
 
 Sun May  5 13:51:47 UTC 2013	lukem
 
