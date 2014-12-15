@@ -26,6 +26,7 @@ lib/dns/Atffile
 lib/dns/tests
 lib/isc/Atffile
 lib/isc/tests
+lib/lwres/tests
 
 # Doc stuff
 doc/arm/latex-fixup.pl
