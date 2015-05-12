@@ -1,7 +1,8 @@
 
 
 1 2 3
-.s
+.s-simple
+cr
 
 : test-case ( n -- )
 	case
@@ -19,8 +20,8 @@
 
 see test-case
 
-.( You should see 1 2 3 ->)
-.s 
+.( You should see [3] 1 2 3 -> )
+.s-simple
 .( <-) cr
 
 .( You should see "zero": )
@@ -32,8 +33,8 @@ see test-case
 .( You should see "something else": )
 324 test-case
 
-.( You should still see 1 2 3 ->)
-.s 
+.( You should still see [3] 1 2 3 -> )
+.s-simple
 .( <-) cr
 
 
@@ -58,8 +59,8 @@ see test-case-2
 
 cr
 
-.( You should once more see 1 2 3 ->)
-.s 
+.( You should once more see [3] 1 2 3 -> )
+.s-simple
 .( <-) cr
 
 .( You should see "zeroone": )
@@ -74,8 +75,8 @@ cr
 .( You should see "something else": )
 324 test-case-2
 
-.( You should still see 1 2 3 ->)
-.s 
+.( You should still see [3] 1 2 3 -> )
+.s-simple
 .( <-) cr
 
 

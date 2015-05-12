@@ -4,7 +4,7 @@
 ** ANS Forth FLOAT word-set written in C
 ** Author: Guy Carver & John Sadler (john_sadler@alum.mit.edu)
 ** Created: Apr 2001
-** $Id: float.c,v 1.8 2001-12-04 17:58:16-08 jsadler Exp jsadler $
+** $Id: float.c,v 1.10 2010/09/13 18:43:04 asau Exp $
 *******************************************************************/
 /*
 ** Copyright (c) 1997-2001 John Sadler (john_sadler@alum.mit.edu)
@@ -12,9 +12,9 @@
 **
 ** Get the latest Ficl release at http://ficl.sourceforge.net
 **
-** I am interested in hearing from anyone who uses ficl. If you have
+** I am interested in hearing from anyone who uses Ficl. If you have
 ** a problem, a success story, a defect, an enhancement request, or
-** if you would like to contribute to the ficl release, please
+** if you would like to contribute to the Ficl release, please
 ** contact me by email at the address above.
 **
 ** L I C E N S E  and  D I S C L A I M E R
@@ -50,295 +50,98 @@
 
 #if FICL_WANT_FLOAT
 
-/*******************************************************************
-** Do float addition r1 + r2.
-** f+ ( r1 r2 -- r )
-*******************************************************************/
-static void Fadd(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 1);
-#endif
-
-    f = POPFLOAT();
-    f += GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float subtraction r1 - r2.
-** f- ( r1 r2 -- r )
-*******************************************************************/
-static void Fsub(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 1);
-#endif
-
-    f = POPFLOAT();
-    f = GETTOPF().f - f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float multiplication r1 * r2.
-** f* ( r1 r2 -- r )
-*******************************************************************/
-static void Fmul(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 1);
-#endif
-
-    f = POPFLOAT();
-    f *= GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float negation.
-** fnegate ( r -- r )
-*******************************************************************/
-static void Fnegate(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-#endif
-
-    f = -GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float division r1 / r2.
-** f/ ( r1 r2 -- r )
-*******************************************************************/
-static void Fdiv(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 1);
-#endif
-
-    f = POPFLOAT();
-    f = GETTOPF().f / f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float + integer r + n.
-** f+i ( r n -- r )
-*******************************************************************/
-static void Faddi(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = (FICL_FLOAT)POPINT();
-    f += GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float - integer r - n.
-** f-i ( r n -- r )
-*******************************************************************/
-static void Fsubi(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = GETTOPF().f;
-    f -= (FICL_FLOAT)POPINT();
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float * integer r * n.
-** f*i ( r n -- r )
-*******************************************************************/
-static void Fmuli(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = (FICL_FLOAT)POPINT();
-    f *= GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do float / integer r / n.
-** f/i ( r n -- r )
-*******************************************************************/
-static void Fdivi(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = GETTOPF().f;
-    f /= (FICL_FLOAT)POPINT();
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do integer - float n - r.
-** i-f ( n r -- r )
-*******************************************************************/
-static void isubf(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = (FICL_FLOAT)POPINT();
-    f -= GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do integer / float n / r.
-** i/f ( n r -- r )
-*******************************************************************/
-static void idivf(FICL_VM *pVM)
-{
-    FICL_FLOAT f;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1,1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    f = (FICL_FLOAT)POPINT();
-    f /= GETTOPF().f;
-    SETTOPF(f);
-}
-
-/*******************************************************************
-** Do integer to float conversion.
-** int>float ( n -- r )
-*******************************************************************/
-static void itof(FICL_VM *pVM)
-{
-    float f;
-
-#if FICL_ROBUST > 1
-    vmCheckStack(pVM, 1, 0);
-    vmCheckFStack(pVM, 0, 1);
-#endif
-
-    f = (float)POPINT();
-    PUSHFLOAT(f);
-}
-
-/*******************************************************************
-** Do float to integer conversion.
-** float>int ( r -- n )
-*******************************************************************/
-static void Ftoi(FICL_VM *pVM)
-{
-    FICL_INT i;
-
-#if FICL_ROBUST > 1
-    vmCheckStack(pVM, 0, 1);
-    vmCheckFStack(pVM, 1, 0);
-#endif
-
-    i = (FICL_INT)POPFLOAT();
-    PUSHINT(i);
-}
-
-/*******************************************************************
-** Floating point constant execution word.
-*******************************************************************/
-void FconstantParen(FICL_VM *pVM)
-{
-    FICL_WORD *pFW = pVM->runningWord;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 0, 1);
-#endif
-
-    PUSHFLOAT(pFW->param[0].f);
-}
 
 /*******************************************************************
 ** Create a floating point constant.
 ** fconstant ( r -"name"- )
 *******************************************************************/
-static void Fconstant(FICL_VM *pVM)
+static void ficlPrimitiveFConstant(ficlVm *vm)
 {
-    FICL_DICT *dp = vmGetDict(pVM);
-    STRINGINFO si = vmGetWord(pVM);
+    ficlDictionary *dictionary = ficlVmGetDictionary(vm);
+    ficlString name = ficlVmGetWord(vm);
 
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-#endif
+    FICL_STACK_CHECK(vm->floatStack, 1, 0);
 
-    dictAppendWord2(dp, si, FconstantParen, FW_DEFAULT);
-    dictAppendCell(dp, stackPop(pVM->fStack));
+    ficlDictionaryAppendWord(dictionary, name, (ficlPrimitive)ficlInstructionFConstantParen, FICL_WORD_DEFAULT);
+    ficlDictionaryAppendCell(dictionary, ficlStackPop(vm->floatStack));
 }
+
+
+ficlWord   *ficlDictionaryAppendFConstant(ficlDictionary *dictionary, char *name, float value)
+{
+	ficlString s;
+	FICL_STRING_SET_FROM_CSTRING(s, name);
+	return ficlDictionaryAppendConstantInstruction(dictionary, s, ficlInstructionFConstantParen, *(ficlInteger *)(&value));
+}
+
+
+ficlWord   *ficlDictionarySetFConstant(ficlDictionary *dictionary, char *name, float value)
+{
+    ficlString s;
+    FICL_STRING_SET_FROM_CSTRING(s, name);
+    return ficlDictionarySetConstantInstruction(dictionary, s, ficlInstructionFConstantParen, *(ficlInteger *)(&value));
+}
+
+
+
+
+static void ficlPrimitiveF2Constant(ficlVm *vm)
+{
+    ficlDictionary *dictionary = ficlVmGetDictionary(vm);
+    ficlString name = ficlVmGetWord(vm);
+
+    FICL_STACK_CHECK(vm->floatStack, 2, 0);
+
+    ficlDictionaryAppendWord(dictionary, name, (ficlPrimitive)ficlInstructionF2ConstantParen, FICL_WORD_DEFAULT);
+    ficlDictionaryAppendCell(dictionary, ficlStackPop(vm->floatStack));
+    ficlDictionaryAppendCell(dictionary, ficlStackPop(vm->floatStack));
+}
+
+
+ficlWord   *ficlDictionaryAppendF2Constant(ficlDictionary *dictionary, char *name, double value)
+{
+    ficlString s;
+    FICL_STRING_SET_FROM_CSTRING(s, name);
+    return ficlDictionaryAppend2ConstantInstruction(dictionary, s, ficlInstructionF2ConstantParen, *(ficl2Integer *)(&value));
+}
+
+
+ficlWord   *ficlDictionarySetF2Constant(ficlDictionary *dictionary, char *name, double value)
+{
+    ficlString s;
+    FICL_STRING_SET_FROM_CSTRING(s, name);
+    return ficlDictionarySet2ConstantInstruction(dictionary, s, ficlInstructionF2ConstantParen, *(ficl2Integer *)(&value));
+}
+
 
 /*******************************************************************
 ** Display a float in decimal format.
 ** f. ( r -- )
 *******************************************************************/
-static void FDot(FICL_VM *pVM)
+static void ficlPrimitiveFDot(ficlVm *vm)
 {
     float f;
 
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-#endif
+    FICL_STACK_CHECK(vm->floatStack, 1, 0);
 
-    f = POPFLOAT();
-    sprintf(pVM->pad,"%#f ",f);
-    vmTextOut(pVM, pVM->pad, 0);
+    f = ficlStackPopFloat(vm->floatStack);
+    sprintf(vm->pad,"%#f ",f);
+    ficlVmTextOut(vm, vm->pad);
 }
 
 /*******************************************************************
 ** Display a float in engineering format.
 ** fe. ( r -- )
 *******************************************************************/
-static void EDot(FICL_VM *pVM)
+static void ficlPrimitiveEDot(ficlVm *vm)
 {
     float f;
 
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-#endif
+    FICL_STACK_CHECK(vm->floatStack, 1, 0);
 
-    f = POPFLOAT();
-    sprintf(pVM->pad,"%#e ",f);
-    vmTextOut(pVM, pVM->pad, 0);
+    f = ficlStackPopFloat(vm->floatStack);
+    sprintf(vm->pad,"%#e ",f);
+    ficlVmTextOut(vm, vm->pad);
 }
 
 /**************************************************************************
@@ -346,465 +149,79 @@ static void EDot(FICL_VM *pVM)
 ** Display the parameter stack (code for "f.s")
 ** f.s ( -- )
 **************************************************************************/
-static void displayFStack(FICL_VM *pVM)
+struct stackContext
 {
-    int d = stackDepth(pVM->fStack);
-    int i;
-    CELL *pCell;
+    ficlVm *vm;
+    int count;
+};
 
-    vmCheckFStack(pVM, 0, 0);
-
-    vmTextOut(pVM, "F:", 0);
-
-    if (d == 0)
-        vmTextOut(pVM, "[0]", 0);
-    else
-    {
-        ltoa(d, &pVM->pad[1], pVM->base);
-        pVM->pad[0] = '[';
-        strcat(pVM->pad,"] ");
-        vmTextOut(pVM,pVM->pad,0);
-
-        pCell = pVM->fStack->sp - d;
-        for (i = 0; i < d; i++)
-        {
-            sprintf(pVM->pad,"%#f ",(*pCell++).f);
-            vmTextOut(pVM,pVM->pad,0);
-        }
-    }
+static ficlInteger ficlFloatStackDisplayCallback(void *c, ficlCell *cell)
+{
+    struct stackContext *context = (struct stackContext *)c;
+    char buffer[64];
+    sprintf(buffer, "[0x%08x %3d] %16f (0x%08x)\n", cell, context->count++, (double)(cell->f), cell->i);
+    ficlVmTextOut(context->vm, buffer);
+	return FICL_TRUE;
 }
+
+
+
+void ficlVmDisplayFloatStack(ficlVm *vm)
+{
+    struct stackContext context;
+	context.vm = vm;
+	context.count = 0;
+    ficlStackDisplay(vm->floatStack, ficlFloatStackDisplayCallback, &context);
+    return;
+}
+
+
 
 /*******************************************************************
 ** Do float stack depth.
 ** fdepth ( -- n )
 *******************************************************************/
-static void Fdepth(FICL_VM *pVM)
+static void ficlPrimitiveFDepth(ficlVm *vm)
 {
     int i;
 
-#if FICL_ROBUST > 1
-    vmCheckStack(pVM, 0, 1);
-#endif
+    FICL_STACK_CHECK(vm->dataStack, 0, 1);
 
-    i = stackDepth(pVM->fStack);
-    PUSHINT(i);
-}
-
-/*******************************************************************
-** Do float stack drop.
-** fdrop ( r -- )
-*******************************************************************/
-static void Fdrop(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-#endif
-
-    DROPF(1);
-}
-
-/*******************************************************************
-** Do float stack 2drop.
-** f2drop ( r r -- )
-*******************************************************************/
-static void FtwoDrop(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 0);
-#endif
-
-    DROPF(2);
-}
-
-/*******************************************************************
-** Do float stack dup.
-** fdup ( r -- r r )
-*******************************************************************/
-static void Fdup(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 2);
-#endif
-
-    PICKF(0);
-}
-
-/*******************************************************************
-** Do float stack 2dup.
-** f2dup ( r1 r2 -- r1 r2 r1 r2 )
-*******************************************************************/
-static void FtwoDup(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 4);
-#endif
-
-    PICKF(1);
-    PICKF(1);
-}
-
-/*******************************************************************
-** Do float stack over.
-** fover ( r1 r2 -- r1 r2 r1 )
-*******************************************************************/
-static void Fover(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 3);
-#endif
-
-    PICKF(1);
-}
-
-/*******************************************************************
-** Do float stack 2over.
-** f2over ( r1 r2 r3 -- r1 r2 r3 r1 r2 )
-*******************************************************************/
-static void FtwoOver(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 4, 6);
-#endif
-
-    PICKF(3);
-    PICKF(3);
-}
-
-/*******************************************************************
-** Do float stack pick.
-** fpick ( n -- r )
-*******************************************************************/
-static void Fpick(FICL_VM *pVM)
-{
-    CELL c = POP();
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, c.i+1, c.i+2);
-#endif
-
-    PICKF(c.i);
-}
-
-/*******************************************************************
-** Do float stack ?dup.
-** f?dup ( r -- r )
-*******************************************************************/
-static void FquestionDup(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 2);
-#endif
-
-    c = GETTOPF();
-    if (c.f != 0)
-        PICKF(0);
-}
-
-/*******************************************************************
-** Do float stack roll.
-** froll ( n -- )
-*******************************************************************/
-static void Froll(FICL_VM *pVM)
-{
-    int i = POP().i;
-    i = (i > 0) ? i : 0;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, i+1, i+1);
-#endif
-
-    ROLLF(i);
-}
-
-/*******************************************************************
-** Do float stack -roll.
-** f-roll ( n -- )
-*******************************************************************/
-static void FminusRoll(FICL_VM *pVM)
-{
-    int i = POP().i;
-    i = (i > 0) ? i : 0;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, i+1, i+1);
-#endif
-
-    ROLLF(-i);
-}
-
-/*******************************************************************
-** Do float stack rot.
-** frot ( r1 r2 r3  -- r2 r3 r1 )
-*******************************************************************/
-static void Frot(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 3, 3);
-#endif
-
-    ROLLF(2);
-}
-
-/*******************************************************************
-** Do float stack -rot.
-** f-rot ( r1 r2 r3  -- r3 r1 r2 )
-*******************************************************************/
-static void Fminusrot(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 3, 3);
-#endif
-
-    ROLLF(-2);
-}
-
-/*******************************************************************
-** Do float stack swap.
-** fswap ( r1 r2 -- r2 r1 )
-*******************************************************************/
-static void Fswap(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 2);
-#endif
-
-    ROLLF(1);
-}
-
-/*******************************************************************
-** Do float stack 2swap
-** f2swap ( r1 r2 r3 r4  -- r3 r4 r1 r2 )
-*******************************************************************/
-static void FtwoSwap(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 4, 4);
-#endif
-
-    ROLLF(3);
-    ROLLF(3);
-}
-
-/*******************************************************************
-** Get a floating point number from a variable.
-** f@ ( n -- r )
-*******************************************************************/
-static void Ffetch(FICL_VM *pVM)
-{
-    CELL *pCell;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 0, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    pCell = (CELL *)POPPTR();
-    PUSHFLOAT(pCell->f);
-}
-
-/*******************************************************************
-** Store a floating point number into a variable.
-** f! ( r n -- )
-*******************************************************************/
-static void Fstore(FICL_VM *pVM)
-{
-    CELL *pCell;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    pCell = (CELL *)POPPTR();
-    pCell->f = POPFLOAT();
-}
-
-/*******************************************************************
-** Add a floating point number to contents of a variable.
-** f+! ( r n -- )
-*******************************************************************/
-static void FplusStore(FICL_VM *pVM)
-{
-    CELL *pCell;
-
-#if FICL_ROBUST > 1
-    vmCheckStack(pVM, 1, 0);
-    vmCheckFStack(pVM, 1, 0);
-#endif
-
-    pCell = (CELL *)POPPTR();
-    pCell->f += POPFLOAT();
-}
-
-/*******************************************************************
-** Floating point literal execution word.
-*******************************************************************/
-static void fliteralParen(FICL_VM *pVM)
-{
-#if FICL_ROBUST > 1
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    PUSHFLOAT(*(float*)(pVM->ip));
-    vmBranchRelative(pVM, 1);
+    i = ficlStackDepth(vm->floatStack);
+    ficlStackPushInteger(vm->dataStack, i);
 }
 
 /*******************************************************************
 ** Compile a floating point literal.
 *******************************************************************/
-static void fliteralIm(FICL_VM *pVM)
+static void ficlPrimitiveFLiteralImmediate(ficlVm *vm)
 {
-    FICL_DICT *dp = vmGetDict(pVM);
-    FICL_WORD *pfLitParen = ficlLookup(pVM->pSys, "(fliteral)");
+    ficlDictionary *dictionary = ficlVmGetDictionary(vm);
+	ficlCell cell;
 
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-#endif
 
-    dictAppendCell(dp, LVALUEtoCELL(pfLitParen));
-    dictAppendCell(dp, stackPop(pVM->fStack));
+    FICL_STACK_CHECK(vm->floatStack, 1, 0);
+
+
+	cell = ficlStackPop(vm->floatStack);
+	if (cell.f == 1.0f)
+	{
+		ficlDictionaryAppendUnsigned(dictionary, ficlInstructionF1);
+	}
+	else if (cell.f == 0.0f)
+	{
+		ficlDictionaryAppendUnsigned(dictionary, ficlInstructionF0);
+	}
+	else if (cell.f == -1.0f)
+	{
+		ficlDictionaryAppendUnsigned(dictionary, ficlInstructionFNeg1);
+	}
+	else
+	{
+		ficlDictionaryAppendUnsigned(dictionary, ficlInstructionFLiteralParen);
+		ficlDictionaryAppendCell(dictionary, cell);
+	}
 }
-
-/*******************************************************************
-** Do float 0= comparison r = 0.0.
-** f0= ( r -- T/F )
-*******************************************************************/
-static void FzeroEquals(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);                   /* Make sure something on float stack. */
-    vmCheckStack(pVM, 0, 1);                    /* Make sure room for result. */
-#endif
-
-    c.i = FICL_BOOL(POPFLOAT() == 0);
-    PUSH(c);
-}
-
-/*******************************************************************
-** Do float 0< comparison r < 0.0.
-** f0< ( r -- T/F )
-*******************************************************************/
-static void FzeroLess(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);                   /* Make sure something on float stack. */
-    vmCheckStack(pVM, 0, 1);                    /* Make sure room for result. */
-#endif
-
-    c.i = FICL_BOOL(POPFLOAT() < 0);
-    PUSH(c);
-}
-
-/*******************************************************************
-** Do float 0> comparison r > 0.0.
-** f0> ( r -- T/F )
-*******************************************************************/
-static void FzeroGreater(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    c.i = FICL_BOOL(POPFLOAT() > 0);
-    PUSH(c);
-}
-
-/*******************************************************************
-** Do float = comparison r1 = r2.
-** f= ( r1 r2 -- T/F )
-*******************************************************************/
-static void FisEqual(FICL_VM *pVM)
-{
-    float x, y;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 0);
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    x = POPFLOAT();
-    y = POPFLOAT();
-    PUSHINT(FICL_BOOL(x == y));
-}
-
-/*******************************************************************
-** Do float < comparison r1 < r2.
-** f< ( r1 r2 -- T/F )
-*******************************************************************/
-static void FisLess(FICL_VM *pVM)
-{
-    float x, y;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 0);
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    y = POPFLOAT();
-    x = POPFLOAT();
-    PUSHINT(FICL_BOOL(x < y));
-}
-
-/*******************************************************************
-** Do float > comparison r1 > r2.
-** f> ( r1 r2 -- T/F )
-*******************************************************************/
-static void FisGreater(FICL_VM *pVM)
-{
-    float x, y;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 2, 0);
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    y = POPFLOAT();
-    x = POPFLOAT();
-    PUSHINT(FICL_BOOL(x > y));
-}
-
-
-/*******************************************************************
-** Move float to param stack (assumes they both fit in a single CELL)
-** f>s 
-*******************************************************************/
-static void FFrom(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 1, 0);
-    vmCheckStack(pVM, 0, 1);
-#endif
-
-    c = stackPop(pVM->fStack);
-    stackPush(pVM->pStack, c);
-    return;
-}
-
-static void ToF(FICL_VM *pVM)
-{
-    CELL c;
-
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 0, 1);
-    vmCheckStack(pVM, 1, 0);
-#endif
-
-    c = stackPop(pVM->pStack);
-    stackPush(pVM->fStack, c);
-    return;
-}
-
 
 /**************************************************************************
                      F l o a t P a r s e S t a t e
@@ -825,38 +242,39 @@ typedef enum _floatParseState
 
 /**************************************************************************
                      f i c l P a r s e F l o a t N u m b e r
-** pVM -- Virtual Machine pointer.
-** si -- String to parse.
+** vm -- Virtual Machine pointer.
+** s -- String to parse.
 ** Returns 1 if successful, 0 if not.
 **************************************************************************/
-int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
+int ficlVmParseFloatNumber( ficlVm *vm, ficlString s)
 {
-    unsigned char ch, digit;
-    char *cp;
-    FICL_COUNT count;
+    unsigned char c;
+	unsigned char digit;
+    char *trace;
+    ficlUnsigned length;
     float power;
     float accum = 0.0f;
     float mant = 0.1f;
-    FICL_INT exponent = 0;
+    ficlInteger exponent = 0;
     char flag = 0;
     FloatParseState estate = FPS_START;
 
-#if FICL_ROBUST > 1
-    vmCheckFStack(pVM, 0, 1);
-#endif
 
+    FICL_STACK_CHECK(vm->floatStack, 0, 1);
+
+	
     /*
     ** floating point numbers only allowed in base 10 
     */
-    if (pVM->base != 10)
+    if (vm->base != 10)
         return(0);
 
 
-    cp = SI_PTR(si);
-    count = (FICL_COUNT)SI_COUNT(si);
+    trace = FICL_STRING_GET_POINTER(s);
+    length = FICL_STRING_GET_LENGTH(s);
 
     /* Loop through the string's characters. */
-    while ((count--) && ((ch = *cp++) != 0))
+    while ((length--) && ((c = *trace++) != 0))
     {
         switch (estate)
         {
@@ -864,12 +282,12 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
             case FPS_START:
             {
                 estate = FPS_ININT;
-                if (ch == '-')
+                if (c == '-')
                 {
                     flag |= NUMISNEG;
                     break;
                 }
-                if (ch == '+')
+                if (c == '+')
                 {
                     break;
                 }
@@ -880,17 +298,17 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
             */
             case FPS_ININT:
             {
-                if (ch == '.')
+                if (c == '.')
                 {
                     estate = FPS_INMANT;
                 }
-                else if ((ch == 'e') || (ch == 'E'))
+                else if ((c == 'e') || (c == 'E'))
                 {
                     estate = FPS_STARTEXP;
                 }
                 else
                 {
-                    digit = (unsigned char)(ch - '0');
+                    digit = (unsigned char)(c - '0');
                     if (digit > 9)
                         return(0);
 
@@ -905,13 +323,13 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
             */
             case FPS_INMANT:
             {
-                if ((ch == 'e') || (ch == 'E'))
+                if ((c == 'e') || (c == 'E'))
                 {
                     estate = FPS_STARTEXP;
                 }
                 else
                 {
-                    digit = (unsigned char)(ch - '0');
+                    digit = (unsigned char)(c - '0');
                     if (digit > 9)
                         return(0);
 
@@ -926,12 +344,12 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
             {
                 estate = FPS_INEXP;
 
-                if (ch == '-')
+                if (c == '-')
                 {
                     flag |= EXPISNEG;
                     break;
                 }
-                else if (ch == '+')
+                else if (c == '+')
                 {
                     break;
                 }
@@ -942,7 +360,7 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
             */
             case FPS_INEXP:
             {
-                digit = (unsigned char)(ch - '0');
+                digit = (unsigned char)(c - '0');
                 if (digit > 9)
                     return(0);
 
@@ -974,92 +392,78 @@ int ficlParseFloatNumber( FICL_VM *pVM, STRINGINFO si )
         accum *= power;
     }
 
-    PUSHFLOAT(accum);
-    if (pVM->state == COMPILE)
-        fliteralIm(pVM);
+    ficlStackPushFloat(vm->floatStack, accum);
+    if (vm->state == FICL_VM_STATE_COMPILE)
+        ficlPrimitiveFLiteralImmediate(vm);
 
     return(1);
 }
+
+
+#if FICL_WANT_LOCALS
+
+static void ficlPrimitiveFLocalParen(ficlVm *vm)
+{
+   ficlLocalParen(vm, 0, 1);
+}
+
+static void ficlPrimitiveF2LocalParen(ficlVm *vm)
+{
+   ficlLocalParen(vm, 1, 1);
+}
+
+#endif /* FICL_WANT_LOCALS */
 
 #endif  /* FICL_WANT_FLOAT */
 
 /**************************************************************************
 ** Add float words to a system's dictionary.
-** pSys -- Pointer to the FICL sytem to add float words to.
+** system -- Pointer to the Ficl sytem to add float words to.
 **************************************************************************/
-void ficlCompileFloat(FICL_SYSTEM *pSys)
+void ficlSystemCompileFloat(ficlSystem *system)
 {
-    FICL_DICT *dp = pSys->dp;
-    assert(dp);
-
 #if FICL_WANT_FLOAT
-    dictAppendWord(dp, ">float",    ToF,            FW_DEFAULT);
-    /* d>f */
-    dictAppendWord(dp, "f!",        Fstore,         FW_DEFAULT);
-    dictAppendWord(dp, "f*",        Fmul,           FW_DEFAULT);
-    dictAppendWord(dp, "f+",        Fadd,           FW_DEFAULT);
-    dictAppendWord(dp, "f-",        Fsub,           FW_DEFAULT);
-    dictAppendWord(dp, "f/",        Fdiv,           FW_DEFAULT);
-    dictAppendWord(dp, "f0<",       FzeroLess,      FW_DEFAULT);
-    dictAppendWord(dp, "f0=",       FzeroEquals,    FW_DEFAULT);
-    dictAppendWord(dp, "f<",        FisLess,        FW_DEFAULT);
+    ficlDictionary *dictionary = ficlSystemGetDictionary(system);
+    ficlDictionary *environment = ficlSystemGetEnvironment(system);
+
+    FICL_SYSTEM_ASSERT(system, dictionary);
+    FICL_SYSTEM_ASSERT(system, environment);
+
+    ficlDictionarySetPrimitive(dictionary, "fconstant", ficlPrimitiveFConstant,      FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "fvalue", ficlPrimitiveFConstant,      FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "f2constant", ficlPrimitiveF2Constant,      FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "f2value",  ficlPrimitiveF2Constant,      FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "fdepth",    ficlPrimitiveFDepth,         FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "fliteral",  ficlPrimitiveFLiteralImmediate,     FICL_WORD_IMMEDIATE);
+    ficlDictionarySetPrimitive(dictionary, "f.",        ficlPrimitiveFDot,           FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "f.s",       ficlVmDisplayFloatStack,  FICL_WORD_DEFAULT);
+    ficlDictionarySetPrimitive(dictionary, "fe.",       ficlPrimitiveEDot,           FICL_WORD_DEFAULT);
+
+#if FICL_WANT_LOCALS
+    ficlDictionarySetPrimitive(dictionary, "(flocal)",   ficlPrimitiveFLocalParen,     FICL_WORD_COMPILE_ONLY);
+    ficlDictionarySetPrimitive(dictionary, "(f2local)",  ficlPrimitiveF2LocalParen,  FICL_WORD_COMPILE_ONLY);
+#endif /* FICL_WANT_LOCALS */
+
  /* 
+    Missing words:
+
+    d>f
     f>d 
- */
-    dictAppendWord(dp, "f@",        Ffetch,         FW_DEFAULT);
- /* 
     falign 
     faligned 
- */
-    dictAppendWord(dp, "fconstant", Fconstant,      FW_DEFAULT);
-    dictAppendWord(dp, "fdepth",    Fdepth,         FW_DEFAULT);
-    dictAppendWord(dp, "fdrop",     Fdrop,          FW_DEFAULT);
-    dictAppendWord(dp, "fdup",      Fdup,           FW_DEFAULT);
-    dictAppendWord(dp, "fliteral",  fliteralIm,     FW_IMMEDIATE);
-/*
     float+
     floats
     floor
     fmax
     fmin
 */
-    dictAppendWord(dp, "f?dup",     FquestionDup,   FW_DEFAULT);
-    dictAppendWord(dp, "f=",        FisEqual,       FW_DEFAULT);
-    dictAppendWord(dp, "f>",        FisGreater,     FW_DEFAULT);
-    dictAppendWord(dp, "f0>",       FzeroGreater,   FW_DEFAULT);
-    dictAppendWord(dp, "f2drop",    FtwoDrop,       FW_DEFAULT);
-    dictAppendWord(dp, "f2dup",     FtwoDup,        FW_DEFAULT);
-    dictAppendWord(dp, "f2over",    FtwoOver,       FW_DEFAULT);
-    dictAppendWord(dp, "f2swap",    FtwoSwap,       FW_DEFAULT);
-    dictAppendWord(dp, "f+!",       FplusStore,     FW_DEFAULT);
-    dictAppendWord(dp, "f+i",       Faddi,          FW_DEFAULT);
-    dictAppendWord(dp, "f-i",       Fsubi,          FW_DEFAULT);
-    dictAppendWord(dp, "f*i",       Fmuli,          FW_DEFAULT);
-    dictAppendWord(dp, "f/i",       Fdivi,          FW_DEFAULT);
-    dictAppendWord(dp, "int>float", itof,           FW_DEFAULT);
-    dictAppendWord(dp, "float>int", Ftoi,           FW_DEFAULT);
-    dictAppendWord(dp, "f.",        FDot,           FW_DEFAULT);
-    dictAppendWord(dp, "f.s",       displayFStack,  FW_DEFAULT);
-    dictAppendWord(dp, "fe.",       EDot,           FW_DEFAULT);
-    dictAppendWord(dp, "fover",     Fover,          FW_DEFAULT);
-    dictAppendWord(dp, "fnegate",   Fnegate,        FW_DEFAULT);
-    dictAppendWord(dp, "fpick",     Fpick,          FW_DEFAULT);
-    dictAppendWord(dp, "froll",     Froll,          FW_DEFAULT);
-    dictAppendWord(dp, "frot",      Frot,           FW_DEFAULT);
-    dictAppendWord(dp, "fswap",     Fswap,          FW_DEFAULT);
-    dictAppendWord(dp, "i-f",       isubf,          FW_DEFAULT);
-    dictAppendWord(dp, "i/f",       idivf,          FW_DEFAULT);
 
-    dictAppendWord(dp, "float>",    FFrom,          FW_DEFAULT);
-
-    dictAppendWord(dp, "f-roll",    FminusRoll,     FW_DEFAULT);
-    dictAppendWord(dp, "f-rot",     Fminusrot,      FW_DEFAULT);
-    dictAppendWord(dp, "(fliteral)", fliteralParen, FW_COMPILE);
-
-    ficlSetEnv(pSys, "floating",       FICL_FALSE);  /* not all required words are present */
-    ficlSetEnv(pSys, "floating-ext",   FICL_FALSE);
-    ficlSetEnv(pSys, "floating-stack", FICL_DEFAULT_STACK);
+    ficlDictionarySetConstant(environment, "floating",       FICL_FALSE);  /* not all required words are present */
+    ficlDictionarySetConstant(environment, "floating-ext",   FICL_FALSE);
+    ficlDictionarySetConstant(environment, "floating-stack", system->stackSize);
+#else /* FICL_WANT_FLOAT */
+	/* get rid of unused parameter warning */
+	system = NULL;
 #endif
     return;
 }
-

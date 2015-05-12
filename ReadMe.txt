@@ -1,5 +1,5 @@
-FICL 3.03
-April 2002
+FICL 4.1.0
+October 2010
 
 ________
 OVERVIEW
@@ -10,18 +10,22 @@ and development prototype language.  Ficl stands for "Forth Inspired
 Command Language".
 
 For more information, please see the "doc" directory.
-For release notes, please see "doc/ficl_rel.html".
+For release notes, please see "doc/releases.html".
 
 ____________
 INSTALLATION
 
 Ficl builds out-of-the-box on the following platforms:
-	* Linux: use "Makefile.linux".
-	* RiscOS: use "Makefile.riscos".
+	* NetBSD, FreeBSD: use "Makefile".
+	* Linux: use "Makefile.linux", but it should work with
+	  "Makefile" as well.
 	* Win32: use "ficl.dsw" / "ficl.dsp".
-To port to other platforms, be sure to examine "sysdep.h", and
-we suggest you start with the Linux makefile.  (And please--feel
-free to submit your portability changes!)
+To port to other platforms, we suggest you start with the generic
+"Makefile" and the "unix.c" / "unix.h" platform-specific implementation
+files.  (And please--feel free to submit your portability changes!)
+
+(Note: Ficl used to build under RiscOS, but we broke everything
+for the 4.0 release.  Please fix it and send us the diffs!)
 
 ____________
 FICL LICENSE
