@@ -2,6 +2,7 @@
 
 # Misc. stuff
 .cvsignore
+.gitattributes
 bin/named/bindkeys.pl
 bin/pkcs11
 bin/python
@@ -33,6 +34,7 @@ doc/arm/latex-fixup.pl
 doc/draft
 doc/doxygen
 doc/rfc
+doc/tex
 doc/xsl
 
 # Windows directories
