@@ -163,8 +163,6 @@ pchar1(register tchar i)
 	tchar	_olp[1];
 	register int j;
 	filep	savip;
-	extern void ptout(tchar);
-
 	j = cbits(i);
 	if (dip != &d[0]) {
 		if (i == FLSS)
@@ -240,6 +238,8 @@ outtp(tchar i)
 	else
 #endif	/* EUC */
 		fdprintf(ptid, "%c", j);
+#else
+	(void)i;
 #endif
 }
 

@@ -110,11 +110,9 @@ wchar_t	twc = 0;
 static unsigned char escoff[126-31];
 
 static void	initg(void);
-static void	printlong(long, int);
-static void	printn(long, long);
-static char	*sprintlong(char *s, long, int);
-static char	*sprintn(char *s, long n, int b);
 #ifndef	NROFF
+static void	printn(long, long);
+static void	printlong(long, int);
 #define	vfdprintf	xxvfdprintf
 static void	vfdprintf(int fd, const char *fmt, va_list ap);
 #endif
@@ -140,7 +138,6 @@ main(int argc, char **argv)
 	register char	*p;
 	register int j;
 	char	**oargv;
-	const char *s;
 	size_t l;
 
 	setlocale(LC_CTYPE, "");
@@ -631,7 +628,7 @@ vfdprintf(int fd, const char *fmt, va_list ap)
 {
 	register int c;
 	char	*s;
-	register int i;
+	size_t	i;
 
 	pfbp = pfbuf;
 loop:
@@ -701,7 +698,7 @@ loop:
 				putchar(i);
 		}
 	} else if (c == 'C') {
-		extern int	nchtab;
+		extern size_t	nchtab;
 		tchar	t = va_arg(ap, tchar);
 		if ((i = cbits(t)) < 0177) {
 			putchar(i);
@@ -740,7 +737,6 @@ loop:
 	}
 	goto loop;
 }
-#endif	/* !NROFF */
 
 
 static void
@@ -780,6 +776,7 @@ static void printn(register long n, register long b)
 		printn(a, b);
 	putchar("0123456789ABCDEF"[(int)(n%b)]);
 }
+#endif	/* !NROFF */
 
 /* returns pointer to \0 that ends the string */
 
@@ -1471,13 +1468,13 @@ g2:
 			mbstate_t	state;
 			memset(&state, 0, sizeof state);
 			if ((n = mbrtowc(&twc, mbbuf1, mbbuf1p-mbbuf1, &state))
-					== -1 ||
+					== (size_t)-1 ||
 					twc & ~(wchar_t)0x1FFFFF) {
 				illseq(-1, mbbuf1, mbbuf1p-mbbuf1);
 				mbbuf1p = mbbuf1;
 				*mbbuf1p = 0;
 				i &= 0177;
-			} else if (n == -2)
+			} else if (n == (size_t)-2)
 				goto again;
 			else {
 				mbbuf1p = mbbuf1;
@@ -1766,7 +1763,7 @@ setuc(void)
 	size_t	i = 0;
 	tchar	r = 0;
 #ifndef NROFF
-	extern int nchtab;
+	extern size_t nchtab;
 #endif
 
 	_d = getach();
@@ -2144,10 +2141,10 @@ casechar(int flag __unused)
 {
 #ifndef	NROFF
 	extern int	ps2cc(const char *);
-	extern int	nchtab;
+	extern size_t	nchtab;
 #endif
 	char	name[NC];
-	int	i, k, size = 0;
+	size_t	i, k, size = 0;
 	tchar	c, *tp = NULL;
 
 	defcf++;
@@ -2209,7 +2206,7 @@ casechar(int flag __unused)
 	tp[i++] = '\n';
 	tp[i] = 0;
 	i = k;
-	if (++i >= NCHARS)
+	if (++i >= (size_t)NCHARS)
 		morechars(i);
 	free(chartab[k]);
 	chartab[k] = tp;
