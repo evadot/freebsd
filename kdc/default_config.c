@@ -48,6 +48,7 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
 	return ENOMEM;
     }
 
+    c->num_kdc_processes = -1;
     c->require_preauth = TRUE;
     c->kdc_warn_pwexpire = 0;
     c->encode_as_rep_as_tgs_rep = FALSE;
@@ -58,6 +59,7 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
     c->check_ticket_addresses = TRUE;
     c->allow_null_ticket_addresses = TRUE;
     c->allow_anonymous = FALSE;
+    c->strict_nametypes = FALSE;
     c->trpolicy = TRPOLICY_ALWAYS_CHECK;
     c->enable_pkinit = FALSE;
     c->pkinit_princ_in_cert = TRUE;
@@ -65,6 +67,10 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
     c->db = NULL;
     c->num_db = 0;
     c->logf = NULL;
+
+    c->num_kdc_processes =
+        krb5_config_get_int_default(context, NULL, c->num_kdc_processes,
+				    "kdc", "num-kdc-processes", NULL);
 
     c->require_preauth =
 	krb5_config_get_bool_default(context, NULL,
@@ -157,6 +163,12 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
 				     c->allow_anonymous,
 				     "kdc",
 				     "allow-anonymous", NULL);
+
+    c->strict_nametypes =
+	krb5_config_get_bool_default(context, NULL,
+				     c->strict_nametypes,
+				     "kdc",
+				     "strict-nametypes", NULL);
 
     c->max_datagram_reply_length =
 	krb5_config_get_int_default(context,

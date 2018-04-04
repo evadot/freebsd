@@ -53,6 +53,10 @@ SSYYNNOOPPSSIISS
          _i_n_t _a_n_o_n_y_m_o_u_s);
 
      _v_o_i_d
+     kkrrbb55__ggeett__iinniitt__ccrreeddss__oopptt__sseett__cchhaannggee__ppaasssswwoorrdd__pprroommpptt(_k_r_b_5___g_e_t___i_n_i_t___c_r_e_d_s___o_p_t _*_o_p_t,
+         _i_n_t _c_h_a_n_g_e___p_a_s_s_w_o_r_d___p_r_o_m_p_t);
+
+     _v_o_i_d
      kkrrbb55__ggeett__iinniitt__ccrreeddss__oopptt__sseett__ddeeffaauulltt__ffllaaggss(_k_r_b_5___c_o_n_t_e_x_t _c_o_n_t_e_x_t,
          _c_o_n_s_t _c_h_a_r _*_a_p_p_n_a_m_e, _k_r_b_5___c_o_n_s_t___r_e_a_l_m _r_e_a_l_m,
          _k_r_b_5___g_e_t___i_n_i_t___c_r_e_d_s___o_p_t _*_o_p_t);
@@ -234,7 +238,7 @@ DDEESSCCRRIIPPTTIIOONN
      kkrrbb55__ggeett__iinniitt__ccrreeddss__oopptt__sseett__ttkktt__lliiffee() sets requested ticket lifetime.
 
      kkrrbb55__ggeett__iinniitt__ccrreeddss__oopptt__sseett__ccaannoonniiccaalliizzee() requests that the KDC canoni-
-     calize the client pricipal if possible.
+     calize the client principal if possible.
 
      kkrrbb55__ggeett__iinniitt__ccrreeddss__oopptt__sseett__wwiinn22kk() turns on compatibility with Windows
      2000.

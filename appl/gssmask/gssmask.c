@@ -73,10 +73,13 @@ logmessage(struct client *c, const char *file, unsigned int lineno,
     char *message;
     va_list ap;
     int32_t ackid;
+    int ret;
 
     va_start(ap, fmt);
-    vasprintf(&message, fmt, ap);
+    ret = vasprintf(&message, fmt, ap);
     va_end(ap);
+    if (ret == -1)
+	errx(1, "out of memory");
 
     if (logfile)
 	fprintf(logfile, "%s:%u: %d %s\n", file, lineno, level, message);
@@ -309,7 +312,8 @@ HandleOP(InitContext)
     gss_ctx_id_t ctx;
     gss_cred_id_t creds;
     gss_name_t gss_target_name;
-    gss_buffer_desc input_token, output_token;
+    gss_buffer_desc input_token;
+    gss_buffer_desc output_token = {0, 0};
     gss_OID oid = GSS_C_NO_OID;
     gss_buffer_t input_token_ptr = GSS_C_NO_BUFFER;
 
@@ -427,7 +431,6 @@ HandleOP(AcceptContext)
     gss_ctx_id_t ctx;
     gss_cred_id_t deleg_cred = GSS_C_NO_CREDENTIAL;
     gss_buffer_desc input_token, output_token;
-    gss_buffer_t input_token_ptr = GSS_C_NO_BUFFER;
 
     ret32(c, hContext);
     ret32(c, flags);
@@ -440,7 +443,6 @@ HandleOP(AcceptContext)
     if (in_token.length) {
 	input_token.length = in_token.length;
 	input_token.value = in_token.data;
-	input_token_ptr = &input_token;
     } else {
 	input_token.length = 0;
 	input_token.value = NULL;
@@ -645,6 +647,7 @@ HandleOP(GetVersionAndCapabilities)
 {
     int32_t cap = HAS_MONIKER;
     char name[256] = "unknown", *str;
+    int ret;
 
     if (targetname)
 	cap |= ISSERVER; /* is server */
@@ -659,7 +662,9 @@ HandleOP(GetVersionAndCapabilities)
     }
 #endif
 
-    asprintf(&str, "gssmask %s %s", PACKAGE_STRING, name);
+    ret = asprintf(&str, "gssmask %s %s", PACKAGE_STRING, name);
+    if (ret == -1)
+	errx(1, "out of memory");
 
     put32(c, GSSMAGGOTPROTOCOL);
     put32(c, cap);
@@ -683,7 +688,8 @@ static int
 HandleOP(SetLoggingSocket)
 {
     int32_t portnum;
-    int fd, ret;
+    krb5_socket_t sock;
+    int ret;
 
     ret32(c, portnum);
 
@@ -692,22 +698,22 @@ HandleOP(SetLoggingSocket)
 
     socket_set_port((struct sockaddr *)(&c->sa), htons(portnum));
 
-    fd = socket(((struct sockaddr *)&c->sa)->sa_family, SOCK_STREAM, 0);
-    if (fd < 0)
+    sock = socket(((struct sockaddr *)&c->sa)->sa_family, SOCK_STREAM, 0);
+    if (sock == rk_INVALID_SOCKET)
 	return 0;
 
-    ret = connect(fd, (struct sockaddr *)&c->sa, c->salen);
+    ret = connect(sock, (struct sockaddr *)&c->sa, c->salen);
     if (ret < 0) {
 	logmessage(c, __FILE__, __LINE__, 0, "failed connect to log port: %s",
 		   strerror(errno));
-	close(fd);
+	rk_closesocket(sock);
 	return 0;
     }
 
     if (c->logging)
 	krb5_storage_free(c->logging);
-    c->logging = krb5_storage_from_fd(fd);
-    close(fd);
+    c->logging = krb5_storage_from_socket(sock);
+    rk_closesocket(sock);
 
     krb5_store_int32(c->logging, eLogSetMoniker);
     store_string(c->logging, c->moniker);
@@ -854,7 +860,6 @@ HandleOP(AcquirePKInitCreds)
     int32_t flags;
     krb5_data pfxdata;
     char fn[] = "FILE:/tmp/pkcs12-creds-XXXXXXX";
-    krb5_principal principal = NULL;
     int fd;
 
     ret32(c, flags);
@@ -867,9 +872,6 @@ HandleOP(AcquirePKInitCreds)
     net_write(fd, pfxdata.data, pfxdata.length);
     krb5_data_free(&pfxdata);
     close(fd);
-
-    if (principal)
-	krb5_free_principal(context, principal);
 
     put32(c, -1); /* hResource */
     put32(c, GSMERR_NOT_SUPPORTED);
@@ -1083,9 +1085,10 @@ find_op(int32_t op)
 }
 
 static struct client *
-create_client(int fd, int port, const char *moniker)
+create_client(krb5_socket_t sock, int port, const char *moniker)
 {
     struct client *c;
+    int ret;
 
     c = ecalloc(1, sizeof(*c));
 
@@ -1094,23 +1097,28 @@ create_client(int fd, int port, const char *moniker)
     } else {
 	char hostname[MAXHOSTNAMELEN];
 	gethostname(hostname, sizeof(hostname));
-	asprintf(&c->moniker, "gssmask: %s:%d", hostname, port);
+	ret = asprintf(&c->moniker, "gssmask: %s:%d", hostname, port);
+	if (ret == -1)
+	    c->moniker = NULL;
     }
+
+    if (!c->moniker)
+	errx(1, "out of memory");
 
     {
 	c->salen = sizeof(c->sa);
-	getpeername(fd, (struct sockaddr *)&c->sa, &c->salen);
+	getpeername(sock, (struct sockaddr *)&c->sa, &c->salen);
 
 	getnameinfo((struct sockaddr *)&c->sa, c->salen,
 		    c->servername, sizeof(c->servername),
 		    NULL, 0, NI_NUMERICHOST);
     }
 
-    c->sock = krb5_storage_from_fd(fd);
+    c->sock = krb5_storage_from_socket(sock);
     if (c->sock == NULL)
-	errx(1, "krb5_storage_from_fd");
+	errx(1, "krb5_storage_from_socket");
 
-    close(fd);
+    rk_closesocket(sock);
 
     return c;
 }
@@ -1198,6 +1206,7 @@ int
 main(int argc, char **argv)
 {
     int optidx	= 0;
+    krb5_error_code ret;
 
     setprogname (argv[0]);
 
@@ -1223,7 +1232,9 @@ main(int argc, char **argv)
 	    errx (1, "Bad port `%s'", port_str);
     }
 
-    krb5_init_context(&context);
+    ret = krb5_init_context(&context);
+    if (ret)
+	errx(1, "Error initializing kerberos: %d", ret);
 
     {
 	const char *lf = logfile_str;

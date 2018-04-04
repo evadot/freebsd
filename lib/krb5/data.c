@@ -62,8 +62,7 @@ krb5_data_zero(krb5_data *p)
 KRB5_LIB_FUNCTION void KRB5_LIB_CALL
 krb5_data_free(krb5_data *p)
 {
-    if(p->data != NULL)
-	free(p->data);
+    free(p->data);
     krb5_data_zero(p);
 }
 
@@ -176,10 +175,8 @@ krb5_copy_data(krb5_context context,
 {
     krb5_error_code ret;
     ALLOC(*outdata, 1);
-    if(*outdata == NULL) {
-	krb5_set_error_message(context, ENOMEM, "malloc: out of memory");
-	return ENOMEM;
-    }
+    if(*outdata == NULL)
+	return krb5_enomem(context);
     ret = der_copy_octet_string(indata, *outdata);
     if(ret) {
 	krb5_clear_error_message (context);

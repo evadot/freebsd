@@ -15,7 +15,7 @@ NNAAMMEE
      kkrrbb55__ddiiggeesstt__sseett__qqoopp, kkrrbb55__ddiiggeesstt__rreeqquueesstt, kkrrbb55__ddiiggeesstt__ggeett__rreessppoonnsseeDDaattaa,
      kkrrbb55__ddiiggeesstt__ggeett__rrsspp, kkrrbb55__ddiiggeesstt__ggeett__ttiicckkeettss,
      kkrrbb55__ddiiggeesstt__ggeett__cclliieenntt__bbiinnddiinngg, kkrrbb55__ddiiggeesstt__ggeett__aa11__hhaasshh -- remote digest
-     (HTTP-DIGEST, SASL, CHAP) suppport
+     (HTTP-DIGEST, SASL, CHAP) support
 
 LLIIBBRRAARRYY
      Kerberos 5 Library (libkrb5, -lkrb5)

@@ -45,6 +45,7 @@ do_trans (int sock, gss_ctx_id_t context_hdl)
     gss_buffer_desc real_input_token, real_output_token;
     gss_buffer_t input_token = &real_input_token,
 	output_token = &real_output_token;
+    int conf_flag;
 
     /* get_mic */
 
@@ -61,6 +62,24 @@ do_trans (int sock, gss_ctx_id_t context_hdl)
 
     write_token (sock, input_token);
     write_token (sock, output_token);
+
+    gss_release_buffer(&min_stat, output_token);
+
+    /* verify mic */
+
+    read_token (sock, input_token);
+    read_token (sock, output_token);
+
+    maj_stat = gss_verify_mic(&min_stat,
+			      context_hdl,
+			      input_token,
+			      output_token,
+			      NULL);
+    if (GSS_ERROR(maj_stat))
+	gss_err (1, min_stat, "gss_verify_mic");
+
+    gss_release_buffer (&min_stat, input_token);
+    gss_release_buffer (&min_stat, output_token);
 
     /* wrap */
 
@@ -91,6 +110,21 @@ do_trans (int sock, gss_ctx_id_t context_hdl)
 
     write_token (sock, output_token);
 
+    read_token (sock, input_token);
+
+    maj_stat = gss_unwrap (&min_stat,
+			   context_hdl,
+			   input_token,
+			   output_token,
+			   &conf_flag,
+			   NULL);
+    if(GSS_ERROR(maj_stat))
+	gss_err (1, min_stat, "gss_unwrap");
+	
+    write_token (sock, output_token);
+
+    gss_release_buffer(&min_stat, output_token);
+
     return 0;
 }
 
@@ -111,8 +145,6 @@ proto (int sock, const char *hostname, const char *service)
     OM_uint32 maj_stat, min_stat;
     gss_name_t server;
     gss_buffer_desc name_token;
-    u_char init_buf[4];
-    u_char acct_buf[4];
     gss_OID mech_oid;
     char *str;
 
@@ -167,6 +199,8 @@ proto (int sock, const char *hostname, const char *service)
 
 #if 0
     struct gss_channel_bindings_struct input_chan_bindings;
+    u_char init_buf[4];
+    u_char acct_buf[4];
 
     input_chan_bindings.initiator_addrtype = GSS_C_AF_INET;
     input_chan_bindings.initiator_address.length = 4;

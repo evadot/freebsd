@@ -125,9 +125,9 @@ DDEESSCCRRIIPPTTIIOONN
 
      KRB5_AUTH_CONTEXT_CLEAR_FORWARDED_CRED
              will force kkrrbb55__ggeett__ffoorrwwaarrddeedd__ccrreeddss() and kkrrbb55__ffwwdd__ttggtt__ccrreeddss() to
-             create unencrypted ) ENCTYPE_NULL) credentials.  This is for use
-             with old MIT server and JAVA based servers as they can't handle
-             encrypted KRB-CRED.  Note that sending such KRB-CRED is clear
+             create unencrypted ) KRB5_ENCTYPE_NULL) credentials.  This is for
+             use with old MIT server and JAVA based servers as they can't han-
+             dle encrypted KRB-CRED.  Note that sending such KRB-CRED is clear
              exposes crypto keys and tickets and is insecure, make sure the
              packet is encrypted in the protocol.  krb5_rd_cred(3),
              krb5_rd_priv(3), krb5_rd_safe(3), krb5_mk_priv(3) and

@@ -1,0 +1,168 @@
+
+KRB5-PLUGIN(7)       BSD Miscellaneous Information Manual       KRB5-PLUGIN(7)
+
+NNAAMMEE
+     kkrrbb55--pplluuggiinn -- plugin interface for Heimdal
+
+SSYYNNOOPPSSIISS
+     ##iinncclluuddee <<kkrrbb55..hh>>
+     ##iinncclluuddee <<kkrrbb55//aann22llnn__pplluuggiinn..hh>>
+     ##iinncclluuddee <<kkrrbb55//ccccaacchhee__pplluuggiinn..hh>>
+     ##iinncclluuddee <<kkrrbb55//ddbb__pplluuggiinn..hh>>
+     ##iinncclluuddee <<kkrrbb55//kkuusseerrookk__pplluuggiinn..hh>>
+     ##iinncclluuddee <<kkrrbb55//llooccaattee__pplluuggiinn..hh>>
+     ##iinncclluuddee <<kkrrbb55//sseenndd__ttoo__kkddcc__pplluuggiinn..hh>>
+
+DDEESSCCRRIIPPTTIIOONN
+     Heimdal has a plugin interface.  Plugins may be statically linked into
+     Heimdal and registered via the krb5_plugin_register(3) function, or they
+     may be dynamically loaded from shared objects present in the Heimdal
+     plugins directories.
+
+     Plugins consist of a C struct whose struct name is given in the associ-
+     ated header file, such as, for example, _k_r_b_5_p_l_u_g_i_n___k_u_s_e_r_o_k___f_t_a_b_l_e and a
+     pointer to which is either registered via krb5_plugin_register(3) or
+     found in a shared object via a symbol lookup for the symbol name defined
+     in the associated header file (e.g., "kuserok" for the plugin for
+     krb5_kuserok(3) ).
+
+     The plugin structs for all plugin types always begin with the same three
+     common fields:
+     1.   _m_i_n_o_r___v_e_r_s_i_o_n , an int.  Plugin minor versions are defined in each
+          plugin type's associated header file.
+     2.   _i_n_i_t , a pointer to a function with two arguments, a krb5_context
+          and a void **, returning a krb5_error_code.  This function will be
+          called to initialize a plugin-specific context in the form of a void
+          * that will be output through the init function's second argument.
+     3.   _f_i_n_i , a pointer to a function of one argument, a void *, consisting
+          of the plugin's context to be destroyed, and returning void.
+
+     Each plugin type must add zero or more fields to this struct following
+     the above three.  Plugins are typically invoked in no particular order
+     until one succeeds or fails, or all return a special return value such as
+     KRB5_PLUGIN_NO_HANDLE to indicate that the plugin was not applicable.
+     Most plugin types obtain deterministic plugin behavior in spite of the
+     non-deterministic invocation order by, for example, invoking all plugins
+     for each "rule" and passing the rule to each plugin with the expectation
+     that just one plugin will match any given rule.
+
+     There is a database plugin system intended for many of the uses of data-
+     bases in Heimdal.  The plugin is expected to call heim_db_register(3)
+     from its _i_n_i_t entry point to register a DB type.  The DB plugin's _f_i_n_i
+     function must do nothing, and the plugin must not provide any other entry
+     points.
+
+     The krb5_kuserok plugin adds a single field to its struct: a pointer to a
+     function that implements kuserok functionality with the following form:
+
+           static krb5_error_code
+           kuserok(void *plug_ctx, krb5_context context, const char *rule,
+                   unsigned int flags, const char *k5login_dir,
+                   const char *luser, krb5_const_principal principal,
+                   krb5_boolean *result)
+
+     The _l_u_s_e_r , _p_r_i_n_c_i_p_a_l and _r_e_s_u_l_t arguments are self-explanatory (see
+     krb5_kuserok(3) ).  The _p_l_u_g___c_t_x argument is the context output by the
+     plugin's init function.  The _r_u_l_e argument is a kuserok rule from the
+     krb5.conf file; each plugin is invoked once for each rule until all plug-
+     ins fail or one succeeds.  The _k_5_l_o_g_i_n___d_i_r argument provides an alterna-
+     tive k5login file location, if not NULL.  The _f_l_a_g_s argument indicates
+     whether the plugin may call krb5_aname_to_localname(3)
+     (KUSEROK_ANAME_TO_LNAME_OK), and whether k5login databases are expected
+     to be authoritative (KUSEROK_K5LOGIN_IS_AUTHORITATIVE).
+
+     The plugin for krb5_aname_to_localname(3) is named "an2ln" and has a sin-
+     gle extra field for the plugin struct:
+
+           typedef krb5_error_code (*set_result_f)(void *, const char *);
+
+           static krb5_error_code
+           an2ln(void *plug_ctx, krb5_context context, const char *rule,
+                 krb5_const_principal aname, set_result_f set_res_f, void *set_res_ctx)
+
+     The arguments for the _a_n_2_l_n plugin are similar to those of the kuserok
+     plugin, but the result, being a string, is set by calling the _s_e_t___r_e_s___f
+     function argument with the _s_e_t___r_e_s___c_t_x and result string as arguments.
+     The _s_e_t___r_e_s___f function will make a copy of the string.
+
+FFIILLEESS
+     libdir/plugin/krb5/*              Shared objects containing plugins for
+                                       Heimdal.
+
+EEXXAAMMPPLLEESS
+     An example an2ln plugin that maps principals to a constant "nouser" fol-
+     lows:
+
+           #include <krb5/an2ln_plugin.h>
+
+           static krb5_error_code
+           nouser_plug_init(krb5_context context, void **ctx)
+           {
+               *ctx = NULL;
+               return 0;
+           }
+
+           static void nouser_plug_fini(void *ctx) { }
+
+           static krb5_error_code
+           nouser_plug_an2ln(void *plug_ctx, krb5_context context,
+                             const char *rule,
+                             krb5_const_principal aname,
+                             set_result_f set_res_f, void *set_res_ctx)
+           {
+               krb5_error_code ret;
+
+               if (strcmp(rule, "NOUSER") != 0)
+                   return KRB5_PLUGIN_NO_HANDLE;
+
+               ret = set_res_f(set_res_ctx, "nouser");
+
+               return ret;
+           }
+
+           krb5plugin_an2ln_ftable an2ln = {
+               KRB5_PLUGIN_AN2LN_VERSION_0,
+               nouser_plug_init,
+               nouser_plug_fini,
+               nouser_plug_an2ln,
+           };
+
+     An example kuserok plugin that rejects all requests follows.  (Note that
+     there exists a built-in plugin with this functionality; see
+     krb5_kuserok(3) ).
+
+           #include <krb5/kuserok_plugin.h>
+
+           static krb5_error_code
+           reject_plug_init(krb5_context context, void **ctx)
+           {
+               *ctx = NULL;
+               return 0;
+           }
+
+           static void reject_plug_fini(void *ctx) { }
+
+           static krb5_error_code
+           reject_plug_kuserok(void *plug_ctx, krb5_context context, const char *rule,
+                               unsigned int flags, const char *k5login_dir,
+                               const char *luser, krb5_const_principal principal,
+                               krb5_boolean *result)
+           {
+               if (strcmp(rule, "REJECT") != 0)
+                   return KRB5_PLUGIN_NO_HANDLE;
+
+               *result = FALSE;
+               return 0;
+           }
+
+           krb5plugin_kuserok_ftable kuserok = {
+               KRB5_PLUGIN_KUSEROK_VERSION_0,
+               reject_plug_init,
+               reject_plug_fini,
+               reject_plug_kuserok,
+           };
+
+SSEEEE AALLSSOO
+     krb5_plugin_register(3) krb5_kuserok(3) krb5_aname_to_localname(3)
+
+HEIMDAL                        December 21, 2011                       HEIMDAL

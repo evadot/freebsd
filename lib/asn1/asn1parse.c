@@ -255,13 +255,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include "symbol.h"
 #include "lex.h"
 #include "gen_locl.h"
 #include "der.h"
-
-RCSID("$Id$");
 
 static Type *new_type (Typetype t);
 static struct constraint_spec *new_constraint_spec(enum ctype);
@@ -275,6 +274,8 @@ struct string_list {
     char *string;
     struct string_list *next;
 };
+
+static int default_tag_env = TE_EXPLICIT;
 
 /* Declarations for Bison */
 #define YYMALLOC malloc
@@ -302,9 +303,9 @@ struct string_list {
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 71 "asn1parse.y"
+#line 72 "asn1parse.y"
 {
-    int constant;
+    int64_t constant;
     struct value *value;
     struct range *range;
     char *name;
@@ -318,7 +319,7 @@ typedef union YYSTYPE
     struct constraint_spec *constraint_spec;
 }
 /* Line 193 of yacc.c.  */
-#line 322 "asn1parse.c"
+#line 323 "asn1parse.c"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
@@ -331,7 +332,7 @@ typedef union YYSTYPE
 
 
 /* Line 216 of yacc.c.  */
-#line 335 "asn1parse.c"
+#line 336 "asn1parse.c"
 
 #ifdef short
 # undef short
@@ -674,21 +675,21 @@ static const yytype_int16 yyrhs[] =
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   239,   239,   246,   247,   249,   251,   254,   256,   259,
-     260,   263,   264,   267,   268,   271,   272,   275,   287,   293,
-     294,   297,   298,   301,   302,   305,   311,   319,   329,   330,
-     331,   334,   335,   336,   337,   338,   339,   340,   341,   342,
-     343,   344,   345,   346,   347,   350,   357,   367,   375,   383,
-     394,   399,   405,   413,   419,   424,   428,   441,   449,   452,
-     459,   467,   473,   482,   490,   491,   496,   502,   510,   519,
-     525,   533,   541,   548,   549,   552,   563,   568,   575,   591,
-     597,   600,   601,   604,   610,   618,   628,   634,   647,   656,
-     659,   663,   667,   674,   677,   681,   688,   699,   702,   707,
-     712,   717,   722,   727,   732,   737,   745,   751,   756,   767,
-     778,   784,   790,   798,   804,   811,   824,   825,   828,   835,
-     838,   849,   853,   864,   870,   871,   874,   875,   876,   877,
-     878,   881,   884,   887,   898,   906,   912,   920,   928,   931,
-     936
+       0,   240,   240,   247,   249,   251,   253,   256,   258,   261,
+     262,   265,   266,   269,   270,   273,   274,   277,   289,   295,
+     296,   299,   300,   303,   304,   307,   313,   321,   331,   332,
+     333,   336,   337,   338,   339,   340,   341,   342,   343,   344,
+     345,   346,   347,   348,   349,   352,   359,   369,   377,   385,
+     396,   401,   407,   415,   421,   426,   430,   443,   451,   454,
+     461,   469,   475,   489,   497,   498,   503,   509,   517,   532,
+     538,   546,   554,   561,   562,   565,   576,   581,   588,   604,
+     610,   613,   614,   617,   623,   631,   641,   647,   665,   674,
+     677,   681,   685,   692,   695,   699,   706,   717,   720,   725,
+     730,   735,   740,   745,   750,   755,   763,   769,   774,   785,
+     796,   802,   808,   816,   822,   829,   842,   843,   846,   853,
+     856,   867,   871,   882,   888,   889,   892,   893,   894,   895,
+     896,   899,   902,   905,   916,   924,   930,   938,   946,   949,
+     954
 };
 #endif
 
@@ -1774,29 +1775,34 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 241 "asn1parse.y"
+#line 242 "asn1parse.y"
     {
 			checkundefined();
 		}
     break;
 
-  case 4:
+  case 3:
 #line 248 "asn1parse.y"
-    { lex_error_message("implicit tagging is not supported"); }
+    { default_tag_env = TE_EXPLICIT; }
+    break;
+
+  case 4:
+#line 250 "asn1parse.y"
+    { default_tag_env = TE_IMPLICIT; }
     break;
 
   case 5:
-#line 250 "asn1parse.y"
+#line 252 "asn1parse.y"
     { lex_error_message("automatic tagging is not supported"); }
     break;
 
   case 7:
-#line 255 "asn1parse.y"
+#line 257 "asn1parse.y"
     { lex_error_message("no extensibility options supported"); }
     break;
 
   case 17:
-#line 276 "asn1parse.y"
+#line 278 "asn1parse.y"
     {
 		    struct string_list *sl;
 		    for(sl = (yyvsp[(1) - (4)].sl); sl != NULL; sl = sl->next) {
@@ -1809,7 +1815,7 @@ yyreduce:
     break;
 
   case 18:
-#line 288 "asn1parse.y"
+#line 290 "asn1parse.y"
     {
 		    struct string_list *sl;
 		    for(sl = (yyvsp[(2) - (3)].sl); sl != NULL; sl = sl->next)
@@ -1818,7 +1824,7 @@ yyreduce:
     break;
 
   case 25:
-#line 306 "asn1parse.y"
+#line 308 "asn1parse.y"
     {
 		    (yyval.sl) = emalloc(sizeof(*(yyval.sl)));
 		    (yyval.sl)->string = (yyvsp[(1) - (3)].name);
@@ -1827,7 +1833,7 @@ yyreduce:
     break;
 
   case 26:
-#line 312 "asn1parse.y"
+#line 314 "asn1parse.y"
     {
 		    (yyval.sl) = emalloc(sizeof(*(yyval.sl)));
 		    (yyval.sl)->string = (yyvsp[(1) - (1)].name);
@@ -1836,7 +1842,7 @@ yyreduce:
     break;
 
   case 27:
-#line 320 "asn1parse.y"
+#line 322 "asn1parse.y"
     {
 		    Symbol *s = addsym ((yyvsp[(1) - (3)].name));
 		    s->stype = Stype;
@@ -1847,7 +1853,7 @@ yyreduce:
     break;
 
   case 45:
-#line 351 "asn1parse.y"
+#line 353 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_Boolean,
 				     TE_EXPLICIT, new_type(TBoolean));
@@ -1855,7 +1861,7 @@ yyreduce:
     break;
 
   case 46:
-#line 358 "asn1parse.y"
+#line 360 "asn1parse.y"
     {
 		    if((yyvsp[(2) - (5)].value)->type != integervalue)
 			lex_error_message("Non-integer used in first part of range");
@@ -1868,29 +1874,29 @@ yyreduce:
     break;
 
   case 47:
-#line 368 "asn1parse.y"
+#line 370 "asn1parse.y"
     {
 		    if((yyvsp[(2) - (5)].value)->type != integervalue)
 			lex_error_message("Non-integer in first part of range");
 		    (yyval.range) = ecalloc(1, sizeof(*(yyval.range)));
 		    (yyval.range)->min = (yyvsp[(2) - (5)].value)->u.integervalue;
-		    (yyval.range)->max = (yyvsp[(2) - (5)].value)->u.integervalue - 1;
+		    (yyval.range)->max = INT_MAX;
 		}
     break;
 
   case 48:
-#line 376 "asn1parse.y"
+#line 378 "asn1parse.y"
     {
 		    if((yyvsp[(4) - (5)].value)->type != integervalue)
 			lex_error_message("Non-integer in second part of range");
 		    (yyval.range) = ecalloc(1, sizeof(*(yyval.range)));
-		    (yyval.range)->min = (yyvsp[(4) - (5)].value)->u.integervalue + 2;
+		    (yyval.range)->min = INT_MIN;
 		    (yyval.range)->max = (yyvsp[(4) - (5)].value)->u.integervalue;
 		}
     break;
 
   case 49:
-#line 384 "asn1parse.y"
+#line 386 "asn1parse.y"
     {
 		    if((yyvsp[(2) - (3)].value)->type != integervalue)
 			lex_error_message("Non-integer used in limit");
@@ -1901,7 +1907,7 @@ yyreduce:
     break;
 
   case 50:
-#line 395 "asn1parse.y"
+#line 397 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_Integer,
 				     TE_EXPLICIT, new_type(TInteger));
@@ -1909,7 +1915,7 @@ yyreduce:
     break;
 
   case 51:
-#line 400 "asn1parse.y"
+#line 402 "asn1parse.y"
     {
 			(yyval.type) = new_type(TInteger);
 			(yyval.type)->range = (yyvsp[(2) - (2)].range);
@@ -1918,7 +1924,7 @@ yyreduce:
     break;
 
   case 52:
-#line 406 "asn1parse.y"
+#line 408 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TInteger);
 		  (yyval.type)->members = (yyvsp[(3) - (4)].members);
@@ -1927,7 +1933,7 @@ yyreduce:
     break;
 
   case 53:
-#line 414 "asn1parse.y"
+#line 416 "asn1parse.y"
     {
 			(yyval.members) = emalloc(sizeof(*(yyval.members)));
 			ASN1_TAILQ_INIT((yyval.members));
@@ -1936,7 +1942,7 @@ yyreduce:
     break;
 
   case 54:
-#line 420 "asn1parse.y"
+#line 422 "asn1parse.y"
     {
 			ASN1_TAILQ_INSERT_TAIL((yyvsp[(1) - (3)].members), (yyvsp[(3) - (3)].member), members);
 			(yyval.members) = (yyvsp[(1) - (3)].members);
@@ -1944,12 +1950,12 @@ yyreduce:
     break;
 
   case 55:
-#line 425 "asn1parse.y"
+#line 427 "asn1parse.y"
     { (yyval.members) = (yyvsp[(1) - (3)].members); }
     break;
 
   case 56:
-#line 429 "asn1parse.y"
+#line 431 "asn1parse.y"
     {
 			(yyval.member) = emalloc(sizeof(*(yyval.member)));
 			(yyval.member)->name = (yyvsp[(1) - (4)].name);
@@ -1963,7 +1969,7 @@ yyreduce:
     break;
 
   case 57:
-#line 442 "asn1parse.y"
+#line 444 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TInteger);
 		  (yyval.type)->members = (yyvsp[(3) - (4)].members);
@@ -1972,7 +1978,7 @@ yyreduce:
     break;
 
   case 59:
-#line 453 "asn1parse.y"
+#line 455 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TBitString);
 		  (yyval.type)->members = emalloc(sizeof(*(yyval.type)->members));
@@ -1982,7 +1988,7 @@ yyreduce:
     break;
 
   case 60:
-#line 460 "asn1parse.y"
+#line 462 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TBitString);
 		  (yyval.type)->members = (yyvsp[(4) - (5)].members);
@@ -1991,7 +1997,7 @@ yyreduce:
     break;
 
   case 61:
-#line 468 "asn1parse.y"
+#line 470 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_OID,
 				     TE_EXPLICIT, new_type(TOID));
@@ -1999,17 +2005,22 @@ yyreduce:
     break;
 
   case 62:
-#line 474 "asn1parse.y"
+#line 476 "asn1parse.y"
     {
 		    Type *t = new_type(TOctetString);
 		    t->range = (yyvsp[(3) - (3)].range);
+		    if (t->range) {
+			if (t->range->min < 0)
+			    lex_error_message("can't use a negative SIZE range "
+					      "length for OCTET STRING");
+		    }
 		    (yyval.type) = new_tag(ASN1_C_UNIV, UT_OctetString,
 				 TE_EXPLICIT, t);
 		}
     break;
 
   case 63:
-#line 483 "asn1parse.y"
+#line 490 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_Null,
 				     TE_EXPLICIT, new_type(TNull));
@@ -2017,72 +2028,78 @@ yyreduce:
     break;
 
   case 64:
-#line 490 "asn1parse.y"
+#line 497 "asn1parse.y"
     { (yyval.range) = NULL; }
     break;
 
   case 65:
-#line 492 "asn1parse.y"
+#line 499 "asn1parse.y"
     { (yyval.range) = (yyvsp[(2) - (2)].range); }
     break;
 
   case 66:
-#line 497 "asn1parse.y"
+#line 504 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSequence);
 		  (yyval.type)->members = (yyvsp[(3) - (4)].members);
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, default_tag_env, (yyval.type));
 		}
     break;
 
   case 67:
-#line 503 "asn1parse.y"
+#line 510 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSequence);
 		  (yyval.type)->members = NULL;
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, default_tag_env, (yyval.type));
 		}
     break;
 
   case 68:
-#line 511 "asn1parse.y"
+#line 518 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSequenceOf);
 		  (yyval.type)->range = (yyvsp[(2) - (4)].range);
+		  if ((yyval.type)->range) {
+		      if ((yyval.type)->range->min < 0)
+			  lex_error_message("can't use a negative SIZE range "
+					    "length for SEQUENCE OF");
+		    }
+
 		  (yyval.type)->subtype = (yyvsp[(4) - (4)].type);
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Sequence, default_tag_env, (yyval.type));
 		}
     break;
 
   case 69:
-#line 520 "asn1parse.y"
+#line 533 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSet);
 		  (yyval.type)->members = (yyvsp[(3) - (4)].members);
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, default_tag_env, (yyval.type));
 		}
     break;
 
   case 70:
-#line 526 "asn1parse.y"
+#line 539 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSet);
 		  (yyval.type)->members = NULL;
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, default_tag_env, (yyval.type));
 		}
     break;
 
   case 71:
-#line 534 "asn1parse.y"
+#line 547 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TSetOf);
 		  (yyval.type)->subtype = (yyvsp[(3) - (3)].type);
-		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, TE_EXPLICIT, (yyval.type));
+		  (yyval.type) = new_tag(ASN1_C_UNIV, UT_Set, default_tag_env, (yyval.type));
 		}
     break;
 
   case 72:
-#line 542 "asn1parse.y"
+#line 555 "asn1parse.y"
     {
 		  (yyval.type) = new_type(TChoice);
 		  (yyval.type)->members = (yyvsp[(3) - (4)].members);
@@ -2090,7 +2107,7 @@ yyreduce:
     break;
 
   case 75:
-#line 553 "asn1parse.y"
+#line 566 "asn1parse.y"
     {
 		  Symbol *s = addsym((yyvsp[(1) - (1)].name));
 		  (yyval.type) = new_type(TType);
@@ -2102,7 +2119,7 @@ yyreduce:
     break;
 
   case 76:
-#line 564 "asn1parse.y"
+#line 577 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_GeneralizedTime,
 				     TE_EXPLICIT, new_type(TGeneralizedTime));
@@ -2110,7 +2127,7 @@ yyreduce:
     break;
 
   case 77:
-#line 569 "asn1parse.y"
+#line 582 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_UTCTime,
 				     TE_EXPLICIT, new_type(TUTCTime));
@@ -2118,7 +2135,7 @@ yyreduce:
     break;
 
   case 78:
-#line 576 "asn1parse.y"
+#line 589 "asn1parse.y"
     {
 		    /* if (Constraint.type == contentConstrant) {
 		       assert(Constraint.u.constraint.type == octetstring|bitstring-w/o-NamedBitList); // remember to check type reference too
@@ -2134,14 +2151,14 @@ yyreduce:
     break;
 
   case 79:
-#line 592 "asn1parse.y"
+#line 605 "asn1parse.y"
     {
 		    (yyval.constraint_spec) = (yyvsp[(2) - (3)].constraint_spec);
 		}
     break;
 
   case 83:
-#line 605 "asn1parse.y"
+#line 618 "asn1parse.y"
     {
 		    (yyval.constraint_spec) = new_constraint_spec(CT_CONTENTS);
 		    (yyval.constraint_spec)->u.content.type = (yyvsp[(2) - (2)].type);
@@ -2150,7 +2167,7 @@ yyreduce:
     break;
 
   case 84:
-#line 611 "asn1parse.y"
+#line 624 "asn1parse.y"
     {
 		    if ((yyvsp[(3) - (3)].value)->type != objectidentifiervalue)
 			lex_error_message("Non-OID used in ENCODED BY constraint");
@@ -2161,7 +2178,7 @@ yyreduce:
     break;
 
   case 85:
-#line 619 "asn1parse.y"
+#line 632 "asn1parse.y"
     {
 		    if ((yyvsp[(5) - (5)].value)->type != objectidentifiervalue)
 			lex_error_message("Non-OID used in ENCODED BY constraint");
@@ -2172,86 +2189,91 @@ yyreduce:
     break;
 
   case 86:
-#line 629 "asn1parse.y"
+#line 642 "asn1parse.y"
     {
 		    (yyval.constraint_spec) = new_constraint_spec(CT_USER);
 		}
     break;
 
   case 87:
-#line 635 "asn1parse.y"
+#line 648 "asn1parse.y"
     {
 			(yyval.type) = new_type(TTag);
 			(yyval.type)->tag = (yyvsp[(1) - (3)].tag);
 			(yyval.type)->tag.tagenv = (yyvsp[(2) - (3)].constant);
-			if((yyvsp[(3) - (3)].type)->type == TTag && (yyvsp[(2) - (3)].constant) == TE_IMPLICIT) {
+			if (template_flag) {
+			    (yyval.type)->subtype = (yyvsp[(3) - (3)].type);
+			} else {
+			    if((yyvsp[(3) - (3)].type)->type == TTag && (yyvsp[(2) - (3)].constant) == TE_IMPLICIT) {
 				(yyval.type)->subtype = (yyvsp[(3) - (3)].type)->subtype;
 				free((yyvsp[(3) - (3)].type));
-			} else
+			    } else {
 				(yyval.type)->subtype = (yyvsp[(3) - (3)].type);
+			    }
+			}
 		}
     break;
 
   case 88:
-#line 648 "asn1parse.y"
+#line 666 "asn1parse.y"
     {
 			(yyval.tag).tagclass = (yyvsp[(2) - (4)].constant);
 			(yyval.tag).tagvalue = (yyvsp[(3) - (4)].constant);
-			(yyval.tag).tagenv = TE_EXPLICIT;
+			(yyval.tag).tagenv = default_tag_env;
 		}
     break;
 
   case 89:
-#line 656 "asn1parse.y"
+#line 674 "asn1parse.y"
     {
 			(yyval.constant) = ASN1_C_CONTEXT;
 		}
     break;
 
   case 90:
-#line 660 "asn1parse.y"
+#line 678 "asn1parse.y"
     {
 			(yyval.constant) = ASN1_C_UNIV;
 		}
     break;
 
   case 91:
-#line 664 "asn1parse.y"
+#line 682 "asn1parse.y"
     {
 			(yyval.constant) = ASN1_C_APPL;
 		}
     break;
 
   case 92:
-#line 668 "asn1parse.y"
+#line 686 "asn1parse.y"
     {
 			(yyval.constant) = ASN1_C_PRIVATE;
 		}
     break;
 
   case 93:
-#line 674 "asn1parse.y"
+#line 692 "asn1parse.y"
     {
-			(yyval.constant) = TE_EXPLICIT;
+			(yyval.constant) = default_tag_env;
 		}
     break;
 
   case 94:
-#line 678 "asn1parse.y"
+#line 696 "asn1parse.y"
     {
-			(yyval.constant) = TE_EXPLICIT;
+			(yyval.constant) = default_tag_env;
 		}
     break;
 
   case 95:
-#line 682 "asn1parse.y"
+#line 700 "asn1parse.y"
     {
 			(yyval.constant) = TE_IMPLICIT;
 		}
     break;
 
   case 96:
-#line 689 "asn1parse.y"
+#line 707 "asn1parse.y"
     {
 			Symbol *s;
 			s = addsym ((yyvsp[(1) - (4)].name));
@@ -2263,7 +2285,7 @@ yyreduce:
     break;
 
   case 98:
-#line 703 "asn1parse.y"
+#line 721 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_GeneralString,
 				     TE_EXPLICIT, new_type(TGeneralString));
@@ -2271,7 +2293,7 @@ yyreduce:
     break;
 
   case 99:
-#line 708 "asn1parse.y"
+#line 726 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_TeletexString,
 				     TE_EXPLICIT, new_type(TTeletexString));
@@ -2279,7 +2301,7 @@ yyreduce:
     break;
 
   case 100:
-#line 713 "asn1parse.y"
+#line 731 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_UTF8String,
 				     TE_EXPLICIT, new_type(TUTF8String));
@@ -2287,7 +2309,7 @@ yyreduce:
     break;
 
   case 101:
-#line 718 "asn1parse.y"
+#line 736 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_PrintableString,
 				     TE_EXPLICIT, new_type(TPrintableString));
@@ -2295,7 +2317,7 @@ yyreduce:
     break;
 
   case 102:
-#line 723 "asn1parse.y"
+#line 741 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_VisibleString,
 				     TE_EXPLICIT, new_type(TVisibleString));
@@ -2303,7 +2325,7 @@ yyreduce:
     break;
 
   case 103:
-#line 728 "asn1parse.y"
+#line 746 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_IA5String,
 				     TE_EXPLICIT, new_type(TIA5String));
@@ -2311,7 +2333,7 @@ yyreduce:
     break;
 
   case 104:
-#line 733 "asn1parse.y"
+#line 751 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_BMPString,
 				     TE_EXPLICIT, new_type(TBMPString));
@@ -2319,7 +2341,7 @@ yyreduce:
     break;
 
   case 105:
-#line 738 "asn1parse.y"
+#line 756 "asn1parse.y"
     {
 			(yyval.type) = new_tag(ASN1_C_UNIV, UT_UniversalString,
 				     TE_EXPLICIT, new_type(TUniversalString));
@@ -2327,7 +2349,7 @@ yyreduce:
     break;
 
   case 106:
-#line 746 "asn1parse.y"
+#line 764 "asn1parse.y"
     {
 			(yyval.members) = emalloc(sizeof(*(yyval.members)));
 			ASN1_TAILQ_INIT((yyval.members));
@@ -2336,7 +2358,7 @@ yyreduce:
     break;
 
   case 107:
-#line 752 "asn1parse.y"
+#line 770 "asn1parse.y"
     {
 			ASN1_TAILQ_INSERT_TAIL((yyvsp[(1) - (3)].members), (yyvsp[(3) - (3)].member), members);
 			(yyval.members) = (yyvsp[(1) - (3)].members);
@@ -2344,7 +2366,7 @@ yyreduce:
     break;
 
   case 108:
-#line 757 "asn1parse.y"
+#line 775 "asn1parse.y"
     {
 		        struct member *m = ecalloc(1, sizeof(*m));
 			m->name = estrdup("...");
@@ -2356,7 +2378,7 @@ yyreduce:
     break;
 
   case 109:
-#line 768 "asn1parse.y"
+#line 786 "asn1parse.y"
     {
 		  (yyval.member) = emalloc(sizeof(*(yyval.member)));
 		  (yyval.member)->name = (yyvsp[(1) - (2)].name);
@@ -2368,7 +2390,7 @@ yyreduce:
     break;
 
   case 110:
-#line 779 "asn1parse.y"
+#line 797 "asn1parse.y"
     {
 			(yyval.member) = (yyvsp[(1) - (1)].member);
 			(yyval.member)->optional = 0;
@@ -2377,7 +2399,7 @@ yyreduce:
     break;
 
   case 111:
-#line 785 "asn1parse.y"
+#line 803 "asn1parse.y"
     {
 			(yyval.member) = (yyvsp[(1) - (2)].member);
 			(yyval.member)->optional = 1;
@@ -2386,7 +2408,7 @@ yyreduce:
     break;
 
   case 112:
-#line 791 "asn1parse.y"
+#line 809 "asn1parse.y"
     {
 			(yyval.member) = (yyvsp[(1) - (3)].member);
 			(yyval.member)->optional = 0;
@@ -2395,7 +2417,7 @@ yyreduce:
     break;
 
   case 113:
-#line 799 "asn1parse.y"
+#line 817 "asn1parse.y"
     {
 			(yyval.members) = emalloc(sizeof(*(yyval.members)));
 			ASN1_TAILQ_INIT((yyval.members));
@@ -2404,7 +2426,7 @@ yyreduce:
     break;
 
   case 114:
-#line 805 "asn1parse.y"
+#line 823 "asn1parse.y"
     {
 			ASN1_TAILQ_INSERT_TAIL((yyvsp[(1) - (3)].members), (yyvsp[(3) - (3)].member), members);
 			(yyval.members) = (yyvsp[(1) - (3)].members);
@@ -2412,7 +2434,7 @@ yyreduce:
     break;
 
   case 115:
-#line 812 "asn1parse.y"
+#line 830 "asn1parse.y"
     {
 		  (yyval.member) = emalloc(sizeof(*(yyval.member)));
 		  (yyval.member)->name = (yyvsp[(1) - (4)].name);
@@ -2426,26 +2448,26 @@ yyreduce:
     break;
 
   case 117:
-#line 825 "asn1parse.y"
+#line 843 "asn1parse.y"
     { (yyval.objid) = NULL; }
     break;
 
   case 118:
-#line 829 "asn1parse.y"
+#line 847 "asn1parse.y"
     {
 			(yyval.objid) = (yyvsp[(2) - (3)].objid);
 		}
     break;
 
   case 119:
-#line 835 "asn1parse.y"
+#line 853 "asn1parse.y"
     {
 			(yyval.objid) = NULL;
 		}
     break;
 
   case 120:
-#line 839 "asn1parse.y"
+#line 857 "asn1parse.y"
     {
 		        if ((yyvsp[(2) - (2)].objid)) {
 				(yyval.objid) = (yyvsp[(2) - (2)].objid);
@@ -2457,14 +2479,14 @@ yyreduce:
     break;
 
   case 121:
-#line 850 "asn1parse.y"
+#line 868 "asn1parse.y"
     {
 			(yyval.objid) = new_objid((yyvsp[(1) - (4)].name), (yyvsp[(3) - (4)].constant));
 		}
     break;
 
   case 122:
-#line 854 "asn1parse.y"
+#line 872 "asn1parse.y"
     {
 		    Symbol *s = addsym((yyvsp[(1) - (1)].name));
 		    if(s->stype != SValue ||
@@ -2478,14 +2500,14 @@ yyreduce:
     break;
 
   case 123:
-#line 865 "asn1parse.y"
+#line 883 "asn1parse.y"
     {
 		    (yyval.objid) = new_objid(NULL, (yyvsp[(1) - (1)].constant));
 		}
     break;
 
   case 133:
-#line 888 "asn1parse.y"
+#line 906 "asn1parse.y"
     {
 			Symbol *s = addsym((yyvsp[(1) - (1)].name));
 			if(s->stype != SValue)
@@ -2497,7 +2519,7 @@ yyreduce:
     break;
 
   case 134:
-#line 899 "asn1parse.y"
+#line 917 "asn1parse.y"
     {
 			(yyval.value) = emalloc(sizeof(*(yyval.value)));
 			(yyval.value)->type = stringvalue;
@@ -2506,7 +2528,7 @@ yyreduce:
     break;
 
   case 135:
-#line 907 "asn1parse.y"
+#line 925 "asn1parse.y"
     {
 			(yyval.value) = emalloc(sizeof(*(yyval.value)));
 			(yyval.value)->type = booleanvalue;
@@ -2515,7 +2537,7 @@ yyreduce:
     break;
 
   case 136:
-#line 913 "asn1parse.y"
+#line 931 "asn1parse.y"
     {
 			(yyval.value) = emalloc(sizeof(*(yyval.value)));
 			(yyval.value)->type = booleanvalue;
@@ -2524,7 +2546,7 @@ yyreduce:
     break;
 
   case 137:
-#line 921 "asn1parse.y"
+#line 939 "asn1parse.y"
     {
 			(yyval.value) = emalloc(sizeof(*(yyval.value)));
 			(yyval.value)->type = integervalue;
@@ -2533,13 +2555,13 @@ yyreduce:
     break;
 
   case 139:
-#line 932 "asn1parse.y"
+#line 950 "asn1parse.y"
     {
 		}
     break;
 
   case 140:
-#line 937 "asn1parse.y"
+#line 955 "asn1parse.y"
     {
 			(yyval.value) = emalloc(sizeof(*(yyval.value)));
 			(yyval.value)->type = objectidentifiervalue;
@@ -2549,7 +2571,7 @@ yyreduce:
 
 
 /* Line 1267 of yacc.c.  */
-#line 2553 "asn1parse.c"
+#line 2575 "asn1parse.c"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);
@@ -2763,7 +2785,7 @@ yyreturn:
 }
 
 
-#line 944 "asn1parse.y"
+#line 962 "asn1parse.y"
 
 
 void
@@ -2810,11 +2832,14 @@ add_oid_to_tail(struct objid *head, struct objid *tail)
     o->next = tail;
 }
 
+static unsigned long idcounter;
+
 static Type *
 new_type (Typetype tt)
 {
     Type *t = ecalloc(1, sizeof(*t));
     t->type = tt;
+    t->id = idcounter++;
     return t;
 }
 

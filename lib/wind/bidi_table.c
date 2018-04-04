@@ -1,9 +1,9 @@
 /* ./bidi_table.c */
-/* Automatically generated at 2012-01-11T14:07:00.535499 */
+/* Automatically generated at 2017-12-08T03:21:13.199657 */
 
 
-#include <stdlib.h>
 #include "bidi_table.h"
+#include <stdlib.h>
 
 const struct range_entry _wind_ral_table[] = {
   {0x5be, 1},

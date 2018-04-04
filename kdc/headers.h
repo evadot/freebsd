@@ -47,6 +47,9 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
 #endif
@@ -105,6 +108,8 @@
 #endif
 #include <kdc.h>
 #include <windc_plugin.h>
+
+#include <heimbase.h>
 
 #undef ALLOC
 #define ALLOC(X) ((X) = calloc(1, sizeof(*(X))))

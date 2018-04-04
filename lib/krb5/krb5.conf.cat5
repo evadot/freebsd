@@ -108,7 +108,7 @@ DDEESSCCRRIIPPTTIIOONN
                            kkrrbb55__ggeett__hhoosstt__rreeaallmm(_l_o_c_a_l _h_o_s_t_n_a_m_e).
 
                       allow_weak_crypto = _b_o_o_l_e_a_n
-                           is weaks crypto algorithms allowed to be used,
+                           are weak crypto algorithms allowed to be used,
                            among others, DES is considered weak.
 
                       clockskew = _t_i_m_e
@@ -119,12 +119,6 @@ DDEESSCCRRIIPPTTIIOONN
                       kdc_timeout = _t_i_m_e
                            Maximum time to wait for a reply from the kdc,
                            default is 3 seconds.
-
-                      v4_name_convert
-
-                      v4_instance_resolve
-                           These are described in the
-                           krb5_425_conv_principal(3) manual page.
 
                       capath = {
 
@@ -142,8 +136,8 @@ DDEESSCCRRIIPPTTIIOONN
                            the default credentials cache name.  If you want to
                            change the type only use default_cc_type.  The
                            string can contain variables that are expanded on
-                           runtime.  Only support variable now is %{uid} that
-                           expands to the current user id.
+                           runtime.  The Only supported variable currently is
+                           %{uid} which expands to the current user id.
 
                       default_etypes = _e_t_y_p_e_s _._._.
                            A list of default encryption types to use.
@@ -245,23 +239,162 @@ DDEESSCCRRIIPPTTIIOONN
                       fcache_version = _i_n_t
                            Use file credential cache format version specified.
 
-                      krb4_get_tickets = _b_o_o_l_e_a_n
-                           Also get Kerberos 4 tickets in kkiinniitt, llooggiinn, and
-                           other programs.  This option is also valid in the
-                           [realms] section.
-
                       fcc-mit-ticketflags = _b_o_o_l_e_a_n
                            Use MIT compatible format for file credential
                            cache.  It's the field ticketflags that is stored
                            in reverse bit order for older than Heimdal 0.7.
-                           Setting this flag to TRUE make it store the MIT
+                           Setting this flag to TRUE makes it store the MIT
                            way, this is default for Heimdal 0.7.
 
                       check-rd-req-server
                            If set to "ignore", the framework will ignore any
-                           the server input to krb5_rd_req(3,) this is very
+                           of the server input to krb5_rd_req(3), this is very
                            useful when the GSS-API server input the wrong
                            server name into the gss_accept_sec_context call.
+
+                      k5login_directory = _d_i_r_e_c_t_o_r_y
+                           Alternative location for user .k5login files. This
+                           option is provided for compatibility with MIT krb5
+                           configuration files.
+
+                      k5login_authoritative = _b_o_o_l_e_a_n
+                           If true then if a principal is not found in k5login
+                           files then krb5_userok(3) will not fallback on
+                           principal to username mapping. This option is pro-
+                           vided for compatibility with MIT krb5 configuration
+                           files.
+
+                      kuserok = _r_u_l_e _._._.
+                           Specifies krb5_userok(3) behavior.  If multiple
+                           values are given, then krb5_userok(3) will evaluate
+                           them in order until one succeeds or all fail.
+                           Rules are implemented by plugins, with three built-
+                           in plugins described below. Default: USER-K5LOGIN
+                           SIMPLE DENY.
+
+                      kuserok = _D_E_N_Y
+                           If set and evaluated then krb5_userok(3) will deny
+                           access to the given username no matter what the
+                           principal name might be.
+
+                      kuserok = _S_I_M_P_L_E
+                           If set and evaluated then krb5_userok(3) will use
+                           principal to username mapping (see auth_to_local
+                           below).  If the principal maps to the requested
+                           username then access is allowed.
+
+                      kuserok = _S_Y_S_T_E_M_-_K_5_L_O_G_I_N_[_:_d_i_r_e_c_t_o_r_y_]
+                           If set and evaluated then krb5_userok(3) will use
+                           k5login files named after the _l_u_s_e_r argument to
+                           krb5_userok(3) in the given directory or in
+                           _/_e_t_c_/_k_5_l_o_g_i_n_._d_/.  K5login files are text files,
+                           with each line containing just a principal name;
+                           principals apearing in a user's k5login file are
+                           permitted access to the user's account. Note: this
+                           rule performs no ownership nor permissions checks
+                           on k5login files; proper ownership and permis-
+                           sions/ACLs are expected due to the k5login location
+                           being a system location.
+
+                      kuserok = _U_S_E_R_-_K_5_L_O_G_I_N
+                           If set and evaluated then krb5_userok(3) will use
+                           _~_l_u_s_e_r_/_._k_5_l_o_g_i_n and _~_l_u_s_e_r_/_._k_5_l_o_g_i_n_._d_/_*.  User
+                           k5login files and directories must be owned by the
+                           user and must not have world nor group write per-
+                           missions.
+
+                      aname2lname-text-db = _f_i_l_e_n_a_m_e
+                           The named file must be a sorted (in increasing
+                           order) text file where every line consists of an
+                           unparsed principal name optionally followed by
+                           whitespace and a username.  The aname2lname func-
+                           tion will do a binary search on this file, if con-
+                           figured, looking for lines that match the given
+                           principal name, and if found the given username
+                           will be used, or, if the username is missing, an
+                           error will be returned.  If the file doesn't exist,
+                           or if no matching line is found then other plugins
+                           will be allowed to run.
+
+                      fcache_strict_checking
+                           strict checking in FILE credential caches that
+                           owner, no symlink and permissions is correct.
+
+                      name_canon_rules = _r_u_l_e_s
+                           One or more service principal name canonicalization
+                           rules.  Each rule consists of one or more tokens
+                           separated by colon (':').  Currently these rules
+                           are used only for hostname canonicalization (usu-
+                           ally when getting a service ticket, from a ccache
+                           or a TGS, but also when acquiring GSS initiator
+                           credentials from a keytab).  These rules can be
+                           used to implement DNS resolver-like search lists
+                           without having to use DNS.
+
+                           NOTE: Name canonicalization rules are an experimen-
+                           tal feature.
+
+                           The first token is a rule type, one of: _a_s_-_i_s_,
+                           _q_u_a_l_i_f_y_, _o_r _n_s_s_.
+
+                           Any remaining tokens must be options tokens:
+                           _u_s_e___f_a_s_t (use FAST to protect TGS exchanges; cur-
+                           rently not supported), _u_s_e___d_n_s_s_e_c (use DNSSEC to
+                           protect hostname lookups; currently not supported),
+                           _c_c_a_c_h_e___o_n_l_y , _u_s_e___r_e_f_e_r_r_a_l_s_, _n_o___r_e_f_e_r_r_a_l_s_,
+                           _l_o_o_k_u_p___r_e_a_l_m_, _m_i_n_d_o_t_s_=_N_, _m_a_x_d_o_t_s_=_N_, _o_r_d_e_r_=_N_,
+                           domain= _d_o_m_a_i_n_, realm= _r_e_a_l_m_, match_domain= _d_o_m_a_i_n_,
+                           and match_realm= _r_e_a_l_m_.
+
+                           When trying to obtain a service ticket for a host-
+                           based service principal name, name canonicalization
+                           rules are applied to that name in the order given,
+                           one by one, until one succeds (a service ticket is
+                           obtained), or all fail.  Similarly when acquiring
+                           GSS initiator credentials from a keytab, and when
+                           comparing a non-canonical GSS name to a canonical
+                           one.
+
+                           For each rule the system checks that the hostname
+                           has at least _m_i_n_d_o_t_s periods (if given) in it, at
+                           most _m_a_x_d_o_t_s periods (if given), that the hostname
+                           ends in the given _m_a_t_c_h___d_o_m_a_i_n (if given), and that
+                           the realm of the principal matches the _m_a_t_c_h___r_e_a_l_m
+                           (if given).
+
+                           _A_s_-_i_s rules leave the hostname unmodified but may
+                           set a realm.  _Q_u_a_l_i_f_y rules qualify the hostname
+                           with the given _d_o_m_a_i_n and also may set the realm.
+                           The _n_s_s rule uses the system resolver to lookup the
+                           host's canonical name and is usually not secure.
+                           Note that using the _n_s_s rule type implies having to
+                           have principal aliases in the HDB (though not nec-
+                           essarily in keytabs).
+
+                           The empty realm denotes "ask the client's realm's
+                           TGS".  The empty realm may be set as well as
+                           matched.
+
+                           The order in which rules are applied is as follows:
+                           first all the rules with explicit _o_r_d_e_r then all
+                           other rules in the order in which they appear.  If
+                           any two rules have the same explicit _o_r_d_e_r, their
+                           order of appearance in krb5.conf breaks the tie.
+                           Explicitly specifying order can be useful where
+                           tools read and write the configuration file without
+                           preserving parameter order.
+
+                           Malformed rules are ignored.
+
+                      allow_hierarchical_capaths = _b_o_o_l_e_a_n
+                           When validating cross-realm transit paths, absent
+                           any explicit capath from the client realm to the
+                           server realm, allow a hierarchical transit path via
+                           the common ancestor domain of the two realms.
+                           Defaults to true.  Note, absent an explicit set-
+                           ting, hierarchical capaths are always used by the
+                           KDC when generating a referral to a destination
+                           with which is no direct trust.
 
            [domain_realm]
                 This is a list of mappings from DNS domain to Kerberos realm.
@@ -310,22 +443,61 @@ DDEESSCCRRIIPPTTIIOONN
                                       no such entry, the kpasswd port on the
                                       admin_server host will be tried.
 
-                                 krb524_server = _h_o_s_t_[_:_p_o_r_t_]
-                                      Points to the server that does 524 con-
-                                      versions.  If it is not mentioned, the
-                                      krb524 port on the kdcs will be tried.
-
-                                 v4_instance_convert
-
-                                 v4_name_convert
-
-                                 default_domain
-                                      See krb5_425_conv_principal(3).
-
                                  tgs_require_subkey
                                       a boolan variable that defaults to
                                       false.  Old DCE secd (pre 1.1) might
                                       need this to be true.
+
+                                 auth_to_local_names = {
+
+                                            _p_r_i_n_c_i_p_a_l___n_a_m_e _= _u_s_e_r_n_a_m_e
+                                                 The given _p_r_i_n_c_i_p_a_l___n_a_m_e will
+                                                 be mapped to the given
+                                                 _u_s_e_r_n_a_m_e if the _R_E_A_L_M is a
+                                                 default realm.
+
+                                 }
+
+                                 auth_to_local = HEIMDAL_DEFAULT
+                                      Use the Heimdal default principal to
+                                      username mapping.  Applies to principals
+                                      from the _R_E_A_L_M if and only if _R_E_A_L_M is a
+                                      default realm.
+
+                                 auth_to_local = DEFAULT
+                                      Use the MIT default principal to user-
+                                      name mapping.  Applies to principals
+                                      from the _R_E_A_L_M if and only if _R_E_A_L_M is a
+                                      default realm.
+
+                                 auth_to_local = DB:/path/to/db.txt
+                                      Use a binary search of the given DB.
+                                      The DB must be a flat-text file sortedf
+                                      in the "C" locale, with each record
+                                      being a line (separated by either LF or
+                                      CRLF) consisting of a principal name
+                                      followed by whitespace followed by a
+                                      username.  Applies to principals from
+                                      the _R_E_A_L_M if and only if _R_E_A_L_M is a
+                                      default realm.
+
+                                 auth_to_local = DB:/path/to/db
+                                      Use the given DB, if there's a plugin
+                                      for it.  Applies to principals from the
+                                      _R_E_A_L_M if and only if _R_E_A_L_M is a default
+                                      realm.
+
+                                 auth_to_local = RULE:...
+                                      Use the given rule, if there's a plugin
+                                      for it.  Applies to principals from the
+                                      _R_E_A_L_M if and only if _R_E_A_L_M is a default
+                                      realm.
+
+                                 auth_to_local = NONE
+                                      No additional principal to username map-
+                                      ping is done. Note that
+                                      _a_u_t_h___t_o___l_o_c_a_l___n_a_m_e_s and any preceding
+                                      _a_u_t_h___t_o___l_o_c_a_l rules have precedence.
 
                       }
 
@@ -359,10 +531,12 @@ DDEESSCCRRIIPPTTIIOONN
 
                       database = {
 
-                                 dbname = _D_A_T_A_B_A_S_E_N_A_M_E
-                                      Use this database for this realm.  See
-                                      the info documetation how to configure
-                                      different database backends.
+                                 dbname = _[_D_A_T_B_A_S_E_T_Y_P_E_:_]_D_A_T_A_B_A_S_E_N_A_M_E
+                                      Use this database for this realm.  The
+                                      _D_A_T_A_B_A_S_E_T_Y_P_E should be one of 'lmdb',
+                                      'db3', 'db1', 'db', 'sqlite', or 'ldap'.
+                                      See the info documetation how to config-
+                                      ure different database backends.
 
                                  realm = _R_E_A_L_M
                                       Specifies the realm that will be stored
@@ -384,7 +558,25 @@ DDEESSCCRRIIPPTTIIOONN
                                       Use this file as the log of changes per-
                                       formed to the database.  This file is
                                       used by iipprrooppdd--mmaasstteerr for propagating
-                                      changes to slaves.
+                                      changes to slaves.  It is also used by
+                                      kkaaddmmiinndd and kkaaddmmiinn (when used with the
+                                      -l option), and by all applications
+                                      using lliibbkkaaddmm55 with the local backend,
+                                      for two-phase commit functionality.
+                                      Slaves also use this.  Setting this to
+                                      //ddeevv//nnuullll disables two-phase commit and
+                                      incremental propagation.  Use iipprroopp--lloogg
+                                      to show the contents of this log file.
+
+                                 log-max-size = _n_u_m_b_e_r
+                                      When the log reaches this size (in
+                                      bytes), the log will be truncated, sav-
+                                      ing some entries, and keeping the latest
+                                      version number so as to not disrupt
+                                      incremental propagation.  If set to a
+                                      negative value then automatic log trun-
+                                      cation will be disabled.  Defaults to
+                                      52428800 (50MB).
 
                       }
 
@@ -392,9 +584,7 @@ DDEESSCCRRIIPPTTIIOONN
                            Maximum size of a kdc request.
 
                       require-preauth = _B_O_O_L
-                           If set pre-authentication is required.  Since krb4
-                           requests are not pre-authenticated they will be
-                           rejected.
+                           If set pre-authentication is required.
 
                       ports = _l_i_s_t _o_f _p_o_r_t_s
                            List of ports the kdc should listen to.
@@ -402,22 +592,8 @@ DDEESSCCRRIIPPTTIIOONN
                       addresses = _l_i_s_t _o_f _i_n_t_e_r_f_a_c_e_s
                            List of addresses the kdc should bind to.
 
-                      enable-kerberos4 = _B_O_O_L
-                           Turn on Kerberos 4 support.
-
-                      v4-realm = _R_E_A_L_M
-                           To what realm v4 requests should be mapped.
-
-                      enable-524 = _B_O_O_L
-                           Should the Kerberos 524 converting facility be
-                           turned on.  Default is the same as
-                           _e_n_a_b_l_e_-_k_e_r_b_e_r_o_s_4.
-
                       enable-http = _B_O_O_L
                            Should the kdc answer kdc-requests over http.
-
-                      enable-kaserver = _B_O_O_L
-                           If this kdc should emulate the AFS kaserver.
 
                       tgt-use-strongest-session-key = _B_O_O_L
                            If this is TRUE then the KDC will prefer the
@@ -427,19 +603,19 @@ DDEESSCCRRIIPPTTIIOONN
                            the target principal is a krbtgt principal.  Else
                            it will prefer the first key from the client's AS-
                            REQ enctype list that is also supported by the KDC
-                           and the target principal. Defaults to TRUE.
+                           and the target principal.  Defaults to FALSE.
 
                       svc-use-strongest-session-key = _B_O_O_L
                            Like tgt-use-strongest-session-key, but applies to
                            the session key enctype of tickets for services
-                           other than krbtgt principals. Defaults to TRUE.
+                           other than krbtgt principals. Defaults to FALSE.
 
                       preauth-use-strongest-session-key = _B_O_O_L
                            If TRUE then select the strongest possible enctype
                            from the client's AS-REQ for PA-ETYPE-INFO2 (i.e.,
                            for password-based pre-authentication).  Else pick
                            the first supported enctype from the client's AS-
-                           REQ. Defaults to TRUE.
+                           REQ.  Defaults to FALSE.
 
                       use-strongest-server-key = _B_O_O_L
                            If TRUE then the KDC picks, for the ticket
@@ -447,7 +623,7 @@ DDEESSCCRRIIPPTTIIOONN
                            from the target service principal's hdb entry's
                            current keyset. Else the KDC picks the first sup-
                            ported enctype from the target service principal's
-                           hdb entry's current keyset. Defaults to TRUE.
+                           hdb entry's current keyset.  Defaults to TRUE.
 
                       check-ticket-addresses = _B_O_O_L
                            Verify the addresses in the tickets used in tgs
@@ -472,16 +648,6 @@ DDEESSCCRRIIPPTTIIOONN
                            What type of logging the kdc should use, see also
                            [logging]/kdc.
 
-                      use_2b = {
-
-                                 _p_r_i_n_c_i_p_a_l = _B_O_O_L
-                                      boolean value if the 524 daemon should
-                                      return AFS 2b tokens for _p_r_i_n_c_i_p_a_l.
-
-                                 ...
-
-                      }
-
                       hdb-ldap-structural-object _s_t_r_u_c_t_u_r_a_l _o_b_j_e_c_t
                            If the LDAP backend is used for storing principals,
                            this is the structural object that will be used
@@ -501,11 +667,45 @@ DDEESSCCRRIIPPTTIIOONN
                            Specifies the digests the kdc will reply to. The
                            default is ntlm-v2.
 
-           [kadmin]
+                      kx509_ca = _f_i_l_e
+                           Specifies the PEM credentials for the kx509 certi-
+                           fication authority.
 
-                      require-preauth = _B_O_O_L
-                           If pre-authentication is required to talk to the
-                           kadmin server.
+                      require_initial_kca_tickets = _b_o_o_l_e_a_n
+                           Specified whether to require that tickets for the
+                           kca_service service principal be INITIAL.  This may
+                           be set on a per-realm basis as well as globally.
+                           Defaults to true for the global setting.
+
+                      kx509_include_pkinit_san = _b_o_o_l_e_a_n
+                           If true then the kx509 client principal's name and
+                           realm will be included in an id-pkinit-san certifi-
+                           cate extension.  This can be set on a per-realm
+                           basis as well as globally.  Defaults to true for
+                           the global setting.
+
+                      kx509_template = _f_i_l_e
+                           Specifies the PEM file with a template for the cer-
+                           tificates to be issued.  The following variables
+                           can be interpolated in the subject name using
+                           ${variable} syntax:
+
+                                 principal-name
+                                      The full name of the kx509 client prin-
+                                      cipal.
+
+                                 principal-name-without-realm
+                                      The full name of the kx509 client prin-
+                                      cipal, excluding the realm name.
+
+                                 principal-name-realm
+                                      The name of the client principal's
+                                      realm.
+                The kx509, kx509_template, kx509_include_pkinit_san, and
+                require_initial_kca_tickets parameters may be set on a per-
+                realm basis as well.
+
+           [kadmin]
 
                       password_lifetime = _t_i_m_e
                            If a principal already have its password set for
@@ -526,7 +726,25 @@ DDEESSCCRRIIPPTTIIOONN
 
                                  v5   The Kerberos 5 salt _p_w_-_s_a_l_t
 
-                                 v4   The Kerberos 4 salt _d_e_s_:_p_w_-_s_a_l_t_:
+                      default_key_rules = _{
+
+                                 _g_l_o_b_i_n_g_-_r_u_l_e = _k_e_y_t_y_p_e_s_._._.
+                                      a globbing rule to matching a principal,
+                                      and when true, use the keytypes as spec-
+                                      ified the same format as [kad-
+                                      min]default_keys .
+
+                      }
+
+                      prune-key-history = _B_O_O_L
+                           When adding keys to the key history, drop keys that
+                           are too old to match unexpired tickets (based on
+                           the principal's maximum ticket lifetime).  If the
+                           KDC keystore is later compromised traffic protected
+                           with the discarded older keys may remain protected.
+                           This also keeps the HDB records for principals with
+                           key history from growing without bound.  The
+                           default (backwards compatible) value is "false".
 
                       use_v4_salt = _B_O_O_L
                            When true, this is the same as
@@ -535,26 +753,27 @@ DDEESSCCRRIIPPTTIIOONN
 
                            and is only left for backwards compatibility.
 
-           [password_quality]
-                Check the Password quality assurance in the info documentation
-                for more information.
+                      [password_quality]
+                           Check the Password quality assurance in the info
+                           documentation for more information.
 
-                      check_library = _l_i_b_r_a_r_y_-_n_a_m_e
-                           Library name that contains the password check_func-
-                           tion
+                                 check_library = _l_i_b_r_a_r_y_-_n_a_m_e
+                                      Library name that contains the password
+                                      check_function
 
-                      check_function = _f_u_n_c_t_i_o_n_-_n_a_m_e
-                           Function name for checking passwords in
-                           check_library
+                                 check_function = _f_u_n_c_t_i_o_n_-_n_a_m_e
+                                      Function name for checking passwords in
+                                      check_library
 
-                      policy_libraries = _l_i_b_r_a_r_y_1 _._._. _l_i_b_r_a_r_y_N
-                           List of libraries that can do password policy
-                           checks
+                                 policy_libraries = _l_i_b_r_a_r_y_1 _._._. _l_i_b_r_a_r_y_N
+                                      List of libraries that can do password
+                                      policy checks
 
-                      policies = _p_o_l_i_c_y_1 _._._. _p_o_l_i_c_y_N
-                           List of policy names to apply to the password.
-                           Builtin policies are among other minimum-length,
-                           character-class, external-check.
+                                 policies = _p_o_l_i_c_y_1 _._._. _p_o_l_i_c_y_N
+                                      List of policy names to apply to the
+                                      password. Builtin policies are among
+                                      other minimum-length, character-class,
+                                      external-check.
 
 EENNVVIIRROONNMMEENNTT
      KRB5_CONFIG points to the configuration file to read.
@@ -565,24 +784,26 @@ FFIILLEESS
 EEXXAAMMPPLLEESS
            [libdefaults]
                    default_realm = FOO.SE
+                   name_canon_rules = as-is:realm=FOO.SE
+                   name_canon_rules = qualify:domain=foo.se:realm=FOO.SE
+                   name_canon_rules = qualify:domain=bar.se:realm=FOO.SE
+                   name_canon_rules = nss
            [domain_realm]
                    .foo.se = FOO.SE
                    .bar.se = FOO.SE
            [realms]
                    FOO.SE = {
                            kdc = kerberos.foo.se
-                           v4_name_convert = {
-                                   rcmd = host
-                           }
-                           v4_instance_convert = {
-                                   xyz = xyz.bar.se
-                           }
                            default_domain = foo.se
                    }
            [logging]
                    kdc = FILE:/var/heimdal/kdc.log
                    kdc = SYSLOG:INFO
                    default = SYSLOG:INFO:USER
+           [kadmin]
+                   default_key_rules = {
+                           */ppp@* = arcfour-hmac-md5:pw-salt
+                   }
 
 DDIIAAGGNNOOSSTTIICCSS
      Since kkrrbb55..ccoonnff is read and parsed by the krb5 library, there is not a
@@ -594,7 +815,6 @@ DDIIAAGGNNOOSSTTIICCSS
      unknown or misspelled ones.
 
 SSEEEE AALLSSOO
-     kinit(1), krb5_425_conv_principal(3), krb5_openlog(3), strftime(3),
-     verify_krb5_conf(8)
+     kinit(1), krb5_openlog(3), strftime(3), verify_krb5_conf(8)
 
 HEIMDAL                           May 4, 2005                          HEIMDAL

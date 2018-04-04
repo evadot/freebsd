@@ -5,8 +5,8 @@ NNAAMMEE
      kkiinniitt -- acquire initial tickets
 
 SSYYNNOOPPSSIISS
-     kkiinniitt [----aaffsslloogg] [--cc _c_a_c_h_e_n_a_m_e | ----ccaacchhee==_c_a_c_h_e_n_a_m_e]
-           [--ff | ----nnoo--ffoorrwwaarrddaabbllee] [--tt _k_e_y_t_a_b_n_a_m_e | ----kkeeyyttaabb==_k_e_y_t_a_b_n_a_m_e] [--ll
+     kkiinniitt [----aaffsslloogg] [--cc _c_a_c_h_e_n_a_m_e | ----ccaacchhee==_c_a_c_h_e_n_a_m_e] [--ff | ----ffoorrwwaarrddaabbllee]
+           [--FF | ----nnoo--ffoorrwwaarrddaabbllee] [--tt _k_e_y_t_a_b_n_a_m_e | ----kkeeyyttaabb==_k_e_y_t_a_b_n_a_m_e] [--ll
            _t_i_m_e | ----lliiffeettiimmee==_t_i_m_e] [--pp | ----pprrooxxiiaabbllee] [--RR | ----rreenneeww]
            [----rreenneewwaabbllee] [--rr _t_i_m_e | ----rreenneewwaabbllee--lliiffee==_t_i_m_e] [--SS _p_r_i_n_c_i_p_a_l |
            ----sseerrvveerr==_p_r_i_n_c_i_p_a_l] [--ss _t_i_m_e | ----ssttaarrtt--ttiimmee==_t_i_m_e]
@@ -28,9 +28,11 @@ DDEESSCCRRIIPPTTIIOONN
              The credentials cache to put the acquired ticket in, if other
              than default.
 
-     --ff ----nnoo--ffoorrwwaarrddaabbllee
-             Get ticket that can be forwarded to another host, or if the nega-
-             tive flags use, don't get a forwardable flag.
+     --ff ----ffoorrwwaarrddaabbllee
+             Obtain a ticket than can be forwarded to another host.
+
+     --FF ----nnoo--ffoorrwwaarrddaabbllee
+             Do not obtain a forwardable ticket.
 
      --tt _k_e_y_t_a_b_n_a_m_e, ----kkeeyyttaabb==_k_e_y_t_a_b_n_a_m_e
              Don't ask for a password, but instead get the key from the speci-
@@ -119,10 +121,6 @@ EENNVVIIRROONNMMEENNTT
 
      KRB5_CONFIG
              The file name of _k_r_b_5_._c_o_n_f, the default being _/_e_t_c_/_k_r_b_5_._c_o_n_f.
-
-     KRBTKFILE
-             Specifies the Kerberos 4 ticket file to store version 4 tickets
-             in.
 
 SSEEEE AALLSSOO
      kdestroy(1), klist(1), krb5_appdefault(3), krb5.conf(5)

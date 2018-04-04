@@ -35,7 +35,7 @@
 
 #include <pkinit_asn1.h>
 
-krb5_error_code
+KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL
 _krb5_pk_octetstring2key(krb5_context context,
 			 krb5_enctype type,
 			 const void *dhdata,
@@ -61,16 +61,13 @@ _krb5_pk_octetstring2key(krb5_context context,
     keylen = (et->keytype->bits + 7) / 8;
 
     keydata = malloc(keylen);
-    if (keydata == NULL) {
-	krb5_set_error_message(context, ENOMEM, N_("malloc: out of memory", ""));
-	return ENOMEM;
-    }
+    if (keydata == NULL)
+	return krb5_enomem(context);
 
     m = EVP_MD_CTX_create();
     if (m == NULL) {
 	free(keydata);
-	krb5_set_error_message(context, ENOMEM, N_("malloc: out of memory", ""));
-	return ENOMEM;
+	return krb5_enomem(context);
     }
 
     counter = 0;
@@ -194,7 +191,7 @@ encode_otherinfo(krb5_context context,
 
 
 
-krb5_error_code
+KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL
 _krb5_pk_kdf(krb5_context context,
 	     const struct AlgorithmIdentifier *ai,
 	     const void *dhdata,
@@ -248,10 +245,8 @@ _krb5_pk_kdf(krb5_context context,
     keylen = (et->keytype->bits + 7) / 8;
 
     keydata = malloc(keylen);
-    if (keydata == NULL) {
-	krb5_set_error_message(context, ENOMEM, N_("malloc: out of memory", ""));
-	return ENOMEM;
-    }
+    if (keydata == NULL)
+	return krb5_enomem(context);
 
     ret = encode_otherinfo(context, ai, client, server,
 			   enctype, as_req, pk_as_rep, ticket, &other);
@@ -264,8 +259,7 @@ _krb5_pk_kdf(krb5_context context,
     if (m == NULL) {
 	free(keydata);
 	free(other.data);
-	krb5_set_error_message(context, ENOMEM, N_("malloc: out of memory", ""));
-	return ENOMEM;
+	return krb5_enomem(context);
     }
 
     offset = 0;

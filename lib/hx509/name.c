@@ -238,15 +238,22 @@ _hx509_Name_to_string(const Name *n, char **str)
 		size_t k;
 
 		ret = wind_ucs2utf8_length(bmp, bmplen, &k);
-		if (ret)
+		if (ret) {
+                    free(oidname);
+                    free(*str);
+                    *str = NULL;
 		    return ret;
+                }
 
 		ss = malloc(k + 1);
 		if (ss == NULL)
 		    _hx509_abort("allocation failure"); /* XXX */
 		ret = wind_ucs2utf8(bmp, bmplen, ss, NULL);
 		if (ret) {
+                    free(oidname);
 		    free(ss);
+                    free(*str);
+                    *str = NULL;
 		    return ret;
 		}
 		ss[k] = '\0';
@@ -263,8 +270,12 @@ _hx509_Name_to_string(const Name *n, char **str)
 		size_t k;
 
 		ret = wind_ucs4utf8_length(uni, unilen, &k);
-		if (ret)
+		if (ret) {
+                    free(oidname);
+                    free(*str);
+                    *str = NULL;
 		    return ret;
+                }
 
 		ss = malloc(k + 1);
 		if (ss == NULL)
@@ -272,6 +283,9 @@ _hx509_Name_to_string(const Name *n, char **str)
 		ret = wind_ucs4utf8(uni, unilen, ss, NULL);
 		if (ret) {
 		    free(ss);
+                    free(oidname);
+                    free(*str);
+                    *str = NULL;
 		    return ret;
 		}
 		ss[k] = '\0';
@@ -966,7 +980,7 @@ hx509_general_name_unparse(GeneralName *name, char **str)
 	char *s;
 	int ret;
 	memset(&dir, 0, sizeof(dir));
-	dir.element = name->u.directoryName.element;
+	dir.element = (enum Name_enum)name->u.directoryName.element;
 	dir.u.rdnSequence = name->u.directoryName.u.rdnSequence;
 	ret = _hx509_unparse_Name(&dir, &s);
 	if (ret)

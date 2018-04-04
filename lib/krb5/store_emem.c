@@ -156,6 +156,7 @@ emem_free(krb5_storage *sp)
  * @sa krb5_storage_from_readonly_mem()
  * @sa krb5_storage_from_fd()
  * @sa krb5_storage_from_data()
+ * @sa krb5_storage_from_socket()
  */
 
 KRB5_LIB_FUNCTION krb5_storage * KRB5_LIB_CALL
@@ -189,6 +190,7 @@ krb5_storage_emem(void)
     sp->store = emem_store;
     sp->seek = emem_seek;
     sp->trunc = emem_trunc;
+    sp->fsync = NULL;
     sp->free = emem_free;
     sp->max_alloc = UINT_MAX/8;
     return sp;

@@ -1,6 +1,7 @@
 /* This is a generated file */
 #ifndef __kdc_protos_h__
 #define __kdc_protos_h__
+#ifndef DOXY
 
 #include <stdarg.h>
 
@@ -17,6 +18,12 @@ kdc_check_flags (
 	hdb_entry_ex */*server_ex*/,
 	const char */*server_name*/,
 	krb5_boolean /*is_as_req*/);
+
+krb5_error_code
+kdc_kx509_verify_service_principal (
+	krb5_context /*context*/,
+	const char */*cname*/,
+	krb5_principal /*sprincipal*/);
 
 void
 kdc_log (
@@ -114,4 +121,5 @@ krb5_kdc_windc_init (krb5_context /*context*/);
 }
 #endif
 
+#endif /* DOXY */
 #endif /* __kdc_protos_h__ */

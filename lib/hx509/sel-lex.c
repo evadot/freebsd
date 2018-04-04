@@ -46,6 +46,7 @@ typedef int16_t flex_int16_t;
 typedef uint16_t flex_uint16_t;
 typedef int32_t flex_int32_t;
 typedef uint32_t flex_uint32_t;
+typedef uint64_t flex_uint64_t;
 #else
 typedef signed char flex_int8_t;
 typedef short int flex_int16_t;
@@ -354,7 +355,7 @@ static void yy_fatal_error (yyconst char msg[]  );
  */
 #define YY_DO_BEFORE_ACTION \
 	(yytext_ptr) = yy_bp; \
-	yyleng = (size_t) (yy_cp - yy_bp); \
+	yyleng = (yy_size_t) (yy_cp - yy_bp); \
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
@@ -470,7 +471,7 @@ char *yytext;
 #line 1 "sel-lex.l"
 #line 2 "sel-lex.l"
 /*
- * Copyright (c) 2004, 2008 Kungliga Tekniska Högskolan
+ * Copyright (c) 2004 - 2017 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
  *
@@ -504,6 +505,11 @@ char *yytext;
 
 /* $Id$ */
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -520,7 +526,6 @@ unsigned lineno = 1;
 
 static char * handle_string(void);
 static int lex_input(char *, int);
-static int lex_classic_input(void);
 
 struct hx_expr_input _hx509_expr_input;
 
@@ -535,7 +540,7 @@ struct hx_expr_input _hx509_expr_input;
 
 #undef ECHO
 
-#line 539 "sel-lex.c"
+#line 544 "sel-lex.c"
 
 #define INITIAL 0
 
@@ -717,10 +722,10 @@ YY_DECL
 	register char *yy_cp, *yy_bp;
 	register int yy_act;
     
-#line 69 "sel-lex.l"
+#line 73 "sel-lex.l"
 
 
-#line 724 "sel-lex.c"
+#line 729 "sel-lex.c"
 
 	if ( !(yy_init) )
 		{
@@ -805,37 +810,37 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 71 "sel-lex.l"
+#line 75 "sel-lex.l"
 { return kw_TRUE; }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 72 "sel-lex.l"
+#line 76 "sel-lex.l"
 { return kw_FALSE; }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 73 "sel-lex.l"
+#line 77 "sel-lex.l"
 { return kw_AND; }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 74 "sel-lex.l"
+#line 78 "sel-lex.l"
 { return kw_OR; }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 75 "sel-lex.l"
+#line 79 "sel-lex.l"
 { return kw_IN; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 76 "sel-lex.l"
+#line 80 "sel-lex.l"
 { return kw_TAILMATCH; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 78 "sel-lex.l"
+#line 82 "sel-lex.l"
 {
 			  yylval.string = strdup ((const char *)yytext);
 			  return IDENTIFIER;
@@ -843,31 +848,31 @@ YY_RULE_SETUP
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 82 "sel-lex.l"
+#line 86 "sel-lex.l"
 { yylval.string = handle_string(); return STRING; }
 	YY_BREAK
 case 9:
 /* rule 9 can match eol */
 YY_RULE_SETUP
-#line 83 "sel-lex.l"
+#line 87 "sel-lex.l"
 { ++lineno; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 84 "sel-lex.l"
+#line 88 "sel-lex.l"
 { return *yytext; }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 85 "sel-lex.l"
+#line 89 "sel-lex.l"
 ;
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 86 "sel-lex.l"
+#line 90 "sel-lex.l"
 ECHO;
 	YY_BREAK
-#line 871 "sel-lex.c"
+#line 876 "sel-lex.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -1864,7 +1869,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 86 "sel-lex.l"
+#line 90 "sel-lex.l"
 
 
 
@@ -1898,6 +1903,10 @@ handle_string(void)
     x[i] = '\0';
     return strdup(x);
 }
+
+#if !defined(yywrap)
+#define yywrap  _hx509_sel_yywrap
+#endif
 
 int
 yywrap ()

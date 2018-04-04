@@ -23,7 +23,9 @@ DDEESSCCRRIIPPTTIIOONN
              Print the exec-prefix if no _d_i_r is specified, otherwise set exec-
              prefix to _d_i_r.
 
-     ----lliibbss  Output the set of libraries that should be linked against.
+     ----lliibbss  Output the set of libraries that should be linked against.  This
+             also includes rpath flags with the expectation that the C com-
+             piler is used for final link-edits.
 
      ----ccffllaaggss
              Output the set of flags to give to the C compiler when using the

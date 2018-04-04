@@ -1,8 +1,11 @@
-.TH "Heimdal Kerberos 5 address functions" 3 "11 Jan 2012" "Version 1.5.2" "HeimdalKerberos5library" \" -*- nroff -*-
+.TH "krb5_address" 3 "Fri Dec 8 2017" "Version 7.5.0" "HeimdalKerberos5library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-Heimdal Kerberos 5 address functions \- 
+krb5_address
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -73,8 +76,7 @@ Heimdal Kerberos 5 address functions \-
 .SH "Function Documentation"
 .PP 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_addr2sockaddr (krb5_context context, const krb5_address * addr, struct sockaddr * sa, krb5_socklen_t * sa_size, int port)"
-.PP
-krb5_addr2sockaddr sets the 'struct sockaddr sockaddr' from addr and port. The argument sa_size should initially contain the size of the sa and after the call, it will contain the actual length of the address. In case of the sa is too small to fit the whole address, the up to *sa_size will be stored, and then *sa_size will be set to the required length.
+krb5_addr2sockaddr sets the 'struct sockaddr sockaddr' from addr and port\&. The argument sa_size should initially contain the size of the sa and after the call, it will contain the actual length of the address\&. In case of the sa is too small to fit the whole address, the up to *sa_size will be stored, and then *sa_size will be set to the required length\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -84,20 +86,19 @@ krb5_addr2sockaddr sets the 'struct sockaddr sockaddr' from addr and port. The a
 .br
 \fIsa\fP the struct sockaddr that will be filled in 
 .br
-\fIsa_size\fP pointer to length of sa, and after the call, it will contain the actual length of the address. 
+\fIsa_size\fP pointer to length of sa, and after the call, it will contain the actual length of the address\&. 
 .br
-\fIport\fP set port in sa.
+\fIport\fP set port in sa\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. Will return KRB5_PROG_ATYPE_NOSUPP in case address type is not supported. 
+Return an error code or 0\&. Will return KRB5_PROG_ATYPE_NOSUPP in case address type is not supported\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_address_compare (krb5_context context, const krb5_address * addr1, const krb5_address * addr2)"
-.PP
-krb5_address_compare compares the addresses addr1 and addr2. Returns TRUE if the two addresses are the same.
+krb5_address_compare compares the addresses addr1 and addr2\&. Returns TRUE if the two addresses are the same\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -115,8 +116,7 @@ Return an TRUE is the address are the same FALSE if not
 .PP
 
 .SS "KRB5_LIB_FUNCTION int KRB5_LIB_CALL krb5_address_order (krb5_context context, const krb5_address * addr1, const krb5_address * addr2)"
-.PP
-krb5_address_order compares the addresses addr1 and addr2 so that it can be used for sorting addresses. If the addresses are the same address krb5_address_order will return 0. Behavies like memcmp(2).
+krb5_address_order compares the addresses addr1 and addr2 so that it can be used for sorting addresses\&. If the addresses are the same address krb5_address_order will return 0\&. Behavies like memcmp(2)\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -129,13 +129,12 @@ krb5_address_order compares the addresses addr1 and addr2 so that it can be used
 .PP
 \fBReturns:\fP
 .RS 4
-< 0 if address addr1 in 'less' then addr2. 0 if addr1 and addr2 is the same address, > 0 if addr2 is 'less' then addr1. 
+< 0 if address addr1 in 'less' then addr2\&. 0 if addr1 and addr2 is the same address, > 0 if addr2 is 'less' then addr1\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_address_prefixlen_boundary (krb5_context context, const krb5_address * inaddr, unsigned long prefixlen, krb5_address * low, krb5_address * high)"
-.PP
-Calculate the boundary addresses of `inaddr'/`prefixlen' and store them in `low' and `high'.
+Calculate the boundary addresses of `inaddr'/`prefixlen' and store them in `low' and `high'\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -152,32 +151,30 @@ Calculate the boundary addresses of `inaddr'/`prefixlen' and store them in `low'
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_address_search (krb5_context context, const krb5_address * addr, const krb5_addresses * addrlist)"
-.PP
-krb5_address_search checks if the address addr is a member of the address set list addrlist .
+krb5_address_search checks if the address addr is a member of the address set list addrlist \&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP a Keberos context. 
+\fIcontext\fP a Keberos context\&. 
 .br
-\fIaddr\fP address to search for. 
+\fIaddr\fP address to search for\&. 
 .br
-\fIaddrlist\fP list of addresses to look in for addr.
+\fIaddrlist\fP list of addresses to look in for addr\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_anyaddr (krb5_context context, int af, struct sockaddr * sa, krb5_socklen_t * sa_size, int port)"
-.PP
-krb5_anyaddr fills in a 'struct sockaddr sa' that can be used to bind(2) to. The argument sa_size should initially contain the size of the sa, and after the call, it will contain the actual length of the address.
+krb5_anyaddr fills in a 'struct sockaddr sa' that can be used to bind(2) to\&. The argument sa_size should initially contain the size of the sa, and after the call, it will contain the actual length of the address\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -187,20 +184,19 @@ krb5_anyaddr fills in a 'struct sockaddr sa' that can be used to bind(2) to. The
 .br
 \fIsa\fP sockaddr 
 .br
-\fIsa_size\fP lenght of sa. 
+\fIsa_size\fP lenght of sa\&. 
 .br
-\fIport\fP for to fill into sa.
+\fIport\fP for to fill into sa\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_append_addresses (krb5_context context, krb5_addresses * dest, const krb5_addresses * source)"
-.PP
-krb5_append_addresses adds the set of addresses in source to dest. While copying the addresses, duplicates are also sorted out.
+krb5_append_addresses adds the set of addresses in source to dest\&. While copying the addresses, duplicates are also sorted out\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -213,13 +209,12 @@ krb5_append_addresses adds the set of addresses in source to dest. While copying
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_copy_address (krb5_context context, const krb5_address * inaddr, krb5_address * outaddr)"
-.PP
-krb5_copy_address copies the content of address inaddr to outaddr.
+krb5_copy_address copies the content of address inaddr to outaddr\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -232,13 +227,12 @@ krb5_copy_address copies the content of address inaddr to outaddr.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_copy_addresses (krb5_context context, const krb5_addresses * inaddr, krb5_addresses * outaddr)"
-.PP
-krb5_copy_addresses copies the content of addresses inaddr to outaddr.
+krb5_copy_addresses copies the content of addresses inaddr to outaddr\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -251,47 +245,44 @@ krb5_copy_addresses copies the content of addresses inaddr to outaddr.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_free_address (krb5_context context, krb5_address * address)"
-.PP
-krb5_free_address frees the data stored in the address that is alloced with any of the krb5_address functions.
+krb5_free_address frees the data stored in the address that is alloced with any of the krb5_address functions\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP a Keberos context 
 .br
-\fIaddress\fP addresss to be freed.
+\fIaddress\fP addresss to be freed\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_free_addresses (krb5_context context, krb5_addresses * addresses)"
-.PP
-krb5_free_addresses frees the data stored in the address that is alloced with any of the krb5_address functions.
+krb5_free_addresses frees the data stored in the address that is alloced with any of the krb5_address functions\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP a Keberos context 
 .br
-\fIaddresses\fP addressses to be freed.
+\fIaddresses\fP addressses to be freed\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_h_addr2addr (krb5_context context, int af, const char * haddr, krb5_address * addr)"
-.PP
-krb5_h_addr2addr works like krb5_h_addr2sockaddr with the exception that it operates on a krb5_address instead of a struct sockaddr.
+krb5_h_addr2addr works like krb5_h_addr2sockaddr with the exception that it operates on a krb5_address instead of a struct sockaddr\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -299,20 +290,19 @@ krb5_h_addr2addr works like krb5_h_addr2sockaddr with the exception that it oper
 .br
 \fIaf\fP address family 
 .br
-\fIhaddr\fP host address from struct hostent. 
+\fIhaddr\fP host address from struct hostent\&. 
 .br
-\fIaddr\fP returned krb5_address.
+\fIaddr\fP returned krb5_address\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_h_addr2sockaddr (krb5_context context, int af, const char * addr, struct sockaddr * sa, krb5_socklen_t * sa_size, int port)"
-.PP
-krb5_h_addr2sockaddr initializes a 'struct sockaddr sa' from af and the 'struct hostent' (see gethostbyname(3) ) h_addr_list component. The argument sa_size should initially contain the size of the sa, and after the call, it will contain the actual length of the address.
+krb5_h_addr2sockaddr initializes a 'struct sockaddr sa' from af and the 'struct hostent' (see gethostbyname(3) ) h_addr_list component\&. The argument sa_size should initially contain the size of the sa, and after the call, it will contain the actual length of the address\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -326,17 +316,16 @@ krb5_h_addr2sockaddr initializes a 'struct sockaddr sa' from af and the 'struct 
 .br
 \fIsa_size\fP size of sa 
 .br
-\fIport\fP port to set in sa.
+\fIport\fP port to set in sa\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_make_addrport (krb5_context context, krb5_address ** res, const krb5_address * addr, int16_t port)"
-.PP
 Create an address of type KRB5_ADDRESS_ADDRPORT from (addr, port)
 .PP
 \fBParameters:\fP
@@ -352,23 +341,21 @@ Create an address of type KRB5_ADDRESS_ADDRPORT from (addr, port)
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION size_t KRB5_LIB_CALL krb5_max_sockaddr_size (void)"
-.PP
-krb5_max_sockaddr_size returns the max size of the .Li struct sockaddr that the Kerberos library will return.
+krb5_max_sockaddr_size returns the max size of the \&.Li struct sockaddr that the Kerberos library will return\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an size_t of the maximum struct sockaddr. 
+Return an size_t of the maximum struct sockaddr\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_parse_address (krb5_context context, const char * string, krb5_addresses * addresses)"
-.PP
-krb5_parse_address returns the resolved hostname in string to the krb5_addresses addresses .
+krb5_parse_address returns the resolved hostname in string to the krb5_addresses addresses \&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -381,13 +368,12 @@ krb5_parse_address returns the resolved hostname in string to the krb5_addresses
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_print_address (const krb5_address * addr, char * str, size_t len, size_t * ret_len)"
-.PP
-krb5_print_address prints the address in addr to the string string that have the length len. If ret_len is not NULL, it will be filled with the length of the string if size were unlimited (not including the final NUL) .
+krb5_print_address prints the address in addr to the string string that have the length len\&. If ret_len is not NULL, it will be filled with the length of the string if size were unlimited (not including the final NUL) \&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -395,20 +381,19 @@ krb5_print_address prints the address in addr to the string string that have the
 .br
 \fIstr\fP pointer string to print the address into 
 .br
-\fIlen\fP length that will fit into area pointed to by 'str'. 
+\fIlen\fP length that will fit into area pointed to by 'str'\&. 
 .br
-\fIret_len\fP return length the str.
+\fIret_len\fP return length the str\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_sockaddr2address (krb5_context context, const struct sockaddr * sa, krb5_address * addr)"
-.PP
-krb5_sockaddr2address stores a address a 'struct sockaddr' sa in the krb5_address addr.
+krb5_sockaddr2address stores a address a 'struct sockaddr' sa in the krb5_address addr\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -416,18 +401,17 @@ krb5_sockaddr2address stores a address a 'struct sockaddr' sa in the krb5_addres
 .br
 \fIsa\fP a struct sockaddr to extract the address from 
 .br
-\fIaddr\fP an Kerberos 5 address to store the address in.
+\fIaddr\fP an Kerberos 5 address to store the address in\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. 
+Return an error code or 0\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_sockaddr2port (krb5_context context, const struct sockaddr * sa, int16_t * port)"
-.PP
-krb5_sockaddr2port extracts a port (if possible) from a 'struct sockaddr.
+krb5_sockaddr2port extracts a port (if possible) from a "struct sockaddr\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -435,27 +419,29 @@ krb5_sockaddr2port extracts a port (if possible) from a 'struct sockaddr.
 .br
 \fIsa\fP a struct sockaddr to extract the port from 
 .br
-\fIport\fP a pointer to an int16_t store the port in.
+\fIport\fP a pointer to an int16_t store the port in\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0. Will return KRB5_PROG_ATYPE_NOSUPP in case address type is not supported. 
+Return an error code or 0\&. Will return KRB5_PROG_ATYPE_NOSUPP in case address type is not supported\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_sockaddr_uninteresting (const struct sockaddr * sa)"
-.PP
-krb5_sockaddr_uninteresting returns TRUE for all .Fa sa that the kerberos library thinks are uninteresting. One example are link local addresses.
+krb5_sockaddr_uninteresting returns TRUE for all \&.Fa sa that the kerberos library thinks are uninteresting\&. One example are link local addresses\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIsa\fP pointer to struct sockaddr that might be interesting.
+\fIsa\fP pointer to struct sockaddr that might be interesting\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return a non zero for uninteresting addresses. 
+Return a non zero for uninteresting addresses\&. 
 .RE
 .PP
 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for HeimdalKerberos5library from the source code\&.

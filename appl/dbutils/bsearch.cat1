@@ -1,0 +1,67 @@
+
+BSEARCH(1)                BSD General Commands Manual               BSEARCH(1)
+
+NNAAMMEE
+     bbsseeaarrcchh -- manages one-time passwords
+
+SSYYNNOOPPSSIISS
+     bbsseeaarrcchh [--KKVVvvhh] [--bb _b_l_o_c_k_-_s_i_z_e] [--mm _m_a_x_-_c_a_c_h_e_-_s_i_z_e] _f_i_l_e _[_k_e_y _._._._]
+
+DDEESSCCRRIIPPTTIIOONN
+     The bbsseeaarrcchh program performs binary searches of _f_i_l_e which must be a
+     sorted flat text file.
+
+     Each line is a record.  Each record starts with a key that is optionally
+     followed by whitespace and a value.  Whitespace may be quoted with a
+     backslash, but newline and carriage-return characters must be quoted in
+     some other manner (e.g., as backslash-n and backslash-r).  Escapes are
+     not interpreted nor removed.
+
+     If no key arguments are given on the comman-line, then keys will be read
+     from standard input.
+
+     By default only values are printed to standard output.  Use the -K option
+     to also print keys.  The exit status will be non-zero if any key lookups
+     fail.
+
+     Options are:
+
+     --KK      Print keys.
+
+     --VV      Don't print values.
+
+     --hh      Print usage and exit.
+
+     --vv      Print statistic and debug information to standard error.  _f_i_l_e A
+             sorted flat text file.  NOTE: use the "C" locale for sorting this
+             file, as in "LC_ALL=C sort -u -o file file".
+
+     --hh      For getting a help message.
+
+     --mm      Set _m_a_x_-_c_a_c_h_e_-_s_i_z_e as the maximum cache size.  If the _f_i_l_e is
+             smaller than this size then the whole file will be read into mem-
+             ory, else the program will read blocks.  Defaults to 1MB.
+
+     --bb      Set _b_l_o_c_k_-_s_i_z_e as the block size for block-wise I/O.  This must
+             be a power of 2, must be no smaller than 512 and no larger than
+             1MB.  Defaults to the _f_i_l_e_'_s filesystem's preferred blocksize.
+
+EEXXAAMMPPLLEESS
+           $ env LC_ALL=C sort -o /tmp/words /usr/share/dict/words
+           $ bsearch -Kv /tmp/words day
+           Using whole-file method
+           Key day found at offset 327695 in 12 loops and 0 reads
+           day
+           $
+
+NNOOTTEESS
+     Records must not be longer than one block's size.
+
+     Flat text files must be sorted in the "C" locale.  In some systems the
+     default locale may result in case-insensitive sorting by the sort com-
+     mand.
+
+SSEEEE AALLSSOO
+     sort(1)
+
+KTH-KRB                        November 30, 2011                       KTH-KRB

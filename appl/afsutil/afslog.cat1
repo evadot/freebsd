@@ -5,7 +5,7 @@ NNAAMMEE
      aaffsslloogg -- obtain AFS tokens
 
 SSYYNNOOPPSSIISS
-     aaffsslloogg [--hh | ----hheellpp] [----nnoo--vv44] [----nnoo--vv55] [--uu | ----uunnlloogg] [--vv | ----vveerrbboossee]
+     aaffsslloogg [--hh | ----hheellpp] [----nnoo--vv55] [--uu | ----uunnlloogg] [--vv | ----vveerrbboossee]
             [----vveerrssiioonn] [--cc _c_e_l_l | ----cceellll==_c_e_l_l] [--kk _r_e_a_l_m | ----rreeaallmm==_r_e_a_l_m] [--PP
             _p_r_i_n_c_i_p_a_l | ----pprriinncciippaall==_p_r_i_n_c_i_p_a_l] [--pp _p_a_t_h | ----ffiillee==_p_a_t_h]
             [_c_e_l_l | _p_a_t_h _._._.]
@@ -17,9 +17,6 @@ DDEESSCCRRIIPPTTIIOONN
      ever magic krb_afslog(3) decides upon.
 
      Supported options:
-
-     ----nnoo--vv44
-             This makes aaffsslloogg not try using Kerberos 4.
 
      ----nnoo--vv55
              This makes aaffsslloogg not try using Kerberos 5.

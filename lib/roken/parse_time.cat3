@@ -24,15 +24,15 @@ SSYYNNOOPPSSIISS
      uunnppaarrssee__ttiimmee__aapppprrooxx(_i_n_t _s_e_c_o_n_d_s, _c_h_a_r _*_b_u_f, _s_i_z_e___t _l_e_n);
 
 DDEESSCCRRIIPPTTIIOONN
-     The ppaarrssee__ttiimmee() function converts a the period of time specified in into
-     a number of seconds.  The _t_i_m_e_s_p_e_c can be any number of <number unit>
-     pairs separated by comma and whitespace. The number can be negative. Num-
-     ber without explicit units are taken as being _d_e_f___u_n_i_t.
+     The ppaarrssee__ttiimmee() function converts the period of time specified into a
+     number of seconds.  The _t_i_m_e_s_p_e_c can be any number of <number unit> pairs
+     separated by comma and whitespace. The number can be negative. Numbers
+     without explicit units are taken as being _d_e_f___u_n_i_t.
 
-     The uunnppaarrssee__ttiimmee() and uunnppaarrssee__ttiimmee__aapppprrooxx() does the opposite of
+     The uunnppaarrssee__ttiimmee() and uunnppaarrssee__ttiimmee__aapppprrooxx() do the opposite of
      ppaarrssee__ttiimmee(), that is they take a number of seconds and express that as
-     human readable string.  _u_n_p_a_r_s_e___t_i_m_e produces an exact time, while
-     _u_n_p_a_r_s_e___t_i_m_e___a_p_p_r_o_x restricts the result to only include one units.
+     human readable strings.  _u_n_p_a_r_s_e___t_i_m_e produces an exact time, while
+     _u_n_p_a_r_s_e___t_i_m_e___a_p_p_r_o_x restricts the result to include only one unit.
 
      pprriinntt__ttiimmee__ttaabbllee() prints a descriptive list of available units on the
      passed file descriptor.
@@ -109,4 +109,4 @@ BBUUGGSS
      hack for English plural forms. If these functions are ever localised,
      this scheme will have to change.
 
-HEIMDAL                        October 31, 2004                        HEIMDAL
+HEIMDAL                        November 17, 2013                       HEIMDAL

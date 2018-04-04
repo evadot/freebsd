@@ -49,12 +49,7 @@ krb5_init_context(krb5_context *context)
     if(!p)
         return ENOMEM;
 
-    p->mutex = malloc(sizeof(HEIMDAL_MUTEX));
-    if (p->mutex == NULL) {
-        free(p);
-        return ENOMEM;
-    }
-    HEIMDAL_MUTEX_init(p->mutex);
+    HEIMDAL_MUTEX_init(&p->mutex);
 
     *context = p;
     return 0;
@@ -65,8 +60,7 @@ krb5_free_context(krb5_context context)
 {
     krb5_clear_error_message(context);
 
-    HEIMDAL_MUTEX_destroy(context->mutex);
-    free(context->mutex);
+    HEIMDAL_MUTEX_destroy(&context->mutex);
     if (context->flags & KRB5_CTX_F_SOCKETS_INITIALIZED) {
         rk_SOCK_EXIT();
     }
@@ -75,7 +69,7 @@ krb5_free_context(krb5_context context)
     free(context);
 }
 
-krb5_boolean
+KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL
 _krb5_homedir_access(krb5_context context) {
     return 0;
 }
@@ -89,6 +83,15 @@ krb5_log(krb5_context context,
 {
     return 0;
 }
+
+void KRB5_LIB_FUNCTION
+_krb5_debug(krb5_context context,
+	    int level,
+	    const char *fmt,
+	    ...)
+{
+}
+
 
 /* This function is currently just used to get the location of the EGD
  * socket. If we're not using an EGD, then we can just return NULL */

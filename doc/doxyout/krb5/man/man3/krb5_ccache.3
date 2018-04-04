@@ -1,8 +1,11 @@
-.TH "Heimdal Kerberos 5 credential cache functions" 3 "11 Jan 2012" "Version 1.5.2" "HeimdalKerberos5library" \" -*- nroff -*-
+.TH "krb5_ccache" 3 "Fri Dec 8 2017" "Version 7.5.0" "HeimdalKerberos5library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-Heimdal Kerberos 5 credential cache functions \- 
+krb5_ccache
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -164,6 +167,9 @@ Heimdal Kerberos 5 credential cache functions \-
 .RI "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_acc_ops\fP"
 .br
 .ti -1c
+.RI "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_dcc_ops\fP"
+.br
+.ti -1c
 .RI "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_fcc_ops\fP"
 .br
 .ti -1c
@@ -176,37 +182,34 @@ Heimdal Kerberos 5 credential cache functions \-
 .SH "Function Documentation"
 .PP 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_cache_end_seq_get (krb5_context context, krb5_cc_cache_cursor cursor)"
-.PP
-Destroy the cursor `cursor'.
+Destroy the cursor `cursor'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_cache_get_first (krb5_context context, const char * type, krb5_cc_cache_cursor * cursor)"
-.PP
-Start iterating over all caches of specified type. See also \fBkrb5_cccol_cursor_new()\fP.
+Start iterating over all caches of specified type\&. See also \fBkrb5_cccol_cursor_new()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP A Kerberos 5 context 
 .br
-\fItype\fP optional type to iterate over, if NULL, the default cache is used. 
+\fItype\fP optional type to iterate over, if NULL, the default cache is used\&. 
 .br
-\fIcursor\fP cursor should be freed with \fBkrb5_cc_cache_end_seq_get()\fP.
+\fIcursor\fP cursor should be freed with \fBkrb5_cc_cache_end_seq_get()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_cache_match (krb5_context context, krb5_principal client, krb5_ccache * id)"
-.PP
-Search for a matching credential cache that have the `principal' as the default principal. On success, `id' needs to be freed with \fBkrb5_cc_close()\fP or \fBkrb5_cc_destroy()\fP.
+Search for a matching credential cache that have the `principal' as the default principal\&. On success, `id' needs to be freed with \fBkrb5_cc_close()\fP or \fBkrb5_cc_destroy()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -219,13 +222,12 @@ Search for a matching credential cache that have the `principal' as the default 
 .PP
 \fBReturns:\fP
 .RS 4
-On failure, error code is returned and `id' is set to NULL. 
+On failure, error code is returned and `id' is set to NULL\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_cache_next (krb5_context context, krb5_cc_cache_cursor cursor, krb5_ccache * id)"
-.PP
-Retrieve the next cache pointed to by (`cursor') in `id' and advance `cursor'.
+Retrieve the next cache pointed to by (`cursor') in `id' and advance `cursor'\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -238,104 +240,93 @@ Retrieve the next cache pointed to by (`cursor') in `id' and advance `cursor'.
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or an error code. Returns KRB5_CC_END when the end of caches is reached, see krb5_get_error_message(). 
+Return 0 or an error code\&. Returns KRB5_CC_END when the end of caches is reached, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION void KRB5_LIB_CALL krb5_cc_clear_mcred (krb5_creds * mcred)"
-.PP
 Clear `mcreds' so it can be used with krb5_cc_retrieve_cred 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_close (krb5_context context, krb5_ccache id)"
-.PP
-Stop using the ccache `id' and free the related resources.
+Stop using the ccache `id' and free the related resources\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_copy_cache (krb5_context context, const krb5_ccache from, krb5_ccache to)"
-.PP
-Just like \fBkrb5_cc_copy_match_f()\fP, but copy everything.
+Just like \fBkrb5_cc_copy_match_f()\fP, but copy everything\&.
 .PP
 @ 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_copy_creds (krb5_context context, const krb5_ccache from, krb5_ccache to)"
-.PP
 MIT compat glue 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_copy_match_f (krb5_context context, const krb5_ccache from, krb5_ccache to, krb5_boolean(*)(krb5_context, void *, const krb5_creds *) match, void * matchctx, unsigned int * matched)"
-.PP
-Copy the contents of `from' to `to' if the given match function return true.
+Copy the contents of `from' to `to' if the given match function return true\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos 5 context. 
+\fIcontext\fP A Kerberos 5 context\&. 
 .br
-\fIfrom\fP the cache to copy data from. 
+\fIfrom\fP the cache to copy data from\&. 
 .br
-\fIto\fP the cache to copy data to. 
+\fIto\fP the cache to copy data to\&. 
 .br
-\fImatch\fP a match function that should return TRUE if cred argument should be copied, if NULL, all credentials are copied. 
+\fImatch\fP a match function that should return TRUE if cred argument should be copied, if NULL, all credentials are copied\&. 
 .br
-\fImatchctx\fP context passed to match function. 
+\fImatchctx\fP context passed to match function\&. 
 .br
-\fImatched\fP set to true if there was a credential that matched, may be NULL.
+\fImatched\fP set to true if there was a credential that matched, may be NULL\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_default (krb5_context context, krb5_ccache * id)"
-.PP
-Open the default ccache in `id'.
+Open the default ccache in `id'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION const char* KRB5_LIB_CALL krb5_cc_default_name (krb5_context context)"
-.PP
-Return a pointer to a context static string containing the default ccache name.
+Return a pointer to a context static string containing the default ccache name\&.
 .PP
 \fBReturns:\fP
 .RS 4
-String to the default credential cache name. 
+String to the default credential cache name\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_destroy (krb5_context context, krb5_ccache id)"
-.PP
-Remove the ccache `id'.
+Remove the ccache `id'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_end_seq_get (krb5_context context, const krb5_ccache id, krb5_cc_cursor * cursor)"
-.PP
-Destroy the cursor `cursor'. 
+Destroy the cursor `cursor'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_gen_new (krb5_context context, const krb5_cc_ops * ops, krb5_ccache * id)"
+Generate a new ccache of type `ops' in `id'\&.
 .PP
-Generate a new ccache of type `ops' in `id'.
-.PP
-Deprecated: use \fBkrb5_cc_new_unique()\fP instead.
+Deprecated: use \fBkrb5_cc_new_unique()\fP instead\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_config (krb5_context context, krb5_ccache id, krb5_const_principal principal, const char * name, krb5_data * data)"
-.PP
-Get some configuration for the credential cache in the cache.
+Get some configuration for the credential cache in the cache\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -343,29 +334,26 @@ Get some configuration for the credential cache in the cache.
 .br
 \fIid\fP the credential cache to store the data for 
 .br
-\fIprincipal\fP configuration for a specific principal, if NULL, global for the whole cache. 
+\fIprincipal\fP configuration for a specific principal, if NULL, global for the whole cache\&. 
 .br
-\fIname\fP name under which the configuraion is stored. 
+\fIname\fP name under which the configuraion is stored\&. 
 .br
 \fIdata\fP data to fetched, free with \fBkrb5_data_free()\fP 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_flags (krb5_context context, krb5_ccache id, krb5_flags * flags)"
-.PP
-Get the flags of `id', store them in `flags'. 
+Get the flags of `id', store them in `flags'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_friendly_name (krb5_context context, krb5_ccache id, char ** name)"
-.PP
-Return a friendly name on credential cache. Free the result with krb5_xfree().
+Return a friendly name on credential cache\&. Free the result with krb5_xfree()\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_full_name (krb5_context context, krb5_ccache id, char ** str)"
-.PP
 Return the complete resolvable name the cache
 .PP
 \fBParameters:\fP
@@ -379,19 +367,18 @@ Return the complete resolvable name the cache
 .PP
 \fBReturns:\fP
 .RS 4
-Returns 0 or an error (and then *str is set to NULL). 
+Returns 0 or an error (and then *str is set to NULL)\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_kdc_offset (krb5_context context, krb5_ccache id, krb5_deltat * offset)"
-.PP
 Get the time offset betwen the client and the KDC
 .PP
-If the backend doesn't support KDC offset, use the context global setting.
+If the backend doesn't support KDC offset, use the context global setting\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos 5 context. 
+\fIcontext\fP A Kerberos 5 context\&. 
 .br
 \fIid\fP a credential cache 
 .br
@@ -400,19 +387,18 @@ If the backend doesn't support KDC offset, use the context global setting.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_lifetime (krb5_context context, krb5_ccache id, time_t * t)"
-.PP
 Get the lifetime of the initial ticket in the cache
 .PP
-Get the lifetime of the initial ticket in the cache, if the initial ticket was not found, the error code KRB5_CC_END is returned.
+Get the lifetime of the initial ticket in the cache, if the initial ticket was not found, the error code KRB5_CC_END is returned\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos 5 context. 
+\fIcontext\fP A Kerberos 5 context\&. 
 .br
 \fIid\fP a credential cache 
 .br
@@ -421,55 +407,49 @@ Get the lifetime of the initial ticket in the cache, if the initial ticket was n
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
-
-.SS "KRB5_LIB_FUNCTION const char* KRB5_LIB_CALL krb5_cc_get_name (krb5_context context, krb5_ccache id)"
+If we find the start krbtgt in the cache, use that as the lifespan\&.
 .PP
+If there was no krbtgt, use the shortest lifetime of service tickets that have yet to expire\&. If all credentials are expired, \fBkrb5_cc_get_lifetime()\fP will fail\&.
+.SS "KRB5_LIB_FUNCTION const char* KRB5_LIB_CALL krb5_cc_get_name (krb5_context context, krb5_ccache id)"
 Return the name of the ccache `id' 
 .SS "KRB5_LIB_FUNCTION const krb5_cc_ops* KRB5_LIB_CALL krb5_cc_get_ops (krb5_context context, krb5_ccache id)"
-.PP
-Return krb5_cc_ops of a the ccache `id'. 
+Return krb5_cc_ops of a the ccache `id'\&. 
 .SS "KRB5_LIB_FUNCTION const krb5_cc_ops* KRB5_LIB_CALL krb5_cc_get_prefix_ops (krb5_context context, const char * prefix)"
-.PP
-Get the cc ops that is registered in `context' to handle the prefix. prefix can be a complete credential cache name or a prefix, the function will only use part up to the first colon (:) if there is one. If prefix the argument is NULL, the default ccache implemtation is returned.
+Get the cc ops that is registered in `context' to handle the prefix\&. prefix can be a complete credential cache name or a prefix, the function will only use part up to the first colon (:) if there is one\&. If prefix the argument is NULL, the default ccache implemtation is returned\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Returns NULL if ops not found. 
+Returns NULL if ops not found\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_principal (krb5_context context, krb5_ccache id, krb5_principal * principal)"
-.PP
-Return the principal of `id' in `principal'.
+Return the principal of `id' in `principal'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION const char* KRB5_LIB_CALL krb5_cc_get_type (krb5_context context, krb5_ccache id)"
-.PP
-Return the type of the ccache `id'. 
+Return the type of the ccache `id'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_get_version (krb5_context context, const krb5_ccache id)"
-.PP
-Return the version of `id'. 
+Return the version of `id'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_initialize (krb5_context context, krb5_ccache id, krb5_principal primary_principal)"
-.PP
-Create a new ccache in `id' for `primary_principal'.
+Create a new ccache in `id' for `primary_principal'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_last_change_time (krb5_context context, krb5_ccache id, krb5_timestamp * mtime)"
-.PP
-Return the last time the credential cache was modified.
+Return the last time the credential cache was modified\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -477,18 +457,17 @@ Return the last time the credential cache was modified.
 .br
 \fIid\fP The credential cache to probe 
 .br
-\fImtime\fP the last modification time, set to 0 on error.
+\fImtime\fP the last modification time, set to 0 on error\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or and error. See krb5_get_error_message(). 
+Return 0 or and error\&. See \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_move (krb5_context context, krb5_ccache from, krb5_ccache to)"
-.PP
-Move the content from one credential cache to another. The operation is an atomic switch.
+Move the content from one credential cache to another\&. The operation is an atomic switch\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -501,33 +480,30 @@ Move the content from one credential cache to another. The operation is an atomi
 .PP
 \fBReturns:\fP
 .RS 4
-On sucess, from is freed. On failure, error code is returned and from and to are both still allocated, see krb5_get_error_message(). 
+On sucess, from is freed\&. On failure, error code is returned and from and to are both still allocated, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_new_unique (krb5_context context, const char * type, const char * hint, krb5_ccache * id)"
-.PP
-Generates a new unique ccache of `type` in `id'. If `type' is NULL, the library chooses the default credential cache type. The supplied `hint' (that can be NULL) is a string that the credential cache type can use to base the name of the credential on, this is to make it easier for the user to differentiate the credentials.
+Generates a new unique ccache of \fCtype\fP in `id'\&. If `type' is NULL, the library chooses the default credential cache type\&. The supplied `hint' (that can be NULL) is a string that the credential cache type can use to base the name of the credential on, this is to make it easier for the user to differentiate the credentials\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_next_cred (krb5_context context, const krb5_ccache id, krb5_cc_cursor * cursor, krb5_creds * creds)"
-.PP
-Retrieve the next cred pointed to by (`id', `cursor') in `creds' and advance `cursor'.
+Retrieve the next cred pointed to by (`id', `cursor') in `creds' and advance `cursor'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_register (krb5_context context, const krb5_cc_ops * ops, krb5_boolean override)"
-.PP
-Add a new ccache type with operations `ops', overwriting any existing one if `override'.
+Add a new ccache type with operations `ops', overwriting any existing one if `override'\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -535,40 +511,37 @@ Add a new ccache type with operations `ops', overwriting any existing one if `ov
 .br
 \fIops\fP type of plugin symbol 
 .br
-\fIoverride\fP flag to select if the registration is to overide an existing ops with the same name.
+\fIoverride\fP flag to select if the registration is to overide an existing ops with the same name\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_remove_cred (krb5_context context, krb5_ccache id, krb5_flags which, krb5_creds * cred)"
-.PP
-Remove the credential identified by `cred', `which' from `id'. 
+Remove the credential identified by `cred', `which' from `id'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_resolve (krb5_context context, const char * name, krb5_ccache * id)"
-.PP
-Find and allocate a ccache in `id' from the specification in `residual'. If the ccache name doesn't contain any colon, interpret it as a file name.
+Find and allocate a ccache in `id' from the specification in `residual'\&. If the ccache name doesn't contain any colon, interpret it as a file name\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP a Keberos context. 
+\fIcontext\fP a Keberos context\&. 
 .br
-\fIname\fP string name of a credential cache. 
+\fIname\fP string name of a credential cache\&. 
 .br
-\fIid\fP return pointer to a found credential cache.
+\fIid\fP return pointer to a found credential cache\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or an error code. In case of an error, id is set to NULL, see krb5_get_error_message(). 
+Return 0 or an error code\&. In case of an error, id is set to NULL, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_retrieve_cred (krb5_context context, krb5_ccache id, krb5_flags whichfields, const krb5_creds * mcreds, krb5_creds * creds)"
-.PP
-Retrieve the credential identified by `mcreds' (and `whichfields') from `id' in `creds'. 'creds' must be free by the caller using krb5_free_cred_contents.
+Retrieve the credential identified by `mcreds' (and `whichfields') from `id' in `creds'\&. 'creds' must be free by the caller using krb5_free_cred_contents\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -585,13 +558,12 @@ Retrieve the credential identified by `mcreds' (and `whichfields') from `id' in 
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_set_config (krb5_context context, krb5_ccache id, krb5_const_principal principal, const char * name, krb5_data * data)"
-.PP
-Store some configuration for the credential cache in the cache. Existing configuration under the same name is over-written.
+Store some configuration for the credential cache in the cache\&. Existing configuration under the same name is over-written\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -599,39 +571,35 @@ Store some configuration for the credential cache in the cache. Existing configu
 .br
 \fIid\fP the credential cache to store the data for 
 .br
-\fIprincipal\fP configuration for a specific principal, if NULL, global for the whole cache. 
+\fIprincipal\fP configuration for a specific principal, if NULL, global for the whole cache\&. 
 .br
-\fIname\fP name under which the configuraion is stored. 
+\fIname\fP name under which the configuraion is stored\&. 
 .br
-\fIdata\fP data to store, if NULL, configure is removed. 
+\fIdata\fP data to store, if NULL, configure is removed\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_set_default_name (krb5_context context, const char * name)"
-.PP
-Set the default cc name for `context' to `name'. 
+Set the default cc name for `context' to `name'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_set_flags (krb5_context context, krb5_ccache id, krb5_flags flags)"
-.PP
-Set the flags of `id' to `flags'. 
+Set the flags of `id' to `flags'\&. 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_set_friendly_name (krb5_context context, krb5_ccache id, const char * name)"
-.PP
-Set the friendly name on credential cache.
+Set the friendly name on credential cache\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_set_kdc_offset (krb5_context context, krb5_ccache id, krb5_deltat offset)"
-.PP
 Set the time offset betwen the client and the KDC
 .PP
-If the backend doesn't support KDC offset, use the context global setting.
+If the backend doesn't support KDC offset, use the context global setting\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos 5 context. 
+\fIcontext\fP A Kerberos 5 context\&. 
 .br
 \fIid\fP a credential cache 
 .br
@@ -640,80 +608,73 @@ If the backend doesn't support KDC offset, use the context global setting.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_start_seq_get (krb5_context context, const krb5_ccache id, krb5_cc_cursor * cursor)"
-.PP
-Start iterating over `id', `cursor' is initialized to the beginning. Caller must free the cursor with \fBkrb5_cc_end_seq_get()\fP.
+Start iterating over `id', `cursor' is initialized to the beginning\&. Caller must free the cursor with \fBkrb5_cc_end_seq_get()\fP\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_store_cred (krb5_context context, krb5_ccache id, krb5_creds * creds)"
-.PP
-Store `creds' in the ccache `id'.
+Store `creds' in the ccache `id'\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_cc_support_switch (krb5_context context, const char * type)"
-.PP
 Return true if the default credential cache support switch 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cc_switch (krb5_context context, krb5_ccache id)"
-.PP
-Switch the default default credential cache for a specific credcache type (and name for some implementations).
+Switch the default default credential cache for a specific credcache type (and name for some implementations)\&.
 .PP
 \fBReturns:\fP
 .RS 4
-Return an error code or 0, see krb5_get_error_message(). 
+Return an error code or 0, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cccol_cursor_free (krb5_context context, krb5_cccol_cursor * cursor)"
-.PP
-End an iteration and free all resources, can be done before end is reached.
+End an iteration and free all resources, can be done before end is reached\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP A Kerberos 5 context 
 .br
-\fIcursor\fP the iteration cursor to be freed.
+\fIcursor\fP the iteration cursor to be freed\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or and error, KRB5_CC_END is returned at the end of iteration. See krb5_get_error_message(). 
+Return 0 or and error, KRB5_CC_END is returned at the end of iteration\&. See \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cccol_cursor_new (krb5_context context, krb5_cccol_cursor * cursor)"
-.PP
-Get a new cache interation cursor that will interate over all credentials caches independent of type.
+Get a new cache interation cursor that will interate over all credentials caches independent of type\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP a Keberos context 
 .br
-\fIcursor\fP passed into \fBkrb5_cccol_cursor_next()\fP and free with \fBkrb5_cccol_cursor_free()\fP.
+\fIcursor\fP passed into \fBkrb5_cccol_cursor_next()\fP and free with \fBkrb5_cccol_cursor_free()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Returns 0 or and error code, see krb5_get_error_message(). 
+Returns 0 or and error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cccol_cursor_next (krb5_context context, krb5_cccol_cursor cursor, krb5_ccache * cache)"
-.PP
-Get next credential cache from the iteration.
+Get next credential cache from the iteration\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -721,37 +682,35 @@ Get next credential cache from the iteration.
 .br
 \fIcursor\fP the iteration cursor 
 .br
-\fIcache\fP the returned cursor, pointer is set to NULL on failure and a cache on success. The returned cache needs to be freed with \fBkrb5_cc_close()\fP or destroyed with \fBkrb5_cc_destroy()\fP. MIT Kerberos behavies slightly diffrent and sets cache to NULL when all caches are iterated over and return 0.
+\fIcache\fP the returned cursor, pointer is set to NULL on failure and a cache on success\&. The returned cache needs to be freed with \fBkrb5_cc_close()\fP or destroyed with \fBkrb5_cc_destroy()\fP\&. MIT Kerberos behavies slightly diffrent and sets cache to NULL when all caches are iterated over and return 0\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or and error, KRB5_CC_END is returned at the end of iteration. See krb5_get_error_message(). 
+Return 0 or and error, KRB5_CC_END is returned at the end of iteration\&. See \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_cccol_last_change_time (krb5_context context, const char * type, krb5_timestamp * mtime)"
-.PP
-Return the last modfication time for a cache collection. The query can be limited to a specific cache type. If the function return 0 and mtime is 0, there was no credentials in the caches.
+Return the last modfication time for a cache collection\&. The query can be limited to a specific cache type\&. If the function return 0 and mtime is 0, there was no credentials in the caches\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIcontext\fP A Kerberos 5 context 
 .br
-\fItype\fP The credential cache to probe, if NULL, all type are traversed. 
+\fItype\fP The credential cache to probe, if NULL, all type are traversed\&. 
 .br
-\fImtime\fP the last modification time, set to 0 on error.
+\fImtime\fP the last modification time, set to 0 on error\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Return 0 or and error. See krb5_get_error_message(). 
+Return 0 or and error\&. See \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_get_validated_creds (krb5_context context, krb5_creds * creds, krb5_principal client, krb5_ccache ccache, char * service)"
-.PP
-Validate the newly fetch credential, see also krb5_verify_init_creds().
+Validate the newly fetch credential, see also krb5_verify_init_creds()\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -763,13 +722,12 @@ Validate the newly fetch credential, see also krb5_verify_init_creds().
 .br
 \fIccache\fP the credential cache to use 
 .br
-\fIservice\fP a service name to use, used with \fBkrb5_sname_to_principal()\fP to build a hostname to use to verify. 
+\fIservice\fP a service name to use, used with \fBkrb5_sname_to_principal()\fP to build a hostname to use to verify\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_is_config_principal (krb5_context context, krb5_const_principal principal)"
-.PP
-Return TRUE (non zero) if the principal is a configuration principal (generated part of \fBkrb5_cc_set_config()\fP). Returns FALSE (zero) if not a configuration principal.
+Return TRUE (non zero) if the principal is a configuration principal (generated part of \fBkrb5_cc_set_config()\fP)\&. Returns FALSE (zero) if not a configuration principal\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -781,14 +739,13 @@ Return TRUE (non zero) if the principal is a configuration principal (generated 
 
 .SH "Variable Documentation"
 .PP 
-.SS "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_acc_ops\fP"
-.PP
+.SS "KRB5_LIB_VARIABLE const krb5_cc_ops krb5_acc_ops"
 \fBInitial value:\fP
 .PP
 .nf
- {
+= {
     KRB5_CC_OPS_VERSION,
-    'API',
+    "API",
     acc_get_name,
     acc_resolve,
     acc_gen_new,
@@ -815,15 +772,48 @@ Return TRUE (non zero) if the principal is a configuration principal (generated 
     NULL,
 }
 .fi
-Variable containing the API based credential cache implemention. 
-.SS "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_fcc_ops\fP"
-.PP
+Variable containing the API based credential cache implemention\&. 
+.SS "KRB5_LIB_VARIABLE const krb5_cc_ops krb5_dcc_ops"
 \fBInitial value:\fP
 .PP
 .nf
- {
+= {
     KRB5_CC_OPS_VERSION,
-    'FILE',
+    "DIR",
+    dcc_get_name,
+    dcc_resolve,
+    dcc_gen_new,
+    dcc_initialize,
+    dcc_destroy,
+    dcc_close,
+    dcc_store_cred,
+    NULL, 
+    dcc_get_principal,
+    dcc_get_first,
+    dcc_get_next,
+    dcc_end_get,
+    dcc_remove_cred,
+    dcc_set_flags,
+    dcc_get_version,
+    dcc_get_cache_first,
+    dcc_get_cache_next,
+    dcc_end_cache_get,
+    dcc_move,
+    dcc_get_default_name,
+    dcc_set_default,
+    dcc_lastchange,
+    dcc_set_kdc_offset,
+    dcc_get_kdc_offset
+}
+.fi
+Variable containing the DIR based credential cache implemention\&. 
+.SS "KRB5_LIB_VARIABLE const krb5_cc_ops krb5_fcc_ops"
+\fBInitial value:\fP
+.PP
+.nf
+= {
+    KRB5_CC_OPS_VERSION,
+    "FILE",
     fcc_get_name,
     fcc_resolve,
     fcc_gen_new,
@@ -850,15 +840,14 @@ Variable containing the API based credential cache implemention.
     fcc_get_kdc_offset
 }
 .fi
-Variable containing the FILE based credential cache implemention. 
-.SS "KRB5_LIB_VARIABLE const krb5_cc_ops \fBkrb5_mcc_ops\fP"
-.PP
+Variable containing the FILE based credential cache implemention\&. 
+.SS "KRB5_LIB_VARIABLE const krb5_cc_ops krb5_mcc_ops"
 \fBInitial value:\fP
 .PP
 .nf
- {
+= {
     KRB5_CC_OPS_VERSION,
-    'MEMORY',
+    "MEMORY",
     mcc_get_name,
     mcc_resolve,
     mcc_gen_new,
@@ -885,4 +874,7 @@ Variable containing the FILE based credential cache implemention.
     mcc_get_kdc_offset
 }
 .fi
-Variable containing the MEMORY based credential cache implemention. 
+Variable containing the MEMORY based credential cache implemention\&. 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for HeimdalKerberos5library from the source code\&.

@@ -35,6 +35,7 @@
 
 #include "hi_locl.h"
 #include <assert.h>
+#include <err.h>
 
 #define MAX_PACKET_SIZE (128 * 1024)
 
@@ -336,14 +337,14 @@ mach_init(const char *service, mach_port_t sport, heim_sipc ctx)
 	});
 
     dispatch_source_set_cancel_handler(s->source, ^{
-	    heim_sipc ctx = dispatch_get_context(dispatch_get_current_queue());
-	    struct mach_service *st = ctx->mech;
+	    heim_sipc sctx = dispatch_get_context(dispatch_get_current_queue());
+	    struct mach_service *st = sctx->mech;
 	    mach_port_mod_refs(mach_task_self(), st->sport,
 			       MACH_PORT_RIGHT_RECEIVE, -1);
 	    dispatch_release(st->queue);
 	    dispatch_release(st->source);
 	    free(st);
-	    free(ctx);
+	    free(sctx);
 	});
 
     dispatch_resume(s->source);
@@ -525,7 +526,7 @@ update_client_creds(struct client *c)
 	}
     }
 #endif
-#ifdef SO_PEERCRED
+#if defined(SO_PEERCRED) && defined(__linux__)
     /* Linux */
     {
 	struct ucred pc;
@@ -822,7 +823,7 @@ handle_http_tcp(struct client *c)
 	free(data);
 	return NULL;
     }
-    len = base64_decode(t, data);
+    len = rk_base64_decode(t, data);
     if(len <= 0){
 	const char *msg =
 	    " 404 Not found\r\n"
@@ -980,7 +981,7 @@ process_loop(void)
     unsigned n;
     unsigned num_fds;
 
-    while(num_clients > 0) {
+    while (num_clients > 0) {
 
 	fds = malloc(num_clients * sizeof(fds[0]));
 	if(fds == NULL)
@@ -999,7 +1000,11 @@ process_loop(void)
 	    fds[n].revents = 0;
 	}
 
-	poll(fds, num_fds, -1);
+	while (poll(fds, num_fds, -1) == -1) {
+            if (errno == EINTR || errno == EAGAIN)
+                continue;
+            err(1, "poll(2) failed");
+        }
 
 	for (n = 0 ; n < num_fds; n++) {
 	    if (clients[n] == NULL)

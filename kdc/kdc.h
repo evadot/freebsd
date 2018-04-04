@@ -57,6 +57,8 @@ typedef struct krb5_kdc_configuration {
     struct HDB **db;
     int num_db;
 
+    int num_kdc_processes;
+
     krb5_boolean encode_as_rep_as_tgs_rep; /* bug compatibility */
 
     krb5_boolean tgt_use_strongest_session_key;
@@ -67,6 +69,7 @@ typedef struct krb5_kdc_configuration {
     krb5_boolean check_ticket_addresses;
     krb5_boolean allow_null_ticket_addresses;
     krb5_boolean allow_anonymous;
+    krb5_boolean strict_nametypes;
     enum krb5_kdc_trpolicy trpolicy;
 
     krb5_boolean enable_pkinit;

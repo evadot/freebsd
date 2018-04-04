@@ -45,7 +45,7 @@
 int numerror;
 extern FILE *yyin;
 
-extern void yyparse(void);
+int yyparse(void);
 
 long base_id;
 int number;
@@ -56,7 +56,8 @@ char name[128];
 char Basename[128];
 
 #ifdef YYDEBUG
-extern int yydebug = 1;
+extern int yydebug;
+int yydebug = 1;
 #endif
 
 char *filename;
@@ -186,8 +187,8 @@ generate(void)
 int version_flag;
 int help_flag;
 struct getargs args[] = {
-    { "version", 0, arg_flag, &version_flag },
-    { "help", 0, arg_flag, &help_flag }
+    { "version", 0, arg_flag, &version_flag, NULL, NULL },
+    { "help", 0, arg_flag, &help_flag, NULL, NULL }
 };
 int num_args = sizeof(args) / sizeof(args[0]);
 

@@ -1,8 +1,11 @@
-.TH "RAND crypto functions" 3 "11 Jan 2012" "Version 1.5.2" "Heimdal crypto library" \" -*- nroff -*-
+.TH "hcrypto_rand" 3 "Fri Dec 8 2017" "Version 7.5.0" "Heimdal crypto library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-RAND crypto functions \- 
+hcrypto_rand
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -45,26 +48,24 @@ RAND crypto functions \-
 .in -1c
 .SH "Detailed Description"
 .PP 
-See the \fBRAND - random number\fP for description and examples. 
+See the \fBRAND - random number\fP for description and examples\&. 
 .SH "Function Documentation"
 .PP 
 .SS "void RAND_add (const void * indata, size_t size, double entropi)"
-.PP
-Seed that random number generator. Secret material can securely be feed into the function, they will never be returned.
+Seed that random number generator\&. Secret material can securely be feed into the function, they will never be returned\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIindata\fP the input data. 
+\fIindata\fP the input data\&. 
 .br
-\fIsize\fP size of in data. 
+\fIsize\fP size of in data\&. 
 .br
-\fIentropi\fP entropi in data. 
+\fIentropi\fP entropi in data\&. 
 .RE
 .PP
 
 .SS "int RAND_bytes (void * outdata, size_t size)"
-.PP
-Get a random block from the random generator, can be used for key material.
+Get a random block from the random generator, can be used for key material\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -75,48 +76,55 @@ Get a random block from the random generator, can be used for key material.
 .PP
 \fBReturns:\fP
 .RS 4
-1 on success, 0 on failure. 
+1 on success, 0 on failure\&. 
 .RE
 .PP
 
 .SS "void RAND_cleanup (void)"
-.PP
-Reset and free memory used by the random generator. 
+Reset and free memory used by the random generator\&. 
 .SS "const char* RAND_file_name (char * filename, size_t size)"
-.PP
-Return the default random state filename for a user to use for \fBRAND_load_file()\fP, and \fBRAND_write_file()\fP.
+Return the default random state filename for a user to use for \fBRAND_load_file()\fP, and \fBRAND_write_file()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIfilename\fP buffer to hold file name. 
+\fIfilename\fP buffer to hold file name\&. 
 .br
-\fIsize\fP size of buffer filename.
+\fIsize\fP size of buffer filename\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-the buffer filename or NULL on failure. 
+the buffer filename or NULL on failure\&. 
 .RE
 .PP
 
 .SS "const RAND_METHOD* RAND_get_rand_method (void)"
+Get the default random method\&.
 .PP
-Get the default random method. 
+\fBReturns:\fP
+.RS 4
+Returns a RAND_METHOD 
+.RE
+.PP
+
 .SS "int RAND_load_file (const char * filename, size_t size)"
-.PP
-Load a a file and feed it into \fBRAND_seed()\fP.
+Load a a file and feed it into \fBRAND_seed()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIfilename\fP name of file to read. 
+\fIfilename\fP name of file to read\&. 
 .br
-\fIsize\fP minimum size to read. 
+\fIsize\fP minimum size to read\&.
+.RE
+.PP
+\fBReturns:\fP
+.RS 4
+Returns the number of seed bytes loaded (0 indicates failure) 
 .RE
 .PP
 
 .SS "int RAND_pseudo_bytes (void * outdata, size_t size)"
-.PP
-Get a random block from the random generator, should NOT be used for key material.
+Get a random block from the random generator, should NOT be used for key material\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -127,13 +135,12 @@ Get a random block from the random generator, should NOT be used for key materia
 .PP
 \fBReturns:\fP
 .RS 4
-1 on success, 0 on failure. 
+1 on success, 0 on failure\&. 
 .RE
 .PP
 
 .SS "void RAND_seed (const void * indata, size_t size)"
-.PP
-Seed that random number generator. Secret material can securely be feed into the function, they will never be returned.
+Seed that random number generator\&. Secret material can securely be feed into the function, they will never be returned\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -144,57 +151,56 @@ Seed that random number generator. Secret material can securely be feed into the
 .PP
 
 .SS "int RAND_set_rand_engine (ENGINE * engine)"
-.PP
-Set the default random method from engine.
+Set the default random method from engine\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIengine\fP use engine, if NULL is passed it, old method and engine is cleared.
+\fIengine\fP use engine, if NULL is passed it, old method and engine is cleared\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-1 on success, 0 on failure. 
+1 on success, 0 on failure\&. 
 .RE
 .PP
 
 .SS "int RAND_set_rand_method (const RAND_METHOD * meth)"
-.PP
-Set the default random method.
+Set the default random method\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fImeth\fP set the new default method.
+\fImeth\fP set the new default method\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-1 on success. 
+1 on success\&. 
 .RE
 .PP
 
 .SS "int RAND_status (void)"
-.PP
 Return status of the random generator
 .PP
 \fBReturns:\fP
 .RS 4
-1 if the random generator can deliver random data. 
+1 if the random generator can deliver random data\&. 
 .RE
 .PP
 
 .SS "int RAND_write_file (const char * filename)"
-.PP
-Write of random numbers to a file to store for later initiation with \fBRAND_load_file()\fP.
+Write of random numbers to a file to store for later initiation with \fBRAND_load_file()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIfilename\fP name of file to write.
+\fIfilename\fP name of file to write\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-1 on success and non-one on failure. 
+1 on success and non-one on failure\&. 
 .RE
 .PP
 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for Heimdal crypto library from the source code\&.

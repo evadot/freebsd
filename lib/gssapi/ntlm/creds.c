@@ -38,7 +38,7 @@
 OM_uint32 GSSAPI_CALLCONV
 _gss_ntlm_inquire_cred
            (OM_uint32 * minor_status,
-            const gss_cred_id_t cred_handle,
+            gss_const_cred_id_t cred_handle,
             gss_name_t * name,
             OM_uint32 * lifetime,
             gss_cred_usage_t * cred_usage,
@@ -60,8 +60,11 @@ _gss_ntlm_inquire_cred
 	    n->domain = strdup(c->domain);
 	}
 	if (n == NULL || n->user == NULL || n->domain == NULL) {
-	    if (n)
+	    if (n) {
 		free(n->user);
+		free(n->domain);
+		free(n);
+	    }
 	    *minor_status = ENOMEM;
 	    return GSS_S_FAILURE;
 	}

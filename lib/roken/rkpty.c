@@ -99,7 +99,7 @@ open_pty(void)
     printf("implement open_pty\n");
     exit(77);
 #endif
-#if defined(HAVE_OPENPTY) || defined(__linux) || defined(__osf__) /* XXX */
+#if defined(HAVE_OPENPTY) || defined(__osf__) /* XXX */
     if(openpty(&master, &slave, line, 0, 0) == 0)
 	return;
 #endif /* HAVE_OPENPTY .... */
@@ -233,7 +233,7 @@ eval_parent(pid_t pid)
 		     c->str, c->lineno);
 	    else if (alarmset)
 		errx(1, "got a signal %d waiting for %s (line %u)",
-		     alarmset, c->str, c->lineno);
+		     (int)alarmset, c->str, c->lineno);
 	    if (sret <= 0)
 		errx(1, "end command while waiting for %s (line %u)",
 		     c->str, c->lineno);
@@ -305,9 +305,9 @@ eval_parent(pid_t pid)
 
 static struct getargs args[] = {
     { "timeout", 	't', arg_integer, &timeout, "timout", "seconds" },
-    { "verbose", 	'v', arg_counter, &verbose, "verbose debugging" },
-    { "version",	0, arg_flag,	&version_flag, "print version" },
-    { "help",		0, arg_flag,	&help_flag, NULL }
+    { "verbose", 	'v', arg_counter, &verbose, "verbose debugging", NULL },
+    { "version",	0, arg_flag,	&version_flag, "print version", NULL },
+    { "help",		0, arg_flag,	&help_flag, NULL, NULL }
 };
 
 static void

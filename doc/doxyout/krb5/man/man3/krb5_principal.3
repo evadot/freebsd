@@ -1,8 +1,11 @@
-.TH "Heimdal Kerberos 5 principal functions" 3 "11 Jan 2012" "Version 1.5.2" "HeimdalKerberos5library" \" -*- nroff -*-
+.TH "krb5_principal" 3 "Fri Dec 8 2017" "Version 7.5.0" "HeimdalKerberos5library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-Heimdal Kerberos 5 principal functions \- 
+krb5_principal
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -49,10 +52,10 @@ Heimdal Kerberos 5 principal functions \-
 .RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_principal_set_realm\fP (krb5_context context, krb5_principal principal, krb5_const_realm realm)"
 .br
 .ti -1c
-.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_build_principal\fP (krb5_context context, krb5_principal *principal, int rlen, krb5_const_realm realm,...)"
+.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_build_principal\fP (krb5_context context, krb5_principal *principal, int rlen, krb5_const_realm realm,\&.\&.\&.)"
 .br
 .ti -1c
-.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_make_principal\fP (krb5_context context, krb5_principal *principal, krb5_const_realm realm,...)"
+.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_make_principal\fP (krb5_context context, krb5_principal *principal, krb5_const_realm realm,\&.\&.\&.)"
 .br
 .ti -1c
 .RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_copy_principal\fP (krb5_context context, krb5_const_principal inprinc, krb5_principal *outprinc)"
@@ -70,13 +73,31 @@ Heimdal Kerberos 5 principal functions \-
 .RI "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL \fBkrb5_principal_match\fP (krb5_context context, krb5_const_principal princ, krb5_const_principal pattern)"
 .br
 .ti -1c
-.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_sname_to_principal\fP (krb5_context context, const char *hostname, const char *sname, int32_t type, krb5_principal *ret_princ)"
-.br
-.ti -1c
 .RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_parse_nametype\fP (krb5_context context, const char *str, int32_t *nametype)"
 .br
 .ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_principal_is_null\fP (krb5_context context, krb5_const_principal principal)"
+.br
+.ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_realm_is_lkdc\fP (const char *realm)"
+.br
+.ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_principal_is_lkdc\fP (krb5_context context, krb5_const_principal principal)"
+.br
+.ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_principal_is_pku2u\fP (krb5_context context, krb5_const_principal principal)"
+.br
+.ti -1c
 .RI "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL \fBkrb5_principal_is_krbtgt\fP (krb5_context context, krb5_const_principal p)"
+.br
+.ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_principal_is_gss_hostbased_service\fP (krb5_context context, krb5_const_principal principal)"
+.br
+.ti -1c
+.RI "krb5_boolean KRB5_LIB_FUNCTION \fBkrb5_principal_is_root_krbtgt\fP (krb5_context context, krb5_const_principal p)"
+.br
+.ti -1c
+.RI "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL \fBkrb5_sname_to_principal\fP (krb5_context context, const char *hostname, const char *sname, int32_t type, krb5_principal *ret_princ)"
 .br
 .in -1c
 .SH "Detailed Description"
@@ -84,13 +105,12 @@ Heimdal Kerberos 5 principal functions \-
 
 .SH "Function Documentation"
 .PP 
-.SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_build_principal (krb5_context context, krb5_principal * principal, int rlen, krb5_const_realm realm,  ...)"
-.PP
+.SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_build_principal (krb5_context context, krb5_principal * principal, int rlen, krb5_const_realm realm,  \&.\&.\&.)"
 Build a principal using vararg style building
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP returned principal 
 .br
@@ -98,22 +118,21 @@ Build a principal using vararg style building
 .br
 \fIrealm\fP realm name 
 .br
-\fI...\fP a list of components ended with NULL.
+\fI\&.\&.\&.\fP a list of components ended with NULL\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_copy_principal (krb5_context context, krb5_const_principal inprinc, krb5_principal * outprinc)"
-.PP
 Copy a principal
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIinprinc\fP principal to copy 
 .br
@@ -122,50 +141,47 @@ Copy a principal
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION void KRB5_LIB_CALL krb5_free_principal (krb5_context context, krb5_principal p)"
-.PP
-Frees a Kerberos principal allocated by the library with \fBkrb5_parse_name()\fP, \fBkrb5_make_principal()\fP or any other related principal functions.
+Frees a Kerberos principal allocated by the library with \fBkrb5_parse_name()\fP, \fBkrb5_make_principal()\fP or any other related principal functions\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
-\fIp\fP a principal to free.
+\fIp\fP a principal to free\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
-.SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_make_principal (krb5_context context, krb5_principal * principal, krb5_const_realm realm,  ...)"
-.PP
+.SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_make_principal (krb5_context context, krb5_principal * principal, krb5_const_realm realm,  \&.\&.\&.)"
 Build a principal using vararg style building
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP returned principal 
 .br
 \fIrealm\fP realm name 
 .br
-\fI...\fP a list of components ended with NULL.
+\fI\&.\&.\&.\fP a list of components ended with NULL\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_parse_name (krb5_context context, const char * name, krb5_principal * principal)"
-.PP
 Parse a name into a krb5_principal structure
 .PP
 \fBParameters:\fP
@@ -174,18 +190,17 @@ Parse a name into a krb5_principal structure
 .br
 \fIname\fP name to parse into a Kerberos principal 
 .br
-\fIprincipal\fP returned principal, free with \fBkrb5_free_principal()\fP.
+\fIprincipal\fP returned principal, free with \fBkrb5_free_principal()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_parse_name_flags (krb5_context context, const char * name, int flags, krb5_principal * principal)"
-.PP
-Parse a name into a krb5_principal structure, flags controls the behavior.
+Parse a name into a krb5_principal structure, flags controls the behavior\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -195,21 +210,19 @@ Parse a name into a krb5_principal structure, flags controls the behavior.
 .br
 \fIflags\fP flags to control the behavior 
 .br
-\fIprincipal\fP returned principal, free with \fBkrb5_free_principal()\fP.
+\fIprincipal\fP returned principal, free with \fBkrb5_free_principal()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_parse_nametype (krb5_context context, const char * str, int32_t * nametype)"
-.PP
 Parse nametype string and return a nametype integer 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_principal_compare (krb5_context context, krb5_const_principal princ1, krb5_const_principal princ2)"
-.PP
-Compares the two principals, including realm of the principals and returns TRUE if they are the same and FALSE if not.
+Compares the two principals, including realm of the principals and returns TRUE if they are the same and FALSE if not\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -229,7 +242,6 @@ Compares the two principals, including realm of the principals and returns TRUE 
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_principal_compare_any_realm (krb5_context context, krb5_const_principal princ1, krb5_const_principal princ2)"
-.PP
 Return TRUE iff princ1 == princ2 (without considering the realm)
 .PP
 \fBParameters:\fP
@@ -255,8 +267,7 @@ non zero if equal, 0 if not
 .PP
 
 .SS "KRB5_LIB_FUNCTION unsigned int KRB5_LIB_CALL krb5_principal_get_num_comp (krb5_context context, krb5_const_principal principal)"
-.PP
-Get number of component is principal.
+Get number of component is principal\&.
 .PP
 \fBParameters:\fP
 .RS 4
@@ -272,12 +283,11 @@ number of components in string
 .PP
 
 .SS "KRB5_LIB_FUNCTION const char* KRB5_LIB_CALL krb5_principal_get_realm (krb5_context context, krb5_const_principal principal)"
-.PP
 Get the realm of the principal
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to get the realm for
 .RE
@@ -289,12 +299,11 @@ realm of the principal, don't free or use after krb5_principal is freed
 .PP
 
 .SS "KRB5_LIB_FUNCTION int KRB5_LIB_CALL krb5_principal_get_type (krb5_context context, krb5_const_principal principal)"
-.PP
 Get the type of the principal
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to get the type for
 .RE
@@ -305,19 +314,26 @@ the type of principal
 .RE
 .PP
 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_principal_is_gss_hostbased_service (krb5_context context, krb5_const_principal principal)"
+Returns true iff name is an WELLKNOWN:ORG\&.H5L\&.HOSTBASED-SERVICE 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_principal_is_krbtgt (krb5_context context, krb5_const_principal p)"
-.PP
 Check if the cname part of the principal is a krbtgt principal 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_principal_is_lkdc (krb5_context context, krb5_const_principal principal)"
+Returns true if name is Kerberos an LKDC realm 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_principal_is_null (krb5_context context, krb5_const_principal principal)"
+Returns true if name is Kerberos NULL name 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_principal_is_pku2u (krb5_context context, krb5_const_principal principal)"
+Returns true if name is Kerberos an LKDC realm 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_principal_is_root_krbtgt (krb5_context context, krb5_const_principal p)"
+Check if the cname part of the principal is a initial or renewed krbtgt principal 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_principal_match (krb5_context context, krb5_const_principal princ, krb5_const_principal pattern)"
-.PP
 return TRUE iff princ matches pattern 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_principal_set_realm (krb5_context context, krb5_principal principal, krb5_const_realm realm)"
-.PP
-Set a new realm for a principal, and as a side-effect free the previous realm.
+Set a new realm for a principal, and as a side-effect free the previous realm\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal set the realm for 
 .br
@@ -326,17 +342,16 @@ Set a new realm for a principal, and as a side-effect free the previous realm.
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION void KRB5_LIB_CALL krb5_principal_set_type (krb5_context context, krb5_principal principal, int type)"
-.PP
 Set the type of the principal
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to set the type for 
 .br
@@ -345,12 +360,11 @@ Set the type of the principal
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_realm_compare (krb5_context context, krb5_const_principal princ1, krb5_const_principal princ2)"
-.PP
 return TRUE iff realm(princ1) == realm(princ2)
 .PP
 \fBParameters:\fP
@@ -370,31 +384,33 @@ return TRUE iff realm(princ1) == realm(princ2)
 .RE
 .PP
 
+.SS "krb5_boolean KRB5_LIB_FUNCTION krb5_realm_is_lkdc (const char * realm)"
+Returns true if name is Kerberos an LKDC realm 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_sname_to_principal (krb5_context context, const char * hostname, const char * sname, int32_t type, krb5_principal * ret_princ)"
+Create a principal for the given service running on the given hostname\&. If KRB5_NT_SRV_HST is used, the hostname is canonicalized according the configured name canonicalization rules, with canonicalization delayed in some cases\&. One rule involves DNS, which is insecure unless DNSSEC is used, but we don't use DNSSEC-capable resolver APIs here, so that if DNSSEC is used we wouldn't know it\&.
 .PP
-Create a principal for the service running on hostname. If KRB5_NT_SRV_HST is used, the hostname is canonization using DNS (or some other service), this is potentially insecure.
+Canonicalization is immediate (not delayed) only when there is only one canonicalization rule and that rule indicates that we should do a host lookup by name (i\&.e\&., DNS)\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIhostname\fP hostname to use 
 .br
 \fIsname\fP Service name to use 
 .br
-\fItype\fP name type of pricipal, use KRB5_NT_SRV_HST or KRB5_NT_UNKNOWN. 
+\fItype\fP name type of principal, use KRB5_NT_SRV_HST or KRB5_NT_UNKNOWN\&. 
 .br
-\fIret_princ\fP return principal, free with \fBkrb5_free_principal()\fP.
+\fIret_princ\fP return principal, free with \fBkrb5_free_principal()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name (krb5_context context, krb5_const_principal principal, char ** name)"
-.PP
 Unparse the Kerberos name into a string
 .PP
 \fBParameters:\fP
@@ -408,17 +424,16 @@ Unparse the Kerberos name into a string
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name_fixed (krb5_context context, krb5_const_principal principal, char * name, size_t len)"
-.PP
 Unparse the principal name to a fixed buffer
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to unparse 
 .br
@@ -429,17 +444,16 @@ Unparse the principal name to a fixed buffer
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name_fixed_flags (krb5_context context, krb5_const_principal principal, int flags, char * name, size_t len)"
-.PP
-Unparse the principal name with unparse flags to a fixed buffer.
+Unparse the principal name with unparse flags to a fixed buffer\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to unparse 
 .br
@@ -452,17 +466,16 @@ Unparse the principal name with unparse flags to a fixed buffer.
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name_fixed_short (krb5_context context, krb5_const_principal principal, char * name, size_t len)"
-.PP
-Unparse the principal name to a fixed buffer. The realm is skipped if its a default realm.
+Unparse the principal name to a fixed buffer\&. The realm is skipped if its a default realm\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to unparse 
 .br
@@ -473,12 +486,11 @@ Unparse the principal name to a fixed buffer. The realm is skipped if its a defa
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name_flags (krb5_context context, krb5_const_principal principal, int flags, char ** name)"
-.PP
 Unparse the Kerberos name into a string
 .PP
 \fBParameters:\fP
@@ -494,17 +506,16 @@ Unparse the Kerberos name into a string
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
 .SS "KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL krb5_unparse_name_short (krb5_context context, krb5_const_principal principal, char ** name)"
-.PP
-Unparse the principal name to a allocated buffer. The realm is skipped if its a default realm.
+Unparse the principal name to a allocated buffer\&. The realm is skipped if its a default realm\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A Kerberos context. 
+\fIcontext\fP A Kerberos context\&. 
 .br
 \fIprincipal\fP principal to unparse 
 .br
@@ -513,7 +524,10 @@ Unparse the principal name to a allocated buffer. The realm is skipped if its a 
 .PP
 \fBReturns:\fP
 .RS 4
-An krb5 error code, see krb5_get_error_message(). 
+An krb5 error code, see \fBkrb5_get_error_message()\fP\&. 
 .RE
 .PP
 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for HeimdalKerberos5library from the source code\&.

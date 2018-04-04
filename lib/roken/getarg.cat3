@@ -221,7 +221,7 @@ BBUUGGSS
 
      Options with multiple arguments should be handled better.
 
-     Should be integreated with SL.
+     Should be integrated with SL.
 
      It's very confusing that the struct you pass in is called getargS.
 

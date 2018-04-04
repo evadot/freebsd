@@ -1,4 +1,4 @@
-Detta är hx509.info, skapad av makeinfo version 4.8 från hx509.texi.
+This is hx509.info, produced by makeinfo version 4.8 from hx509.texi.
 
 INFO-DIR-SECTION Security
 START-INFO-DIR-ENTRY
@@ -11,7 +11,7 @@ File: hx509.info,  Node: Top,  Next: Introduction,  Prev: (dir),  Up: (dir)
 Heimdal
 *******
 
-This manual is for version 1.5.2 of hx509.
+This manual is for version 7.5.0 of hx509.
 
 * Menu:
 
@@ -21,6 +21,13 @@ This manual is for version 1.5.2 of hx509.
 * CMS signing and encryption::
 * Certificate matching::
 * Software PKCS 11 module::
+* Creating a CA certificate::
+* Issuing certificates::
+* Issuing CRLs::
+* Application requirements::
+* CMS background::
+* Matching syntax::
+* How to use the PKCS11 module::
 
  --- The Detailed Node Listing ---
 
@@ -599,19 +606,19 @@ File: hx509.info,  Node: How to use the PKCS11 module,  Prev: Software PKCS 11 m
 
 
 Tag Table:
-Node: Top203
-Node: Introduction799
-Node: What is X.509 ?2248
-Node: Setting up a CA6206
-Node: Creating a CA certificate7476
-Node: Issuing certificates9917
-Node: Issuing CRLs12460
-Node: Application requirements13087
-Node: CMS signing and encryption18448
-Node: CMS background18799
-Node: Certificate matching18955
-Node: Matching syntax19209
-Node: Software PKCS 11 module19766
-Node: How to use the PKCS11 module20285
+Node: Top202
+Node: Introduction971
+Node: What is X.509 ?2420
+Node: Setting up a CA6378
+Node: Creating a CA certificate7648
+Node: Issuing certificates10089
+Node: Issuing CRLs12632
+Node: Application requirements13259
+Node: CMS signing and encryption18620
+Node: CMS background18971
+Node: Certificate matching19127
+Node: Matching syntax19381
+Node: Software PKCS 11 module19938
+Node: How to use the PKCS11 module20457
 
 End Tag Table

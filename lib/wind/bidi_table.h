@@ -1,5 +1,5 @@
 /* ./bidi_table.h */
-/* Automatically generated at 2012-01-11T14:07:00.534628 */
+/* Automatically generated at 2017-12-08T03:21:13.199278 */
 
 #ifndef BIDI_TABLE_H
 #define BIDI_TABLE_H 1

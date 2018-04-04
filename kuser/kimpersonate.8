@@ -33,19 +33,23 @@
 .\"
 .Dd September 18, 2006
 .Dt KIMPERSONATE 8
-.Os Heimdal
+.Os
 .Sh NAME
 .Nm kimpersonate
-.Nd impersonate a user when there exist a srvtab, keyfile or KeyFile
+.Nd impersonate a user when there exist a keyfile or KeyFile
 .Sh SYNOPSIS
 .Nm
+.Op Fl s Ar string \*(Ba Fl Fl ccache= Ns Ar string
 .Op Fl s Ar string \*(Ba Fl Fl server= Ns Ar string
 .Op Fl c Ar string \*(Ba Fl Fl client= Ns Ar string
 .Op Fl k Ar string \*(Ba Fl Fl keytab= Ns Ar string
 .Op Fl 5 | Fl Fl krb5
+.Op Fl A | Fl Fl add
+.Op Fl R | Fl Fl referral
 .Op Fl e Ar integer \*(Ba Fl Fl expire-time= Ns Ar integer
 .Op Fl a Ar string \*(Ba Fl Fl client-address= Ns Ar string
 .Op Fl t Ar string \*(Ba Fl Fl enc-type= Ns Ar string
+.Op Fl Fl session-enc-type= Ns Ar string
 .Op Fl f Ar string \*(Ba Fl Fl ticket-flags= Ns Ar string
 .Op Fl Fl verbose
 .Op Fl Fl version
@@ -53,11 +57,13 @@
 .Sh DESCRIPTION
 The
 .Nm
-program creates a "fake" ticket using the service-key of the service.
-The service key can be read from a Kerberos 5 keytab, AFS KeyFile or
-(if compiled with support for Kerberos 4) a Kerberos 4 srvtab.
+program creates a "fake" ticket using the service-key of the service and
+stores it in the given (or default) ccache.  This is useful for testing.
+The service key can be read from a Kerberos 5 keytab or AFS KeyFile.
 Supported options:
 .Bl -tag -width Ds
+.It Fl Fl ccache= Ns Ar string
+ccache into which to store the ticket
 .It Fl s Ar string Ns , Fl Fl server= Ns Ar string
 name of server principal
 .It Fl c Ar string Ns , Fl Fl client= Ns Ar string
@@ -66,12 +72,20 @@ name of client principal
 name of keytab file
 .It Fl 5 Ns , Fl Fl krb5
 create a Kerberos 5 ticket
+.It Fl A Ns , Fl Fl add
+don't re-initialize the ccache, instead add the ticket to an existing
+ccache.
+.It Fl R Ns , Fl Fl referral
+simulate a referrals-based KDC client by storing two entries, one with
+the empty realm for the service principal name.
 .It Fl e Ar integer Ns , Fl Fl expire-time= Ns Ar integer
 lifetime of ticket in seconds
 .It Fl a Ar string Ns , Fl Fl client-address= Ns Ar string
 address of client
 .It Fl t Ar string Ns , Fl Fl enc-type= Ns Ar string
-encryption type
+encryption type (defaults to "aes256-cts-hmac-sha1-96")
+.It Fl Fl session-enc-type= Ns Ar string
+session encryption type (defaults to enc-type or "des-cbc-crc" for afs service tickets)
 .It Fl f Ar string Ns , Fl Fl ticket-flags= Ns Ar string
 ticket flags for krb5 ticket
 .It Fl Fl verbose
@@ -83,7 +97,6 @@ Print version
 .Sh FILES
 Uses
 .Pa /etc/krb5.keytab,
-.Pa /etc/srvtab
 and
 .Pa /usr/afs/etc/KeyFile
 when available and the
@@ -100,6 +113,16 @@ or for debugging.
 will create a Kerberos 5 ticket for lha@E.KTH.SE for the host
 hummel.e.kth.se if there exists a keytab entry for it in
 .Pa /etc/krb5.keytab .
+.Pp
+In combination with the
+.Nm ktutil
+command, this is useful for testing.  For example, 
+.Pp
+.Nm ktutil
+-k tkt add -p host/foo.test@TEST -V2 -e aes256-cts-hmac-sha1-96 -r
+.Pp
+.Nm
+--cache=tcc -s host/foo.test@TEST -c jdoe@TEST -k tkt --referral
 .Sh SEE ALSO
 .Xr kinit 1 ,
 .Xr klist 1

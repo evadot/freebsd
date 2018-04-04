@@ -16,7 +16,7 @@ SSYYNNOOPPSSIISS
 
 DDEESSCCRRIIPPTTIIOONN
      kkccmm is a process based credential cache.  To use it, set the KRB5CCNAME
-     enviroment variable to `KCM:_u_i_d' or add the stanza
+     environment variable to `KCM:_u_i_d' or add the stanza
 
 
      [libdefaults]
@@ -89,4 +89,4 @@ DDEESSCCRRIIPPTTIIOONN
 
      --vv, ----vveerrssiioonn
 
-Heimdal                          May 29, 2005                          Heimdal
+BSD                              May 29, 2005                              BSD

@@ -40,7 +40,12 @@ struct procdata {
     unsigned long param1;
     unsigned long syscall;
 };
+#ifdef __GNU__
+#define _IOT_procdata _IOT(_IOTS(long), 5, 0, 0, 0, 0)
+#define VIOC_SYSCALL_PROC _IOW('C', 1, struct procdata)
+#else
 #define VIOC_SYSCALL_PROC _IOW('C', 1, void *)
+#endif
 
 struct devdata {
     unsigned long syscall;
@@ -52,10 +57,39 @@ struct devdata {
     unsigned long param6;
     unsigned long retval;
 };
+#ifdef __GNU__
+#define _IOT_devdata _IOT(_IOTS(long), 8, 0, 0, 0, 0)
+#endif
 #ifdef _IOWR
 #define VIOC_SYSCALL_DEV _IOWR('C', 2, struct devdata)
 #define VIOC_SYSCALL_DEV_OPENAFS _IOWR('C', 1, struct devdata)
 #endif
+
+#ifdef _IOW
+#ifdef _ILP32
+struct sundevdata {
+    uint32_t param6;
+    uint32_t param5;
+    uint32_t param4;
+    uint32_t param3;
+    uint32_t param2;
+    uint32_t param1;
+    uint32_t syscall;
+};
+#define VIOC_SUN_SYSCALL_DEV _IOW('C', 2, struct sundevdata)
+#else
+struct sundevdata {
+    uint64_t param6;
+    uint64_t param5;
+    uint64_t param4;
+    uint64_t param3;
+    uint64_t param2;
+    uint64_t param1;
+    uint64_t syscall;
+};
+#define VIOC_SUN_SYSCALL_DEV _IOW('C', 1, struct sundevdata)
+#endif
+#endif /* _IOW */
 
 
 int _kafs_debug; /* this should be done in a better way */
@@ -69,6 +103,7 @@ int _kafs_debug; /* this should be done in a better way */
 #define LINUX_PROC_POINT	5
 #define AIX_ENTRY_POINTS	6
 #define MACOS_DEV_POINT		7
+#define SUN_PROC_POINT		8
 
 static int afs_entry_point = UNKNOWN_ENTRY_POINT;
 static int afs_syscalls[2];
@@ -184,6 +219,12 @@ try_ioctlpath(const char *path, unsigned long ioctlnum, int entrypoint)
 	ret = ioctl(fd, ioctlnum, &data);
 	break;
     }
+    case SUN_PROC_POINT: {
+	struct sundevdata data = { 0, 0, 0, 0, 0, 0, AFSCALL_PIOCTL };
+	data.param2 = (unsigned long)VIOCGETTOK;
+	ret = ioctl(fd, ioctlnum, &data);
+	break;
+    }
     default:
 	abort();
     }
@@ -265,6 +306,14 @@ k_pioctl(char *a_path,
 
 	return data.retval;
     }
+    case SUN_PROC_POINT: {
+	struct sundevdata data = { 0, 0, 0, 0, 0, 0, AFSCALL_PIOCTL };
+	data.param1 = (unsigned long)a_path;
+	data.param2 = (unsigned long)o_opcode;
+	data.param3 = (unsigned long)a_paramsP;
+	data.param4 = (unsigned long)a_followSymlinks;
+	return do_ioctl(&data);
+    }
 #ifdef _AIX
     case AIX_ENTRY_POINTS:
 	return Pioctl(a_path, o_opcode, a_paramsP, a_followSymlinks);
@@ -323,6 +372,10 @@ k_setpag(void)
 	    return ret;
 	return data.retval;
      }
+    case SUN_PROC_POINT: {
+	struct sundevdata data = { 0, 0, 0, 0, 0, 0, AFSCALL_SETPAG };
+	return do_ioctl(&data);
+    }
 #ifdef _AIX
     case AIX_ENTRY_POINTS:
 	return Setpag();
@@ -470,6 +523,12 @@ k_hasafs(void)
     if (ret == 0)
 	goto done;
 #endif
+#ifdef VIOC_SUN_SYSCALL_DEV
+    ret = try_ioctlpath("/dev/afs", VIOC_SUN_SYSCALL_DEV, SUN_PROC_POINT);
+    if (ret == 0)
+	goto done;
+#endif
+
 
 #if defined(AFS_SYSCALL) || defined(AFS_SYSCALL2) || defined(AFS_SYSCALL3)
     {

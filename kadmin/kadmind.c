@@ -37,13 +37,16 @@ static char *check_library  = NULL;
 static char *check_function = NULL;
 static getarg_strings policy_libraries = { 0, NULL };
 static char *config_file;
-static char sHDB[] = "HDB:";
+static char sHDB[] = "HDBGET:";
 static char *keytab_str = sHDB;
 static int help_flag;
 static int version_flag;
 static int debug_flag;
 static char *port_str;
 char *realm;
+
+static int detach_from_console = -1;
+int daemon_child = -1;
 
 static struct getargs args[] = {
     {
@@ -67,6 +70,14 @@ static struct getargs args[] = {
 #endif
     {	"debug",	'd',	arg_flag,   &debug_flag,
 	"enable debugging", NULL
+    },
+    {
+        "detach",       0 ,      arg_flag, &detach_from_console,
+        "detach from console", NULL
+    },
+    {
+        "daemon-child",       0 ,      arg_integer, &daemon_child,
+        "private argument, do not use", NULL
     },
     {	"ports",	'p',	arg_string, &port_str,
 	"ports to listen to", "port" },
@@ -98,10 +109,6 @@ main(int argc, char **argv)
 
     setprogname(argv[0]);
 
-    ret = krb5_init_context(&context);
-    if (ret)
-	errx (1, "krb5_init_context failed: %d", ret);
-
     if (getarg(args, num_args, argc, argv, &optidx)) {
 	warnx("error at argument `%s'", argv[optidx]);
 	usage(1);
@@ -115,12 +122,21 @@ main(int argc, char **argv)
 	exit(0);
     }
 
+    if (detach_from_console > 0 && daemon_child == -1)
+        roken_detach_prep(argc, argv, "--daemon-child");
+
+    ret = krb5_init_context(&context);
+    if (ret)
+	errx (1, "krb5_init_context failed: %d", ret);
+
     argc -= optidx;
     argv += optidx;
 
     if (config_file == NULL) {
-	asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
-	if (config_file == NULL)
+	int aret;
+
+	aret = asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
+	if (aret == -1)
 	    errx(1, "out of memory");
     }
 
@@ -140,7 +156,7 @@ main(int argc, char **argv)
     if (ret)
 	krb5_err(context, 1, ret, "krb5_set_warn_dest");
 
-    ret = krb5_kt_register(context, &hdb_kt_ops);
+    ret = krb5_kt_register(context, &hdb_get_kt_ops);
     if(ret)
 	krb5_err(context, 1, ret, "krb5_kt_register");
 
@@ -171,7 +187,6 @@ main(int argc, char **argv)
 	mini_inetd(debug_port, &sfd);
     } else {
 #ifdef _WIN32
-	pidfile(NULL);
 	start_server(context, port_str);
 #else
 	struct sockaddr_storage __ss;
@@ -185,7 +200,6 @@ main(int argc, char **argv)
 
 	if(roken_getsockname(STDIN_FILENO, sa, &sa_size) < 0 &&
 	   rk_SOCK_ERRNO == ENOTSOCK) {
-	    pidfile(NULL);
 	    start_server(context, port_str);
 	}
 #endif /* _WIN32 */

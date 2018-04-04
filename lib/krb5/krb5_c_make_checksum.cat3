@@ -84,7 +84,7 @@ DDEESSCCRRIIPPTTIIOONN
      beros.
 
      The krb5_enc_data structure holds and encrypted data.  There are two pub-
-     lic accessable members of krb5_enc_data.  enctype that holds the encryp-
+     lic accessible members of krb5_enc_data.  enctype that holds the encryp-
      tion type of the data encrypted and ciphertext that is a _k_r_b_5___d_a_t_a that
      might contain the encrypted data.
 

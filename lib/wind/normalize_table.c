@@ -1,9 +1,9 @@
 /* ./normalize_table.c */
-/* Automatically generated at 2012-01-11T14:07:01.714581 */
+/* Automatically generated at 2017-12-08T03:21:13.608557 */
 
 
-#include <stdlib.h>
 #include "normalize_table.h"
+#include <stdlib.h>
 
 const struct translation _wind_normalize_table[] = {
   {0xa0, 1, 0}, /* NO-BREAK SPACE */

@@ -1,5 +1,5 @@
 
-KSWITCH(SECTION)                     LOCAL                    KSWITCH(SECTION)
+KSWITCH(1)                BSD General Commands Manual               KSWITCH(1)
 
 NNAAMMEE
      kksswwiittcchh -- switch between default credential caches
@@ -29,4 +29,4 @@ DDEESSCCRRIIPPTTIIOONN
 
      ----hheellpp
 
-OPERATING_SYSTEM               Augusti 25, 2009               OPERATING_SYSTEM
+HEIMDAL                         August 25, 2009                        HEIMDAL

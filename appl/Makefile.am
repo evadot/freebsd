@@ -8,21 +8,16 @@ endif
 if DCE
 dir_dce = dceutils
 endif
+if !NO_AFS
+dir_afsutil = afsutil
+endif
 SUBDIRS = 					\
-	  afsutil				\
-	  ftp					\
-	  login					\
+	  $(dir_afsutil)			\
+	  dbutils				\
 	  $(dir_otp)				\
 	  gssmask				\
-	  popper				\
-	  push					\
-	  rsh					\
-	  rcp					\
 	  su					\
-	  xnlock				\
-	  telnet				\
 	  test					\
-	  kx					\
 	  kf					\
 	  $(dir_dce)
 

@@ -30,16 +30,13 @@
  */
 
 #include <config.h>
-
-#include <stdio.h>
-#include <stdlib.h>
+#include <roken.h>
 #include <rand.h>
 #include <heim_threads.h>
 
 #ifdef KRB5
 #include <krb5-types.h>
 #endif
-#include <roken.h>
 
 #include "randi.h"
 #include "aes.h"
@@ -486,20 +483,6 @@ fortuna_reseed(void)
 	entropy_p = 1;
     }
 #endif
-#ifndef NO_RAND_EGD_METHOD
-    /*
-     * Only to get egd entropy if /dev/random or arc4rand failed since
-     * it can be horribly slow to generate new bits.
-     */
-    if (!entropy_p) {
-	unsigned char buf[INIT_BYTES];
-	if ((*hc_rand_egd_method.bytes)(buf, sizeof(buf)) == 1) {
-	    add_entropy(&main_state, buf, sizeof(buf));
-	    entropy_p = 1;
-	    memset(buf, 0, sizeof(buf));
-	}
-    }
-#endif
     /*
      * Fall back to gattering data from timer and secret files, this
      * is really the last resort.
@@ -639,6 +622,16 @@ fortuna_status(void)
     return result ? 1 : 0;
 }
 
+#if defined(__GNUC__) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901)
+const RAND_METHOD hc_rand_fortuna_method = {
+    .seed = fortuna_seed,
+    .bytes = fortuna_bytes,
+    .cleanup = fortuna_cleanup,
+    .add = fortuna_add,
+    .pseudorand = fortuna_pseudorand,
+    .status = fortuna_status
+};
+#else
 const RAND_METHOD hc_rand_fortuna_method = {
     fortuna_seed,
     fortuna_bytes,
@@ -647,6 +640,7 @@ const RAND_METHOD hc_rand_fortuna_method = {
     fortuna_pseudorand,
     fortuna_status
 };
+#endif
 
 const RAND_METHOD *
 RAND_fortuna_method(void)

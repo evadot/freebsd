@@ -66,7 +66,7 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 45 "sel-gram.y"
+#line 57 "sel-gram.y"
 {
     char *string;
     struct hx_expr *expr;

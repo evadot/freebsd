@@ -44,7 +44,8 @@
 .Fl Fl cache= Ns Ar cachename
 .Xc
 .Oc
-.Op Fl f | Fl Fl no-forwardable
+.Op Fl f | Fl Fl forwardable
+.Op Fl F | Fl Fl no-forwardable
 .Oo Fl t Ar keytabname \*(Ba Xo
 .Fl Fl keytab= Ns Ar keytabname
 .Xc
@@ -99,9 +100,10 @@ Supported options:
 .It Fl c Ar cachename Fl Fl cache= Ns Ar cachename
 The credentials cache to put the acquired ticket in, if other than
 default.
-.It Fl f Fl Fl no-forwardable
-Get ticket that can be forwarded to another host, or if the negative
-flags use, don't get a forwardable flag.
+.It Fl f Fl Fl forwardable
+Obtain a ticket than can be forwarded to another host.
+.It Fl F Fl Fl no-forwardable
+Do not obtain a forwardable ticket.
 .It Fl t Ar keytabname , Fl Fl keytab= Ns Ar keytabname
 Don't ask for a password, but instead get the key from the specified
 keytab.
@@ -210,8 +212,6 @@ The file name of
 .Pa krb5.conf ,
 the default being
 .Pa /etc/krb5.conf .
-.It Ev KRBTKFILE
-Specifies the Kerberos 4 ticket file to store version 4 tickets in.
 .El
 .\".Sh FILES
 .\".Sh EXAMPLES

@@ -1,8 +1,11 @@
-.TH "hx509 library" 3 "11 Jan 2012" "Version 1.5.2" "Heimdalx509library" \" -*- nroff -*-
+.TH "hx509" 3 "Fri Dec 8 2017" "Version 7.5.0" "Heimdalx509library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-hx509 library \- 
+hx509
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -19,27 +22,28 @@ hx509 library \-
 .SH "Function Documentation"
 .PP 
 .SS "void hx509_context_free (hx509_context * context)"
-.PP
-Free the context allocated by \fBhx509_context_init()\fP.
+Free the context allocated by \fBhx509_context_init()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP context to be freed. 
+\fIcontext\fP context to be freed\&. 
 .RE
 .PP
 
 .SS "int hx509_context_init (hx509_context * context)"
-.PP
-Creates a hx509 context that most functions in the library uses. The context is only allowed to be used by one thread at each moment. Free the context with \fBhx509_context_free()\fP.
+Creates a hx509 context that most functions in the library uses\&. The context is only allowed to be used by one thread at each moment\&. Free the context with \fBhx509_context_free()\fP\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP Returns a pointer to new hx509 context.
+\fIcontext\fP Returns a pointer to new hx509 context\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-Returns an hx509 error code. 
+Returns an hx509 error code\&. 
 .RE
 .PP
 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for Heimdalx509library from the source code\&.

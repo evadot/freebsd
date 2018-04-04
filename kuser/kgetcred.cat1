@@ -5,22 +5,64 @@ NNAAMMEE
      kkggeettccrreedd -- get a ticket for a particular service
 
 SSYYNNOOPPSSIISS
-     kkggeettccrreedd [----ccaannoonniiccaalliizzee] [--cc --ccaacchhee | ----ccaacchhee==_c_a_c_h_e] [--ee _e_n_c_t_y_p_e |
-              ----eennccttyyppee==_e_n_c_t_y_p_e] [----nnoo--ttrraannssiitt--cchheecckk] [----vveerrssiioonn] [----hheellpp]
-              _s_e_r_v_i_c_e
+     kkggeettccrreedd [----ccaannoonniiccaalliizzee] [----ccaannoonniiccaall] [--cc --ccaacchhee | ----ccaacchhee==_c_a_c_h_e] [--ee
+              _e_n_c_t_y_p_e | ----eennccttyyppee==_e_n_c_t_y_p_e] [----ddeebbuugg] [--HH | ----hhoossttbbaasseedd]
+              [----nnaammee--ttyyppee==_n_a_m_e_-_t_y_p_e] [----nnoo--ttrraannssiitt--cchheecckk] [----nnoo--ssttoorree]
+              [----ccaacchheedd--oonnllyy] [----vveerrssiioonn] [----hheellpp] _p_r_i_n_c_i_p_a_l
+     kkggeettccrreedd [options] ----hhoossttbbaasseedd _p_r_i_n_c_i_p_a_l
+     kkggeettccrreedd [options] ----hhoossttbbaasseedd _s_e_r_v_i_c_e _h_o_s_t_n_a_m_e _[_e_x_t_r_a_-_c_o_m_p_o_n_e_n_t_s_]
 
 DDEESSCCRRIIPPTTIIOONN
-     kkggeettccrreedd obtains a ticket for a service.  Usually tickets for services
-     are obtained automatically when needed but sometimes for some odd reason
-     you want to obtain a particular ticket or of a special type.
+     kkggeettccrreedd obtains a ticket for the given service principal.  Usually tick-
+     ets for services are obtained automatically when needed but sometimes for
+     some odd reason you want to obtain a particular ticket or of a special
+     type.
+
+     If ----hhoossttbbaasseedd is given then the given service principal name will be
+     canonicalized (see below).
+
+     The third form constructs a host-based principal from the given service
+     name and hostname.  The service name "host" is used if the given _s_e_r_v_i_c_e
+     name in the third usage is the empty string.
+
+     For host-based names, the local host's hostname is used if the given
+     _h_o_s_t_n_a_m_e is the empty string or if the _p_r_i_n_c_i_p_a_l has a single component.
+
+     Any additional components will be included, even for host-based service
+     principal names, but there are no defaults nor local canonicalization
+     rules for additional components.
+
+     Local name canonicalization rules are applied unless the ----ccaannoonniiccaall
+     option is given.  Currently local name canonicalization rules are sup-
+     ported only for host-based principal names' hostname component.
+
+     The principal's realm name may be canonicalized by following Kerberos
+     referrals from the client principal's home realm if the ----ccaannoonniiccaalliizzee
+     option is given or if the local name canonicalization rules are config-
+     ured to use referrals.
 
      Supported options:
 
      ----ccaannoonniiccaalliizzee
-             requests that the KDC canonicalize the principal.
+             requests that the KDC canonicalize the principal.  Currently this
+             only canonicalizes the realm by chasing referrals from the user's
+             start realm, but in the future this may also enable the KDC to
+             canonicalize the complete principal name.
+
+     ----ccaannoonniiccaall
+             turns off local canonicalization of the principal name.
+
+     ----nnaammee--ttyyppee==_n_a_m_e_-_t_y_p_e
+             the name-type to use when parsing the principal name.
+
+     ----hhoossttbbaasseedd
+             is short for ----nnaammee--ttyyppee==ssrrvv__hhsstt.
 
      --cc _c_a_c_h_e, ----ccaacchhee==_c_a_c_h_e
              the credential cache to use.
+
+     ----ddeelleeggaattiioonn--ccrreeddeennttiiaall--ccaacchhee==_c_a_c_h_e
+             the credential cache to use for delegation.
 
      --ee _e_n_c_t_y_p_e, ----eennccttyyppee==_e_n_c_t_y_p_e
              encryption type to use.
@@ -28,11 +70,34 @@ DDEESSCCRRIIPPTTIIOONN
      ----nnoo--ttrraannssiitt--cchheecckk
              requests that the KDC doesn't do transit checking.
 
+     ----nnoo--ssttoorree
+             do not store tickets in the ccache.
+
+     ----ccaacchheedd--oonnllyy
+             do not talk the TGS, search only the ccache.
+
+     ----ffoorrwwaarrddaabbllee
+
+     ----ddeebbuugg
+             enables debug output to stderr.
+
      ----vveerrssiioonn
 
      ----hheellpp
 
+     If the ----ccaannoonniiccaall option is used, then no further canonicalization
+     should be done locally by the client (for example, DNS), but if
+     ----ccaannoonniiccaalliizzee is used, then the client will ask that the KDC canonical-
+     ize the name.
+
+     If the ----ccaannoonniiccaalliizzee option is used with ----hhoossttbbaasseedd a host-based name-
+     type, and ----ccaannoonniiccaall is not used, then the hostname will be canonical-
+     ized according to the name canonicalization rules in _k_r_b_5_._c_o_n_f.
+
+     GSS-API initiator applications with host-based services will get the same
+     behavior as using the ----ccaannoonniiccaalliizzee ----hhoossttbbaasseedd options here.
+
 SSEEEE AALLSSOO
-     kinit(1), klist(1)
+     kinit(1), klist(1), krb5.conf(5), krb5_openlog(3)
 
 HEIMDAL                         March 12, 2004                         HEIMDAL

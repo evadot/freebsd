@@ -222,9 +222,9 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 71 "asn1parse.y"
+#line 72 "asn1parse.y"
 {
-    int constant;
+    int64_t constant;
     struct value *value;
     struct range *range;
     char *name;

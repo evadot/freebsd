@@ -25,7 +25,7 @@ DDEESSCCRRIIPPTTIIOONN
      backslash (``\'').  A realm should not contain slashes or colons.
 
 SSEEEE AALLSSOO
-     krb5_425_conv_principal(3), krb5_build_principal(3),
-     krb5_free_principal(3), krb5_sname_to_principal(3), krb5_unparse_name(3)
+     krb5_build_principal(3), krb5_free_principal(3),
+     krb5_sname_to_principal(3), krb5_unparse_name(3)
 
 HEIMDAL                           May 1, 2006                          HEIMDAL

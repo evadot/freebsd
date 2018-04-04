@@ -1,8 +1,11 @@
-.TH "hx509 certificate selecting functions" 3 "11 Jan 2012" "Version 1.5.2" "Heimdalx509library" \" -*- nroff -*-
+.TH "hx509_peer" 3 "Fri Dec 8 2017" "Version 7.5.0" "Heimdalx509library" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-hx509 certificate selecting functions \- 
+hx509_peer
+.SH SYNOPSIS
+.br
+.PP
 .SS "Functions"
 
 .in +1c
@@ -28,12 +31,11 @@ hx509 certificate selecting functions \-
 .SH "Function Documentation"
 .PP 
 .SS "int hx509_peer_info_add_cms_alg (hx509_context context, hx509_peer_info peer, const AlgorithmIdentifier * val)"
-.PP
-Add an additional algorithm that the peer supports.
+Add an additional algorithm that the peer supports\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A hx509 context. 
+\fIcontext\fP A hx509 context\&. 
 .br
 \fIpeer\fP the peer to set the new algorithms for 
 .br
@@ -42,72 +44,71 @@ Add an additional algorithm that the peer supports.
 .PP
 \fBReturns:\fP
 .RS 4
-An hx509 error code, see \fBhx509_get_error_string()\fP. 
+An hx509 error code, see \fBhx509_get_error_string()\fP\&. 
 .RE
 .PP
 
 .SS "int hx509_peer_info_alloc (hx509_context context, hx509_peer_info * peer)"
-.PP
-Allocate a new peer info structure an init it to default values.
+Allocate a new peer info structure an init it to default values\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A hx509 context. 
+\fIcontext\fP A hx509 context\&. 
 .br
-\fIpeer\fP return an allocated peer, free with \fBhx509_peer_info_free()\fP.
+\fIpeer\fP return an allocated peer, free with \fBhx509_peer_info_free()\fP\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An hx509 error code, see \fBhx509_get_error_string()\fP. 
+An hx509 error code, see \fBhx509_get_error_string()\fP\&. 
 .RE
 .PP
 
 .SS "void hx509_peer_info_free (hx509_peer_info peer)"
-.PP
-Free a peer info structure.
+Free a peer info structure\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIpeer\fP peer info to be freed. 
+\fIpeer\fP peer info to be freed\&. 
 .RE
 .PP
 
 .SS "int hx509_peer_info_set_cert (hx509_peer_info peer, hx509_cert cert)"
-.PP
-Set the certificate that remote peer is using.
+Set the certificate that remote peer is using\&.
 .PP
 \fBParameters:\fP
 .RS 4
 \fIpeer\fP peer info to update 
 .br
-\fIcert\fP cerificate of the remote peer.
+\fIcert\fP cerificate of the remote peer\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An hx509 error code, see \fBhx509_get_error_string()\fP. 
+An hx509 error code, see \fBhx509_get_error_string()\fP\&. 
 .RE
 .PP
 
 .SS "int hx509_peer_info_set_cms_algs (hx509_context context, hx509_peer_info peer, const AlgorithmIdentifier * val, size_t len)"
-.PP
-Set the algorithms that the peer supports.
+Set the algorithms that the peer supports\&.
 .PP
 \fBParameters:\fP
 .RS 4
-\fIcontext\fP A hx509 context. 
+\fIcontext\fP A hx509 context\&. 
 .br
 \fIpeer\fP the peer to set the new algorithms for 
 .br
 \fIval\fP array of supported AlgorithmsIdentiers 
 .br
-\fIlen\fP length of array val.
+\fIlen\fP length of array val\&.
 .RE
 .PP
 \fBReturns:\fP
 .RS 4
-An hx509 error code, see \fBhx509_get_error_string()\fP. 
+An hx509 error code, see \fBhx509_get_error_string()\fP\&. 
 .RE
 .PP
 
+.SH "Author"
+.PP 
+Generated automatically by Doxygen for Heimdalx509library from the source code\&.

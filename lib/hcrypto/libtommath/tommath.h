@@ -46,7 +46,7 @@ extern "C" {
 
 
 /* detect 64-bit mode if possible */
-#if defined(__x86_64__)
+#if defined(__x86_64__) && !defined(__ILP32__)
    #if !(defined(MP_64BIT) && defined(MP_16BIT) && defined(MP_8BIT))
       #define MP_64BIT
    #endif
@@ -189,8 +189,8 @@ typedef int ltm_prime_callback(unsigned char *dst, int len, void *dat);
 #define DIGIT(m,k) ((m)->dp[(k)])
 #define SIGN(m)    ((m)->sign)
 
-/* error code to char* string */
-char *mp_error_to_string(int code);
+/* error code to const char* string */
+const char *mp_error_to_string(int code);
 
 /* ---> init and deinit bignum functions <--- */
 /* init a bignum */
@@ -520,9 +520,7 @@ int mp_prime_next_prime(mp_int *a, int t, int bbs_style);
  */
 int mp_prime_random_ex(mp_int *a, int t, int size, int flags, ltm_prime_callback cb, void *dat);
 
-int mp_find_prime(mp_int *a);
-
-int mp_isprime(mp_int *a);
+int mp_find_prime(mp_int *a, int t);
 
 /* ---> radix conversion <--- */
 int mp_count_bits(mp_int *a);

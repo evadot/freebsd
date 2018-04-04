@@ -2,8 +2,8 @@
 IPROP(8)                  BSD System Manager's Manual                 IPROP(8)
 
 NNAAMMEE
-     iipprroopp, iipprrooppdd--mmaasstteerr, iipprrooppdd--ssllaavvee -- propagate changes to a Heimdal Ker-
-     beros master KDC to slave KDCs
+     iipprroopp, iipprrooppdd--mmaasstteerr, iipprrooppdd--ssllaavvee -- propagate transactions from a Heim-
+     dal Kerberos master KDC to slave KDCs
 
 SSYYNNOOPPSSIISS
      iipprrooppdd--mmaasstteerr [--cc _s_t_r_i_n_g | ----ccoonnffiigg--ffiillee==_s_t_r_i_n_g] [--rr _s_t_r_i_n_g |
@@ -32,11 +32,16 @@ DDEESSCCRRIIPPTTIIOONN
      In contrast to hprop(8), which sends the whole database to the slaves
      regularly, iipprroopp normally sends only the changes as they happen on the
      master.  The master keeps track of all the changes by assigning a version
-     number to every change to the database.  The slaves know which was the
-     latest version they saw, and in this way it can be determined if they are
-     in sync or not.  A log of all the changes is kept on the master.  When a
-     slave is at an older version than the oldest one in the log, the whole
-     database has to be sent.
+     number to every transaction to the database.  The slaves know which was
+     the latest version they saw, and in this way it can be determined if they
+     are in sync or not.  A log of all the transactions is kept on the master.
+     When a slave is at an older version than the oldest one in the log, the
+     whole database has to be sent.
+
+     The log of transactions is also used to implement a two-phase commit
+     (with roll-forward for recovery) method of updating the HDB.  Transac-
+     tions are first recorded in the log, then in the HDB, then the log is
+     updated to mark the transaction as committed.
 
      The changes are propagated over a secure channel (on port 2121 by
      default).  This should normally be defined as ``iprop/tcp'' in
@@ -98,9 +103,11 @@ DDEESSCCRRIIPPTTIIOONN
      like 5 min, 300 s, or simply a number of seconds.
 
 FFIILLEESS
-     _s_l_a_v_e_s, _s_l_a_v_e_-_s_t_a_t_s in the database directory.
+     _s_l_a_v_e_s, _s_l_a_v_e_-_s_t_a_t_s in the database directory.  _i_p_r_o_p_d_-_m_a_s_t_e_r_._p_i_d,
+     _i_p_r_o_p_d_-_s_l_a_v_e_._p_i_d in the database directory, or in the directory named by
+     the HEIM_PIDFILE_DIR environment variable.
 
 SSEEEE AALLSSOO
      krb5.conf(5), hprop(8), hpropd(8), iprop-log(8), kdc(8).
 
-Heimdal                          May 24, 2005                          Heimdal
+BSD                              May 24, 2005                              BSD

@@ -112,6 +112,18 @@ exit_kadmin (void *opt, int argc, char **argv)
     return 0;
 }
 
+int
+lock(void *opt, int argc, char **argv)
+{
+    return kadm5_lock(kadm_handle);
+}
+
+int
+unlock(void *opt, int argc, char **argv)
+{
+    return kadm5_unlock(kadm_handle);
+}
+
 static void
 usage(int ret)
 {
@@ -147,6 +159,7 @@ main(int argc, char **argv)
     kadm5_config_params conf;
     int optidx = 0;
     int exit_status = 0;
+    int aret;
 
     setprogname(argv[0]);
 
@@ -169,8 +182,8 @@ main(int argc, char **argv)
     argv += optidx;
 
     if (config_file == NULL) {
-	asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
-	if (config_file == NULL)
+	aret = asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
+	if (aret == -1)
 	    errx(1, "out of memory");
     }
 
@@ -265,7 +278,7 @@ main(int argc, char **argv)
     if (argc != 0) {
 	ret = sl_command (commands, argc, argv);
 	if(ret == -1)
-	    krb5_warnx (context, "unrecognized command: %s", argv[0]);
+	    sl_did_you_mean(commands, argv[0]);
 	else if (ret == -2)
 	    ret = 0;
 	if(ret != 0)

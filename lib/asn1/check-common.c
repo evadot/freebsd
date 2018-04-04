@@ -33,9 +33,7 @@
  * SUCH DAMAGE.
  */
 
-#ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
@@ -46,8 +44,6 @@
 
 #include "asn1-common.h"
 #include "check-common.h"
-
-RCSID("$Id$");
 
 struct map_page {
     void *start;

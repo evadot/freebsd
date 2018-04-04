@@ -117,15 +117,17 @@ static char *port_str = "http";
 static char *gss_service = "HTTP";
 
 static struct getargs http_args[] = {
-    { "verbose", 'v', arg_flag, &verbose_flag, "verbose logging", },
+    { "verbose", 'v', arg_flag, &verbose_flag, "verbose logging", NULL },
     { "port", 'p', arg_string, &port_str, "port to connect to", "port" },
-    { "delegate", 0, arg_flag, &delegate_flag, "gssapi delegate credential" },
+    { "delegate", 0, arg_flag, &delegate_flag, "gssapi delegate credential",
+      NULL },
     { "gss-service", 's', arg_string, &gss_service, "gssapi service to use",
       "service" },
     { "mech", 'm', arg_string, &mech, "gssapi mech to use", "mech" },
-    { "mutual", 0, arg_negative_flag, &mutual_flag, "no gssapi mutual auth" },
-    { "help", 'h', arg_flag, &help_flag },
-    { "version", 0, arg_flag, &version_flag }
+    { "mutual", 0, arg_negative_flag, &mutual_flag, "no gssapi mutual auth",
+      NULL },
+    { "help", 'h', arg_flag, &help_flag, NULL, NULL },
+    { "version", 0, arg_flag, &version_flag, NULL, NULL }
 };
 
 static int num_http_args = sizeof(http_args) / sizeof(http_args[0]);
@@ -189,7 +191,7 @@ http_find_header(struct http_req *req, const char *header)
 
 static int
 http_query(const char *host, const char *page,
-	   char **headers, int num_headers, struct http_req *req)
+	   char **headers, struct http_req *req)
 {
     enum { RESPONSE, HEADER, BODY } state;
     ssize_t ret;
@@ -204,7 +206,7 @@ http_query(const char *host, const char *page,
 	errx(1, "connection failed");
 
     fdprintf(s, "GET %s HTTP/1.0\r\n", page);
-    for (i = 0; i < num_headers; i++)
+    for (i = 0; headers[i]; i++)
 	fdprintf(s, "%s\r\n", headers[i]);
     fdprintf(s, "Host: %s\r\n\r\n", host);
 
@@ -290,8 +292,8 @@ main(int argc, char **argv)
     struct http_req req;
     const char *host, *page;
     int i, done, print_body, gssapi_done, gssapi_started;
-    char *headers[10]; /* XXX */
-    int num_headers;
+    char *headers[10] = { 0 };
+    int num_headers = 0;
     gss_ctx_id_t context_hdl = GSS_C_NO_CONTEXT;
     gss_name_t server = GSS_C_NO_NAME;
     int optind = 0;
@@ -337,9 +339,11 @@ main(int argc, char **argv)
     do {
 	print_body = 0;
 
-	http_query(host, page, headers, num_headers, &req);
-	for (i = 0 ; i < num_headers; i++)
+	http_query(host, page, headers, &req);
+	for (i = 0 ; headers[i]; i++) {
 	    free(headers[i]);
+	    headers[i] = NULL;
+	}
 	num_headers = 0;
 
 	if (strstr(req.response, " 200 ") != NULL) {
@@ -388,7 +392,7 @@ main(int argc, char **argv)
 		    if (len == 0)
 			errx(1, "invalid Negotiate token");
 		    input_token.value = emalloc(len);
-		    len = base64_decode(&h[i], input_token.value);
+		    len = rk_base64_decode(&h[i], input_token.value);
 		    if (len < 0)
 			errx(1, "invalid base64 Negotiate token %s", &h[i]);
 		    input_token.length = len;
@@ -471,14 +475,13 @@ main(int argc, char **argv)
 		if (output_token.length) {
 		    char *neg_token;
 
-		    base64_encode(output_token.value,
-				  output_token.length,
-				  &neg_token);
+		    rk_base64_encode(output_token.value,
+				     output_token.length,
+				     &neg_token);
 
-		    asprintf(&headers[0], "Authorization: Negotiate %s",
+		    asprintf(&headers[num_headers++], "Authorization: Negotiate %s",
 			     neg_token);
 
-		    num_headers = 1;
 		    free(neg_token);
 		    gss_release_buffer(&min_stat, &output_token);
 		}

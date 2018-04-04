@@ -28,7 +28,7 @@ SSYYNNOOPPSSIISS
      _O_M___u_i_n_t_3_2
      ggssss__aacccceepptt__sseecc__ccoonntteexxtt(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
          _g_s_s___c_t_x___i_d___t _* _c_o_n_t_e_x_t___h_a_n_d_l_e,
-         _c_o_n_s_t _g_s_s___c_r_e_d___i_d___t _a_c_c_e_p_t_o_r___c_r_e_d___h_a_n_d_l_e,
+         _g_s_s___c_o_n_s_t___c_r_e_d___i_d___t _a_c_c_e_p_t_o_r___c_r_e_d___h_a_n_d_l_e,
          _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _i_n_p_u_t___t_o_k_e_n___b_u_f_f_e_r,
          _c_o_n_s_t _g_s_s___c_h_a_n_n_e_l___b_i_n_d_i_n_g_s___t _i_n_p_u_t___c_h_a_n___b_i_n_d_i_n_g_s,
          _g_s_s___n_a_m_e___t _* _s_r_c___n_a_m_e, _g_s_s___O_I_D _* _m_e_c_h___t_y_p_e,
@@ -36,14 +36,14 @@ SSYYNNOOPPSSIISS
          _O_M___u_i_n_t_3_2 _* _t_i_m_e___r_e_c, _g_s_s___c_r_e_d___i_d___t _* _d_e_l_e_g_a_t_e_d___c_r_e_d___h_a_n_d_l_e);
 
      _O_M___u_i_n_t_3_2
-     ggssss__aaccqquuiirree__ccrreedd(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___n_a_m_e___t _d_e_s_i_r_e_d___n_a_m_e,
+     ggssss__aaccqquuiirree__ccrreedd(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___n_a_m_e___t _d_e_s_i_r_e_d___n_a_m_e,
          _O_M___u_i_n_t_3_2 _t_i_m_e___r_e_q, _c_o_n_s_t _g_s_s___O_I_D___s_e_t _d_e_s_i_r_e_d___m_e_c_h_s,
          _g_s_s___c_r_e_d___u_s_a_g_e___t _c_r_e_d___u_s_a_g_e, _g_s_s___c_r_e_d___i_d___t _* _o_u_t_p_u_t___c_r_e_d___h_a_n_d_l_e,
          _g_s_s___O_I_D___s_e_t _* _a_c_t_u_a_l___m_e_c_h_s, _O_M___u_i_n_t_3_2 _* _t_i_m_e___r_e_c);
 
      _O_M___u_i_n_t_3_2
      ggssss__aadddd__ccrreedd(_O_M___u_i_n_t_3_2 _*_m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_r_e_d___i_d___t _i_n_p_u_t___c_r_e_d___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___n_a_m_e___t _d_e_s_i_r_e_d___n_a_m_e,
+         _g_s_s___c_o_n_s_t___c_r_e_d___i_d___t _i_n_p_u_t___c_r_e_d___h_a_n_d_l_e, _g_s_s___c_o_n_s_t___n_a_m_e___t _d_e_s_i_r_e_d___n_a_m_e,
          _c_o_n_s_t _g_s_s___O_I_D _d_e_s_i_r_e_d___m_e_c_h, _g_s_s___c_r_e_d___u_s_a_g_e___t _c_r_e_d___u_s_a_g_e,
          _O_M___u_i_n_t_3_2 _i_n_i_t_i_a_t_o_r___t_i_m_e___r_e_q, _O_M___u_i_n_t_3_2 _a_c_c_e_p_t_o_r___t_i_m_e___r_e_q,
          _g_s_s___c_r_e_d___i_d___t _*_o_u_t_p_u_t___c_r_e_d___h_a_n_d_l_e, _g_s_s___O_I_D___s_e_t _*_a_c_t_u_a_l___m_e_c_h_s,
@@ -55,16 +55,16 @@ SSYYNNOOPPSSIISS
 
      _O_M___u_i_n_t_3_2
      ggssss__ccaannoonniiccaalliizzee__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___n_a_m_e___t _i_n_p_u_t___n_a_m_e, _c_o_n_s_t _g_s_s___O_I_D _m_e_c_h___t_y_p_e,
+         _g_s_s___c_o_n_s_t___n_a_m_e___t _i_n_p_u_t___n_a_m_e, _c_o_n_s_t _g_s_s___O_I_D _m_e_c_h___t_y_p_e,
          _g_s_s___n_a_m_e___t _* _o_u_t_p_u_t___n_a_m_e);
 
      _O_M___u_i_n_t_3_2
-     ggssss__ccoommppaarree__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___n_a_m_e___t _n_a_m_e_1,
-         _c_o_n_s_t _g_s_s___n_a_m_e___t _n_a_m_e_2, _i_n_t _* _n_a_m_e___e_q_u_a_l);
+     ggssss__ccoommppaarree__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___n_a_m_e___t _n_a_m_e_1,
+         _g_s_s___c_o_n_s_t___n_a_m_e___t _n_a_m_e_2, _i_n_t _* _n_a_m_e___e_q_u_a_l);
 
      _O_M___u_i_n_t_3_2
      ggssss__ccoonntteexxtt__ttiimmee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _O_M___u_i_n_t_3_2 _* _t_i_m_e___r_e_c);
+         _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _O_M___u_i_n_t_3_2 _* _t_i_m_e___r_e_c);
 
      _O_M___u_i_n_t_3_2
      ggssss__ccrreeaattee__eemmppttyy__ooiidd__sseett(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
@@ -75,7 +75,7 @@ SSYYNNOOPPSSIISS
          _g_s_s___c_t_x___i_d___t _* _c_o_n_t_e_x_t___h_a_n_d_l_e, _g_s_s___b_u_f_f_e_r___t _o_u_t_p_u_t___t_o_k_e_n);
 
      _O_M___u_i_n_t_3_2
-     ggssss__ddiissppllaayy__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___n_a_m_e___t _i_n_p_u_t___n_a_m_e,
+     ggssss__ddiissppllaayy__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___n_a_m_e___t _i_n_p_u_t___n_a_m_e,
          _g_s_s___b_u_f_f_e_r___t _o_u_t_p_u_t___n_a_m_e___b_u_f_f_e_r, _g_s_s___O_I_D _* _o_u_t_p_u_t___n_a_m_e___t_y_p_e);
 
      _O_M___u_i_n_t_3_2
@@ -84,11 +84,11 @@ SSYYNNOOPPSSIISS
          _g_s_s___b_u_f_f_e_r___t _s_t_a_t_u_s___s_t_r_i_n_g);
 
      _O_M___u_i_n_t_3_2
-     ggssss__dduupplliiccaattee__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___n_a_m_e___t _s_r_c___n_a_m_e,
+     ggssss__dduupplliiccaattee__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___n_a_m_e___t _s_r_c___n_a_m_e,
          _g_s_s___n_a_m_e___t _* _d_e_s_t___n_a_m_e);
 
      _O_M___u_i_n_t_3_2
-     ggssss__eexxppoorrtt__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___n_a_m_e___t _i_n_p_u_t___n_a_m_e,
+     ggssss__eexxppoorrtt__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___n_a_m_e___t _i_n_p_u_t___n_a_m_e,
          _g_s_s___b_u_f_f_e_r___t _e_x_p_o_r_t_e_d___n_a_m_e);
 
      _O_M___u_i_n_t_3_2
@@ -96,7 +96,7 @@ SSYYNNOOPPSSIISS
          _g_s_s___c_t_x___i_d___t _* _c_o_n_t_e_x_t___h_a_n_d_l_e, _g_s_s___b_u_f_f_e_r___t _i_n_t_e_r_p_r_o_c_e_s_s___t_o_k_e_n);
 
      _O_M___u_i_n_t_3_2
-     ggssss__ggeett__mmiicc(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
+     ggssss__ggeett__mmiicc(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
          _g_s_s___q_o_p___t _q_o_p___r_e_q, _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _m_e_s_s_a_g_e___b_u_f_f_e_r,
          _g_s_s___b_u_f_f_e_r___t _m_e_s_s_a_g_e___t_o_k_e_n);
 
@@ -115,8 +115,8 @@ SSYYNNOOPPSSIISS
 
      _O_M___u_i_n_t_3_2
      ggssss__iinniitt__sseecc__ccoonntteexxtt(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_r_e_d___i_d___t _i_n_i_t_i_a_t_o_r___c_r_e_d___h_a_n_d_l_e,
-         _g_s_s___c_t_x___i_d___t _* _c_o_n_t_e_x_t___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___n_a_m_e___t _t_a_r_g_e_t___n_a_m_e,
+         _g_s_s___c_o_n_s_t___c_r_e_d___i_d___t _i_n_i_t_i_a_t_o_r___c_r_e_d___h_a_n_d_l_e,
+         _g_s_s___c_t_x___i_d___t _* _c_o_n_t_e_x_t___h_a_n_d_l_e, _g_s_s___c_o_n_s_t___n_a_m_e___t _t_a_r_g_e_t___n_a_m_e,
          _c_o_n_s_t _g_s_s___O_I_D _m_e_c_h___t_y_p_e, _O_M___u_i_n_t_3_2 _r_e_q___f_l_a_g_s, _O_M___u_i_n_t_3_2 _t_i_m_e___r_e_q,
          _c_o_n_s_t _g_s_s___c_h_a_n_n_e_l___b_i_n_d_i_n_g_s___t _i_n_p_u_t___c_h_a_n___b_i_n_d_i_n_g_s,
          _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _i_n_p_u_t___t_o_k_e_n, _g_s_s___O_I_D _* _a_c_t_u_a_l___m_e_c_h___t_y_p_e,
@@ -125,26 +125,26 @@ SSYYNNOOPPSSIISS
 
      _O_M___u_i_n_t_3_2
      ggssss__iinnqquuiirree__ccoonntteexxtt(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _g_s_s___n_a_m_e___t _* _s_r_c___n_a_m_e,
+         _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _g_s_s___n_a_m_e___t _* _s_r_c___n_a_m_e,
          _g_s_s___n_a_m_e___t _* _t_a_r_g___n_a_m_e, _O_M___u_i_n_t_3_2 _* _l_i_f_e_t_i_m_e___r_e_c,
          _g_s_s___O_I_D _* _m_e_c_h___t_y_p_e, _O_M___u_i_n_t_3_2 _* _c_t_x___f_l_a_g_s, _i_n_t _* _l_o_c_a_l_l_y___i_n_i_t_i_a_t_e_d,
          _i_n_t _* _o_p_e_n___c_o_n_t_e_x_t);
 
      _O_M___u_i_n_t_3_2
      ggssss__iinnqquuiirree__ccrreedd(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_r_e_d___i_d___t _c_r_e_d___h_a_n_d_l_e, _g_s_s___n_a_m_e___t _* _n_a_m_e,
+         _g_s_s___c_o_n_s_t___c_r_e_d___i_d___t _c_r_e_d___h_a_n_d_l_e, _g_s_s___n_a_m_e___t _* _n_a_m_e,
          _O_M___u_i_n_t_3_2 _* _l_i_f_e_t_i_m_e, _g_s_s___c_r_e_d___u_s_a_g_e___t _* _c_r_e_d___u_s_a_g_e,
          _g_s_s___O_I_D___s_e_t _* _m_e_c_h_a_n_i_s_m_s);
 
      _O_M___u_i_n_t_3_2
      ggssss__iinnqquuiirree__ccrreedd__bbyy__mmeecchh(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_r_e_d___i_d___t _c_r_e_d___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___O_I_D _m_e_c_h___t_y_p_e,
+         _g_s_s___c_o_n_s_t___c_r_e_d___i_d___t _c_r_e_d___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___O_I_D _m_e_c_h___t_y_p_e,
          _g_s_s___n_a_m_e___t _* _n_a_m_e, _O_M___u_i_n_t_3_2 _* _i_n_i_t_i_a_t_o_r___l_i_f_e_t_i_m_e,
          _O_M___u_i_n_t_3_2 _* _a_c_c_e_p_t_o_r___l_i_f_e_t_i_m_e, _g_s_s___c_r_e_d___u_s_a_g_e___t _* _c_r_e_d___u_s_a_g_e);
 
      _O_M___u_i_n_t_3_2
      ggssss__iinnqquuiirree__mmeecchhss__ffoorr__nnaammee(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___n_a_m_e___t _i_n_p_u_t___n_a_m_e, _g_s_s___O_I_D___s_e_t _* _m_e_c_h___t_y_p_e_s);
+         _g_s_s___c_o_n_s_t___n_a_m_e___t _i_n_p_u_t___n_a_m_e, _g_s_s___O_I_D___s_e_t _* _m_e_c_h___t_y_p_e_s);
 
      _O_M___u_i_n_t_3_2
      ggssss__iinnqquuiirree__nnaammeess__ffoorr__mmeecchh(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
@@ -184,7 +184,7 @@ SSYYNNOOPPSSIISS
 
      _O_M___u_i_n_t_3_2
      ggssss__pprroocceessss__ccoonntteexxtt__ttookkeenn(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _t_o_k_e_n___b_u_f_f_e_r);
+         _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _t_o_k_e_n___b_u_f_f_e_r);
 
      _O_M___u_i_n_t_3_2
      ggssss__rreelleeaassee__bbuuffffeerr(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___b_u_f_f_e_r___t _b_u_f_f_e_r);
@@ -219,7 +219,7 @@ SSYYNNOOPPSSIISS
          _i_n_t _* _q_o_p___s_t_a_t_e);
 
      _O_M___u_i_n_t_3_2
-     ggssss__uunnwwrraapp(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
+     ggssss__uunnwwrraapp(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
          _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _i_n_p_u_t___m_e_s_s_a_g_e___b_u_f_f_e_r,
          _g_s_s___b_u_f_f_e_r___t _o_u_t_p_u_t___m_e_s_s_a_g_e___b_u_f_f_e_r, _i_n_t _* _c_o_n_f___s_t_a_t_e,
          _g_s_s___q_o_p___t _* _q_o_p___s_t_a_t_e);
@@ -231,18 +231,18 @@ SSYYNNOOPPSSIISS
 
      _O_M___u_i_n_t_3_2
      ggssss__vveerriiffyy__mmiicc(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _m_e_s_s_a_g_e___b_u_f_f_e_r,
+         _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _m_e_s_s_a_g_e___b_u_f_f_e_r,
          _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _t_o_k_e_n___b_u_f_f_e_r, _g_s_s___q_o_p___t _* _q_o_p___s_t_a_t_e);
 
      _O_M___u_i_n_t_3_2
-     ggssss__wwrraapp(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
+     ggssss__wwrraapp(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s, _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e,
          _i_n_t _c_o_n_f___r_e_q___f_l_a_g, _g_s_s___q_o_p___t _q_o_p___r_e_q,
          _c_o_n_s_t _g_s_s___b_u_f_f_e_r___t _i_n_p_u_t___m_e_s_s_a_g_e___b_u_f_f_e_r, _i_n_t _* _c_o_n_f___s_t_a_t_e,
          _g_s_s___b_u_f_f_e_r___t _o_u_t_p_u_t___m_e_s_s_a_g_e___b_u_f_f_e_r);
 
      _O_M___u_i_n_t_3_2
      ggssss__wwrraapp__ssiizzee__lliimmiitt(_O_M___u_i_n_t_3_2 _* _m_i_n_o_r___s_t_a_t_u_s,
-         _c_o_n_s_t _g_s_s___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _i_n_t _c_o_n_f___r_e_q___f_l_a_g,
+         _g_s_s___c_o_n_s_t___c_t_x___i_d___t _c_o_n_t_e_x_t___h_a_n_d_l_e, _i_n_t _c_o_n_f___r_e_q___f_l_a_g,
          _g_s_s___q_o_p___t _q_o_p___r_e_q, _O_M___u_i_n_t_3_2 _r_e_q___o_u_t_p_u_t___s_i_z_e,
          _O_M___u_i_n_t_3_2 _* _m_a_x___i_n_p_u_t___s_i_z_e);
 
@@ -332,8 +332,8 @@ AACCCCEESSSS CCOONNTTRROOLL
 
      For example, if ggssss__iimmppoorrtt__nnaammee() name was used with GSS_C_NO_OID the
      default syntax is used for all mechanism the GSS-API implementation sup-
-     ports.  When compare the imported name of GSS_C_NO_OID it may match
-     serveral mechanism names (MN).
+     ports.  When compare the imported name of GSS_C_NO_OID it may match sev-
+     eral mechanism names (MN).
 
      The resulting name from ggssss__ddiissppllaayy__nnaammee() must not be used for acccess
      control.
@@ -348,7 +348,7 @@ FFUUNNCCTTIIOONNSS
 
      ggssss__iinnqquuiirree__ccoonntteexxtt() returns information about the context.  Information
      is available even after the context have expired.  _l_i_f_e_t_i_m_e___r_e_c argument
-     is set to GSS_C_INDEFINITE (dont expire) or the number of seconds that
+     is set to GSS_C_INDEFINITE (don't expire) or the number of seconds that
      the context is still valid.  A value of 0 means that the context is
      expired.  _m_e_c_h___t_y_p_e argument should be considered readonly and must not
      be released.  _s_r_c___n_a_m_e and ddeesstt__nnaammee() are both mechanims names and must

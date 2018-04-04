@@ -37,6 +37,7 @@ DDEESSCCRRIIPPTTIIOONN
      ++oo   modify
      ++oo   add
      ++oo   get
+     ++oo   get-keys
      ++oo   all
 
      And the optional _p_r_i_n_c_i_p_a_l_-_p_a_t_t_e_r_n restricts the rights to operations on
@@ -76,12 +77,13 @@ EEXXAAMMPPLLEESS
            kkaaddmmiinndd ----ppoorrttss="+ 4711" &
 
      This acl file will grant Joe all rights, and allow Mallory to view and
-     add host principals.
+     add host principals, as well as extract host principal keys (e.g., into
+     keytabs).
 
            joe/admin@EXAMPLE.COM      all
-           mallory/admin@EXAMPLE.COM  add,get  host/*@EXAMPLE.COM
+           mallory/admin@EXAMPLE.COM  add,get-keys  host/*@EXAMPLE.COM
 
 SSEEEE AALLSSOO
-     kpasswd(1), kadmin(8), kdc(8), kpasswdd(8)
+     kpasswd(1), kadmin(1), kdc(8), kpasswdd(8)
 
 HEIMDAL                        December 8, 2004                        HEIMDAL

@@ -42,7 +42,7 @@ kadm5_c_destroy(void *server_handle)
 
     free(context->realm);
     free(context->admin_server);
-    close(context->sock);
+    rk_closesocket(context->sock);
     if (context->client_name)
 	free(context->client_name);
     if (context->service_name)
@@ -51,5 +51,6 @@ kadm5_c_destroy(void *server_handle)
 	krb5_auth_con_free(context->context, context->ac);
     if(context->my_context)
 	krb5_free_context(context->context);
+    free(context);
     return 0;
 }

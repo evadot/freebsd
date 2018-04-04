@@ -38,6 +38,9 @@ RCSID("$Id$");
 kadm5_ret_t
 kadm5_c_chpass_principal(void *server_handle,
 			 krb5_principal princ,
+			 int keepold,
+			 int n_ks_tuple,
+			 krb5_key_salt_tuple *ks_tuple,
 			 const char *password)
 {
     kadm5_client_context *context = server_handle;
@@ -46,6 +49,14 @@ kadm5_c_chpass_principal(void *server_handle,
     unsigned char buf[1024];
     int32_t tmp;
     krb5_data reply;
+
+    /*
+     * We should get around to implementing this...  At the moment, the
+     * the server side API is implemented but the wire protocol has not
+     * been updated.
+     */
+    if (n_ks_tuple > 0)
+       return KADM5_KS_TUPLE_NOSUPP;
 
     ret = _kadm5_connect(server_handle);
     if(ret)
@@ -59,6 +70,7 @@ kadm5_c_chpass_principal(void *server_handle,
     krb5_store_int32(sp, kadm_chpass);
     krb5_store_principal(sp, princ);
     krb5_store_string(sp, password);
+    krb5_store_int32(sp, keepold); /* extension */
     ret = _kadm5_client_send(context, sp);
     krb5_storage_free(sp);
     if (ret)
@@ -82,6 +94,7 @@ kadm5_c_chpass_principal(void *server_handle,
 kadm5_ret_t
 kadm5_c_chpass_principal_with_key(void *server_handle,
 				  krb5_principal princ,
+				  int keepold,
 				  int n_key_data,
 				  krb5_key_data *key_data)
 {
@@ -107,6 +120,7 @@ kadm5_c_chpass_principal_with_key(void *server_handle,
     krb5_store_int32(sp, n_key_data);
     for (i = 0; i < n_key_data; ++i)
 	kadm5_store_key_data (sp, &key_data[i]);
+    krb5_store_int32(sp, keepold); /* extension */
     ret = _kadm5_client_send(context, sp);
     krb5_storage_free(sp);
     if (ret)

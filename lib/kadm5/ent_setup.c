@@ -51,6 +51,7 @@ attr_to_flags(unsigned attr, HDBFlags *flags)
     /* DUP_SKEY */
     flags->invalid =	       !!(attr & KRB5_KDB_DISALLOW_ALL_TIX);
     flags->require_preauth =   !!(attr & KRB5_KDB_REQUIRES_PRE_AUTH);
+    flags->require_pwchange =  !!(attr & KRB5_KDB_REQUIRES_PWCHANGE);
     /* HW_AUTH */
     flags->server =		!(attr & KRB5_KDB_DISALLOW_SVR);
     flags->change_pw = 	       !!(attr & KRB5_KDB_PWCHANGE_SERVICE);
@@ -178,8 +179,14 @@ _kadm5_setup_entry(kadm5_server_context *context,
 	}
     }
     if(mask & KADM5_KVNO
-       && princ_mask & KADM5_KVNO)
-	ent->entry.kvno = princ->kvno;
+       && (princ_mask & KADM5_KVNO)) {
+	krb5_error_code ret;
+
+	ret = hdb_change_kvno(context->context, princ->kvno, &ent->entry);
+	if (ret && ret != HDB_ERR_KVNO_NOT_FOUND)
+	    return ret;
+	ent->entry.kvno = princ->kvno; /* force it */
+    }
     if(mask & KADM5_MAX_RLIFE) {
 	if(princ_mask & KADM5_MAX_RLIFE) {
 	  if(princ->max_renewable_life)

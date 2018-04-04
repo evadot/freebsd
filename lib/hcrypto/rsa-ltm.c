@@ -32,15 +32,11 @@
  */
 
 #include <config.h>
-
-#include <stdio.h>
-#include <stdlib.h>
+#include <roken.h>
 #include <krb5-types.h>
 #include <assert.h>
 
 #include <rsa.h>
-
-#include <roken.h>
 
 #include "tommath.h"
 
@@ -157,12 +153,17 @@ ltm_rsa_public_encrypt(int flen, const unsigned char* from,
     size = RSA_size(rsa);
 
     if (size < RSA_PKCS1_PADDING_SIZE || size - RSA_PKCS1_PADDING_SIZE < flen) {
-	mp_clear_multi(&n, &e, &enc, &dec);
+	mp_clear_multi(&n, &e, &enc, &dec, NULL);
 	return -2;
     }
 
     BN2mpz(&n, rsa->n);
     BN2mpz(&e, rsa->e);
+
+    if (mp_cmp_d(&e, 3) == MP_LT) {
+	mp_clear_multi(&e, &n, &enc, &dec, NULL);
+	return -2;
+    }
 
     p = p0 = malloc(size - 1);
     if (p0 == NULL) {
@@ -233,13 +234,10 @@ ltm_rsa_public_decrypt(int flen, const unsigned char* from,
     BN2mpz(&n, rsa->n);
     BN2mpz(&e, rsa->e);
 
-#if 0
-    /* Check that the exponent is larger then 3 */
-    if (mp_int_compare_value(&e, 3) <= 0) {
+    if (mp_cmp_d(&e, 3) == MP_LT) {
 	mp_clear_multi(&e, &n, &s, &us, NULL);
 	return -3;
     }
-#endif
 
     mp_read_unsigned_bin(&s, rk_UNCONST(from), flen);
 
@@ -287,7 +285,7 @@ static int
 ltm_rsa_private_encrypt(int flen, const unsigned char* from,
 			unsigned char* to, RSA* rsa, int padding)
 {
-    unsigned char *p, *p0;
+    unsigned char *ptr, *ptr0;
     int res;
     int size;
     mp_int in, out, n, e;
@@ -305,21 +303,26 @@ ltm_rsa_private_encrypt(int flen, const unsigned char* from,
     if (size < RSA_PKCS1_PADDING_SIZE || size - RSA_PKCS1_PADDING_SIZE < flen)
 	return -2;
 
-    p0 = p = malloc(size);
-    *p++ = 0;
-    *p++ = 1;
-    memset(p, 0xff, size - flen - 3);
-    p += size - flen - 3;
-    *p++ = 0;
-    memcpy(p, from, flen);
-    p += flen;
-    assert((p - p0) == size);
+    ptr0 = ptr = malloc(size);
+    *ptr++ = 0;
+    *ptr++ = 1;
+    memset(ptr, 0xff, size - flen - 3);
+    ptr += size - flen - 3;
+    *ptr++ = 0;
+    memcpy(ptr, from, flen);
+    ptr += flen;
+    assert((ptr - ptr0) == size);
 
     BN2mpz(&n, rsa->n);
     BN2mpz(&e, rsa->e);
 
-    mp_read_unsigned_bin(&in, p0, size);
-    free(p0);
+    if (mp_cmp_d(&e, 3) == MP_LT) {
+	size = -3;
+	goto out;
+    }
+
+    mp_read_unsigned_bin(&in, ptr0, size);
+    free(ptr0);
 
     if(mp_isneg(&in) || mp_cmp(&in, &n) >= 0) {
 	size = -3;
@@ -401,6 +404,11 @@ ltm_rsa_private_decrypt(int flen, const unsigned char* from,
 
     BN2mpz(&n, rsa->n);
     BN2mpz(&e, rsa->e);
+
+    if (mp_cmp_d(&e, 3) == MP_LT) {
+	size = -2;
+	goto out;
+    }
 
     mp_read_unsigned_bin(&in, rk_UNCONST(from), flen);
 
@@ -528,7 +536,7 @@ ltm_rsa_generate_key(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
     do {
 	BN_GENCB_call(cb, 2, counter++);
 	CHECK(random_num(&p, bitsp), 0);
-	CHECK(mp_find_prime(&p), MP_YES);
+	CHECK(mp_find_prime(&p,128), MP_YES);
 
 	mp_sub_d(&p, 1, &t1);
 	mp_gcd(&t1, &el, &t2);
@@ -540,7 +548,7 @@ ltm_rsa_generate_key(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb)
     do {
 	BN_GENCB_call(cb, 2, counter++);
 	CHECK(random_num(&q, bits - bitsp), 0);
-	CHECK(mp_find_prime(&q), MP_YES);
+	CHECK(mp_find_prime(&q,128), MP_YES);
 
 	if (mp_cmp(&p, &q) == 0) /* don't let p and q be the same */
 	    continue;

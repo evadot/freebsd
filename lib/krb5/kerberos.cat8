@@ -27,12 +27,13 @@ DDEESSCCRRIIPPTTIIOONN
 
      For more information on how Kerberos works, and other general Kerberos
      questions see the Kerberos FAQ at
-     _h_t_t_p_:_/_/_w_w_w_._n_r_l_._n_a_v_y_._m_i_l_/_C_C_S_/_p_e_o_p_l_e_/_k_e_n_h_/_k_e_r_b_e_r_o_s_-_f_a_q_._h_t_m_l.
+           hhttttpp::////wwwwww..ccmmff..nnrrll..nnaavvyy..mmiill//kkrrbb//kkeerrbbeerrooss--ffaaqq..hhttmmll.
 
      For setup instructions see the Heimdal Texinfo manual.
 
 SSEEEE AALLSSOO
-     ftp(1), kdestroy(1), kinit(1), klist(1), kpasswd(1), telnet(1)
+     ftp(1), kdestroy(1), kinit(1), klist(1), kpasswd(1), telnet(1), krb5(3),
+     krb5.conf(5), kadmin(1), kdc(8), ktutil(1)
 
 HHIISSTTOORRYY
      The Kerberos authentication system was developed in the late 1980's as
@@ -54,4 +55,4 @@ HHIISSTTOORRYY
      has been in development at the Royal Institute of Technology in Stock-
      holm, Sweden, since about 1997.
 
-HEIMDAL                        September 1, 2000                       HEIMDAL
+HEIMDAL                          Jun 27, 2013                          HEIMDAL

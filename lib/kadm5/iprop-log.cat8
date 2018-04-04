@@ -2,20 +2,29 @@
 IPROP-LOG(8)              BSD System Manager's Manual             IPROP-LOG(8)
 
 NNAAMMEE
-     iipprroopp--lloogg -- maintain the iprop log file
+     iipprroopp--lloogg -- examine and maintain the iprop log file
 
 SSYYNNOOPPSSIISS
      iipprroopp--lloogg [----vveerrssiioonn] [--hh | ----hheellpp] _c_o_m_m_a_n_d
 
      iipprroopp--lloogg ttrruunnccaattee [--cc _f_i_l_e | ----ccoonnffiigg--ffiillee==_f_i_l_e] [--rr _s_t_r_i_n_g |
-               ----rreeaallmm==_s_t_r_i_n_g] [--hh | ----hheellpp]
+               ----rreeaallmm==_s_t_r_i_n_g] [--KK _i_n_t_e_g_e_r | ----kkeeeepp--eennttrriieess==_i_n_t_e_g_e_r] [--BB
+               _i_n_t_e_g_e_r | ----mmaaxx--bbyytteess==_i_n_t_e_g_e_r] [--RR | ----rreesseett] [--hh | ----hheellpp]
+               [_l_o_g_-_f_i_l_e]
 
      iipprroopp--lloogg dduummpp [--cc _f_i_l_e | ----ccoonnffiigg--ffiillee==_f_i_l_e] [--rr _s_t_r_i_n_g |
-               ----rreeaallmm==_s_t_r_i_n_g] [--hh | ----hheellpp]
+               ----rreeaallmm==_s_t_r_i_n_g] [--nn | ----nnoo--lloocckk] [--RR | ----rreevveerrssee] [--hh | ----hheellpp]
+               [_l_o_g_-_f_i_l_e]
 
      iipprroopp--lloogg rreeppllaayy [----ssttaarrtt--vveerrssiioonn==_v_e_r_s_i_o_n_-_n_u_m_b_e_r]
                [----eenndd--vveerrssiioonn==_v_e_r_s_i_o_n_-_n_u_m_b_e_r] [--cc _f_i_l_e | ----ccoonnffiigg--ffiillee==_f_i_l_e]
-               [--rr _s_t_r_i_n_g | ----rreeaallmm==_s_t_r_i_n_g] [--hh | ----hheellpp]
+               [--rr _s_t_r_i_n_g | ----rreeaallmm==_s_t_r_i_n_g] [--hh | ----hheellpp] [_l_o_g_-_f_i_l_e]
+
+     iipprroopp--lloogg llaasstt--vveerrssiioonn [--cc _f_i_l_e | ----ccoonnffiigg--ffiillee==_f_i_l_e] [--rr _s_t_r_i_n_g |
+               ----rreeaallmm==_s_t_r_i_n_g] [--nn | ----nnoo--lloocckk] [--hh | ----hheellpp] [_l_o_g_-_f_i_l_e_s]
+
+     iipprroopp--lloogg ssiiggnnaall [--cc _f_i_l_e | ----ccoonnffiigg--ffiillee==_f_i_l_e] [--rr _s_t_r_i_n_g |
+               ----rreeaallmm==_s_t_r_i_n_g] [--hh | ----hheellpp]
 
 DDEESSCCRRIIPPTTIIOONN
      Supported options:
@@ -34,10 +43,23 @@ DDEESSCCRRIIPPTTIIOONN
                --rr _s_t_r_i_n_g, ----rreeaallmm==_s_t_r_i_n_g
                        realm
 
-               Truncates the log. Sets the new logs version number for the to
-               the last entry of the old log.  If the log is truncted by emp-
-               tying the file, the log will start over at the first version
-               (0).
+               --KK _i_n_t_e_g_e_r, ----kkeeeepp--eennttrriieess==_i_n_t_e_g_e_r
+
+               --BB _i_n_t_e_g_e_r, ----mmaaxx--bbyytteess==_i_n_t_e_g_e_r
+
+               --RR, ----rreesseett
+
+               If ----rreesseett is given, then the given, configured, or default log
+               file will be truncated and will start at version 1.  This
+               forces full propagations to all slave KDCs.
+
+               Otherwise the log will be truncated but some entries will be
+               preserved, as specified by the ----kkeeeepp--eennttrriieess and/or
+               ----mmaaxx--bbyytteess options.  The largest number of ----kkeeeepp--eennttrriieess
+               entries that are available and fit in the given ----mmaaxx--bbyytteess
+               option will be used.  The ----kkeeeepp--eennttrriieess --ooppttiioonn --ddeeffaauullttss --ttoo
+               --110000,, --aanndd --tthhee ----mmaaxx--bbyytteess option defaults to the _l_o_g_-_m_a_x_-_s_i_z_e
+               parameter in the configuration.
 
      dump
 
@@ -47,7 +69,15 @@ DDEESSCCRRIIPPTTIIOONN
                --rr _s_t_r_i_n_g, ----rreeaallmm==_s_t_r_i_n_g
                        realm
 
-               Print out all entries in the log to standard output.
+               --nn _s_t_r_i_n_g, ----nnoo--lloocckk
+
+               --RR _s_t_r_i_n_g, ----rreevveerrssee
+
+               Print out all entries in the given, configured, or default log
+               file to standard output.  If the --nn option is used then don't
+               lock the iprop log file.  If the --RR option is used, then print
+               the entries in reverse order (this can be useful when the log
+               is very large).
 
      replay
 
@@ -64,7 +94,8 @@ DDEESSCCRRIIPPTTIIOONN
                        realm
 
                Replay the changes from specified entries (or all if none is
-               specified) in the transaction log to the database.
+               specified) in the given, configured, or default transaction log
+               file to the database.
 
      last-version
 
@@ -74,9 +105,25 @@ DDEESSCCRRIIPPTTIIOONN
                --rr _s_t_r_i_n_g, ----rreeaallmm==_s_t_r_i_n_g
                        realm
 
-               prints the version of the last log entry.
+               --nn _s_t_r_i_n_g, ----nnoo--lloocckk
+
+               prints the version of the last record in each of the given log
+               files, or the configured, or the default log file if none is
+               given.
+
+     signal
+
+               --cc _f_i_l_e, ----ccoonnffiigg--ffiillee==_f_i_l_e
+                       configuration file
+
+               --rr _s_t_r_i_n_g, ----rreeaallmm==_s_t_r_i_n_g
+                       realm
+
+               Signals the ipropd-master daemon to send updates to slaves.
+               Normally kadmin does this every time it writes to the database,
+               so this should rarely be needed.
 
 SSEEEE AALLSSOO
      iprop(8)
 
-Heimdal                        February 18, 2007                       Heimdal
+BSD                            February 18, 2007                           BSD

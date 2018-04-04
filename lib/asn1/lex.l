@@ -1,6 +1,6 @@
 %{
 /*
- * Copyright (c) 1997 - 2005 Kungliga Tekniska Högskolan
+ * Copyright (c) 1997 - 2017 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
  *
@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -255,7 +256,7 @@ WITH			{ return kw_WITH; }
 			}
 
 -?0x[0-9A-Fa-f]+|-?[0-9]+ { char *e, *y = yytext;
-			  yylval.constant = strtol((const char *)yytext,
+			  yylval.constant = strtoll((const char *)yytext,
 						   &e, 0);
 			  if(e == y)
 			    lex_error_message("malformed constant (%s)", yytext);
@@ -273,13 +274,11 @@ WITH			{ return kw_WITH; }
 .			{ lex_error_message("Ignoring char(%c)\n", *yytext); }
 %%
 
-#ifndef yywrap /* XXX */
 int
 yywrap ()
 {
      return 1;
 }
-#endif
 
 void
 lex_error_message (const char *format, ...)

@@ -62,7 +62,8 @@ DDEESSCCRRIIPPTTIIOONN
      functions.
 
      kkrrbb55__ggeett__ccrreeddss__oopptt__aadddd__ooppttiioonnss() and kkrrbb55__ggeett__ccrreeddss__oopptt__sseett__ooppttiioonnss()
-     adds and sets options to the structure .  The possible options to set are
+     adds and sets options to the krb5_get_creds_opt structure .  The possible
+     options to set are
      KRB5_GC_CACHED     Only check the _c_c_a_c_h_e, don't got out on network to
                         fetch credential.
      KRB5_GC_USER_USER  request a user to user ticket.  This options doesn't
