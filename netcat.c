@@ -1,4 +1,4 @@
-/* $OpenBSD: netcat.c,v 1.190 2018/03/19 16:35:29 jsing Exp $ */
+/* $OpenBSD: netcat.c,v 1.195 2018/10/04 17:04:50 bluhm Exp $ */
 /*
  * Copyright (c) 2001 Eric Jackson <ericj@monkey.org>
  * Copyright (c) 2015 Bob Beck.  All rights reserved.
@@ -122,7 +122,7 @@ void	atelnet(int, unsigned char *, unsigned int);
 int	strtoport(char *portstr, int udp);
 void	build_ports(char *);
 void	help(void) __attribute__((noreturn));
-int	local_listen(char *, char *, struct addrinfo);
+int	local_listen(const char *, const char *, struct addrinfo);
 void	readwrite(int, struct tls *);
 void	fdpass(int nfd) __attribute__((noreturn));
 int	remote_connect(const char *, const char *, struct addrinfo);
@@ -349,27 +349,6 @@ main(int argc, char *argv[])
 		if (setrtable(rtableid) == -1)
 			err(1, "setrtable");
 
-	if (family == AF_UNIX) {
-		if (pledge("stdio rpath wpath cpath tmppath unix", NULL) == -1)
-			err(1, "pledge");
-	} else if (Fflag && Pflag) {
-		if (pledge("stdio inet dns sendfd tty", NULL) == -1)
-			err(1, "pledge");
-	} else if (Fflag) { 
-		if (pledge("stdio inet dns sendfd", NULL) == -1)
-			err(1, "pledge");
-	} else if (Pflag && usetls) {
-		if (pledge("stdio rpath inet dns tty", NULL) == -1)
-			err(1, "pledge");
-	} else if (Pflag) {
-		if (pledge("stdio inet dns tty", NULL) == -1)
-			err(1, "pledge");
-	} else if (usetls) {
-		if (pledge("stdio rpath inet dns", NULL) == -1)
-			err(1, "pledge");
-	} else if (pledge("stdio inet dns", NULL) == -1)
-		err(1, "pledge");
-
 	/* Cruft to make sure options are clean, and used properly. */
 	if (argv[0] && !argv[1] && family == AF_UNIX) {
 		host = argv[0];
@@ -384,6 +363,50 @@ main(int argc, char *argv[])
 		uport = argv[1];
 	} else
 		usage(1);
+
+	if (usetls) {
+		if (Cflag && unveil(Cflag, "r") == -1)
+			err(1, "unveil");
+		if (unveil(Rflag, "r") == -1)
+			err(1, "unveil");
+		if (Kflag && unveil(Kflag, "r") == -1)
+			err(1, "unveil");
+		if (oflag && unveil(oflag, "r") == -1)
+			err(1, "unveil");
+	} else {
+		if (family == AF_UNIX) {
+			if (unveil(host, "rwc") == -1)
+				err(1, "unveil");
+			if (uflag && !lflag) {
+				if (unveil(sflag ? sflag : "/tmp", "rwc") == -1)
+					err(1, "unveil");
+			}
+		} else {
+			if (unveil("/", "") == -1)
+				err(1, "unveil");
+		}
+	}
+
+	if (family == AF_UNIX) {
+		if (pledge("stdio rpath wpath cpath tmppath unix", NULL) == -1)
+			err(1, "pledge");
+	} else if (Fflag && Pflag) {
+		if (pledge("stdio inet dns sendfd tty", NULL) == -1)
+			err(1, "pledge");
+	} else if (Fflag) {
+		if (pledge("stdio inet dns sendfd", NULL) == -1)
+			err(1, "pledge");
+	} else if (Pflag && usetls) {
+		if (pledge("stdio rpath inet dns tty", NULL) == -1)
+			err(1, "pledge");
+	} else if (Pflag) {
+		if (pledge("stdio inet dns tty", NULL) == -1)
+			err(1, "pledge");
+	} else if (usetls) {
+		if (pledge("stdio rpath inet dns", NULL) == -1)
+			err(1, "pledge");
+	} else if (pledge("stdio inet dns", NULL) == -1)
+		err(1, "pledge");
 
 	if (lflag && sflag)
 		errx(1, "cannot use -s and -l");
@@ -520,8 +543,6 @@ main(int argc, char *argv[])
 			err(1, "pledge");
 	}
 	if (lflag) {
-		struct tls *tls_cctx = NULL;
-		int connfd;
 		ret = 0;
 
 		if (family == AF_UNIX) {
@@ -541,8 +562,11 @@ main(int argc, char *argv[])
 		}
 		/* Allow only one connection at a time, but stay alive. */
 		for (;;) {
-			if (family != AF_UNIX)
+			if (family != AF_UNIX) {
+				if (s != -1)
+					close(s);
 				s = local_listen(host, uport, hints);
+			}
 			if (s < 0)
 				err(1, NULL);
 			if (uflag && kflag) {
@@ -577,6 +601,9 @@ main(int argc, char *argv[])
 
 				readwrite(s, NULL);
 			} else {
+				struct tls *tls_cctx = NULL;
+				int connfd;
+
 				len = sizeof(cliaddr);
 				connfd = accept4(s, (struct sockaddr *)&cliaddr,
 				    &len, SOCK_NONBLOCK);
@@ -592,16 +619,12 @@ main(int argc, char *argv[])
 					readwrite(connfd, tls_cctx);
 				if (!usetls)
 					readwrite(connfd, NULL);
-				if (tls_cctx) {
+				if (tls_cctx)
 					timeout_tls(s, tls_cctx, tls_close);
-					tls_free(tls_cctx);
-					tls_cctx = NULL;
-				}
 				close(connfd);
+				tls_free(tls_cctx);
 			}
-			if (family != AF_UNIX)
-				close(s);
-			else if (uflag) {
+			if (family == AF_UNIX && uflag) {
 				if (connect(s, NULL, 0) < 0)
 					err(1, "connect");
 			}
@@ -633,6 +656,8 @@ main(int argc, char *argv[])
 		for (s = -1, i = 0; portlist[i] != NULL; i++) {
 			if (s != -1)
 				close(s);
+			tls_free(tls_ctx);
+			tls_ctx = NULL;
 
 			if (usetls) {
 				if ((tls_ctx = tls_client()) == NULL)
@@ -683,18 +708,15 @@ main(int argc, char *argv[])
 					tls_setup_client(tls_ctx, s, host);
 				if (!zflag)
 					readwrite(s, tls_ctx);
-				if (tls_ctx) {
+				if (tls_ctx)
 					timeout_tls(s, tls_ctx, tls_close);
-					tls_free(tls_ctx);
-					tls_ctx = NULL;
-				}
 			}
 		}
 	}
 
 	if (s != -1)
 		close(s);
-
+	tls_free(tls_ctx);
 	tls_config_free(tls_cfg);
 
 	return ret;
@@ -970,7 +992,7 @@ timeout_connect(int s, const struct sockaddr *name, socklen_t namelen)
  * address. Returns -1 on failure.
  */
 int
-local_listen(char *host, char *port, struct addrinfo hints)
+local_listen(const char *host, const char *port, struct addrinfo hints)
 {
 	struct addrinfo *res, *res0;
 	int s = -1, ret, x = 1, save_errno;
