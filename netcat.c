@@ -1,4 +1,4 @@
-/* $OpenBSD: netcat.c,v 1.150 2016/01/04 02:18:31 bcook Exp $ */
+/* $OpenBSD: netcat.c,v 1.160 2016/07/13 16:35:47 jsing Exp $ */
 /*
  * Copyright (c) 2001 Eric Jackson <ericj@monkey.org>
  * Copyright (c) 2015 Bob Beck.  All rights reserved.
@@ -115,6 +115,8 @@ int timeout = -1;
 int family = AF_UNSPEC;
 char *portlist[PORT_MAX+1];
 char *unix_dg_tmp_socket;
+int ttl = -1;
+int minttl = -1;
 
 void	atelnet(int, unsigned char *, unsigned int);
 void	build_ports(char *);
@@ -133,7 +135,7 @@ int	unix_listen(char *);
 void	set_common_sockopts(int, int);
 int	map_tos(char *, int *);
 int	map_tls(char *, int *);
-void	report_connect(const struct sockaddr *, socklen_t);
+void	report_connect(const struct sockaddr *, socklen_t, char *);
 void	report_tls(struct tls *tls_ctx, char * host, char *tls_expectname);
 void	usage(int);
 ssize_t drainbuf(int, unsigned char *, size_t *, struct tls *);
@@ -144,7 +146,7 @@ struct tls *tls_setup_server(struct tls *, int, char *);
 int
 main(int argc, char *argv[])
 {
-	int ch, s, ret, socksv;
+	int ch, s = -1, ret, socksv;
 	char *host, *uport;
 	struct addrinfo hints;
 	struct servent *sv;
@@ -158,7 +160,6 @@ main(int argc, char *argv[])
 	struct tls *tls_ctx = NULL;
 
 	ret = 1;
-	s = 0;
 	socksv = 5;
 	host = NULL;
 	uport = NULL;
@@ -167,7 +168,7 @@ main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 
 	while ((ch = getopt(argc, argv,
-	    "46C:cDde:FH:hI:i:K:klNnO:P:p:R:rSs:T:tUuV:vw:X:x:z")) != -1) {
+	    "46C:cDde:FH:hI:i:K:klM:m:NnO:P:p:R:rSs:T:tUuV:vw:X:x:z")) != -1) {
 		switch (ch) {
 		case '4':
 			family = AF_INET;
@@ -222,6 +223,16 @@ main(int argc, char *argv[])
 			break;
 		case 'l':
 			lflag = 1;
+			break;
+		case 'M':
+			ttl = strtonum(optarg, 0, 255, &errstr);
+			if (errstr)
+				errx(1, "ttl is %s", errstr);
+			break;
+		case 'm':
+			minttl = strtonum(optarg, 0, 255, &errstr);
+			if (errstr)
+				errx(1, "minttl is %s", errstr);
 			break;
 		case 'N':
 			Nflag = 1;
@@ -323,7 +334,13 @@ main(int argc, char *argv[])
 		if (pledge("stdio rpath wpath cpath tmppath unix", NULL) == -1)
 			err(1, "pledge");
 	} else if (Fflag) {
-		if (pledge("stdio inet dns sendfd", NULL) == -1)
+		if (Pflag) {
+			if (pledge("stdio inet dns sendfd tty", NULL) == -1)
+				err(1, "pledge");
+		} else if (pledge("stdio inet dns sendfd", NULL) == -1)
+			err(1, "pledge");
+	} else if (Pflag) {
+		if (pledge("stdio inet dns tty", NULL) == -1)
 			err(1, "pledge");
 	} else if (usetls) {
 		if (pledge("stdio rpath inet dns", NULL) == -1)
@@ -434,7 +451,10 @@ main(int argc, char *argv[])
 		if (Kflag && (privkey = tls_load_file(Kflag, &privkeylen, NULL)) == NULL)
 			errx(1, "unable to load TLS key file %s", Kflag);
 
-		if (pledge("stdio inet dns", NULL) == -1)
+		if (Pflag) {
+			if (pledge("stdio inet dns tty", NULL) == -1)
+				err(1, "pledge");
+		} else if (pledge("stdio inet dns", NULL) == -1)
 			err(1, "pledge");
 
 		if (tls_init() == -1)
@@ -449,7 +469,7 @@ main(int argc, char *argv[])
 			errx(1, "unable to set TLS key file %s", Kflag);
 		if (TLSopt & TLS_LEGACY) {
 			tls_config_set_protocols(tls_cfg, TLS_PROTOCOLS_ALL);
-			tls_config_set_ciphers(tls_cfg, "legacy");
+			tls_config_set_ciphers(tls_cfg, "all");
 		}
 		if (!lflag && (TLSopt & TLS_CCERT))
 			errx(1, "clientcert is only valid with -l");
@@ -516,7 +536,7 @@ main(int argc, char *argv[])
 					err(1, "connect");
 
 				if (vflag)
-					report_connect((struct sockaddr *)&z, len);
+					report_connect((struct sockaddr *)&z, len, NULL);
 
 				readwrite(s, NULL);
 			} else {
@@ -528,7 +548,8 @@ main(int argc, char *argv[])
 					err(1, "accept");
 				}
 				if (vflag)
-					report_connect((struct sockaddr *)&cliaddr, len);
+					report_connect((struct sockaddr *)&cliaddr, len,
+					    family == AF_UNIX ? host : NULL);
 				if ((usetls) &&
 				    (tls_cctx = tls_setup_server(tls_ctx, connfd, host)))
 					readwrite(connfd, tls_cctx);
@@ -576,8 +597,8 @@ main(int argc, char *argv[])
 		build_ports(uport);
 
 		/* Cycle through portlist, connecting to each port. */
-		for (i = 0; portlist[i] != NULL; i++) {
-			if (s)
+		for (s = -1, i = 0; portlist[i] != NULL; i++) {
+			if (s != -1)
 				close(s);
 
 			if (usetls) {
@@ -594,7 +615,7 @@ main(int argc, char *argv[])
 			else
 				s = remote_connect(host, portlist[i], hints);
 
-			if (s < 0)
+			if (s == -1)
 				continue;
 
 			ret = 0;
@@ -643,7 +664,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (s)
+	if (s != -1)
 		close(s);
 
 	tls_config_free(tls_cfg);
@@ -659,7 +680,7 @@ int
 unix_bind(char *path, int flags)
 {
 	struct sockaddr_un s_un;
-	int s;
+	int s, save_errno;
 
 	/* Create unix domain socket. */
 	if ((s = socket(AF_UNIX, flags | (uflag ? SOCK_DGRAM : SOCK_STREAM),
@@ -677,7 +698,9 @@ unix_bind(char *path, int flags)
 	}
 
 	if (bind(s, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) {
+		save_errno = errno;
 		close(s);
+		errno = save_errno;
 		return (-1);
 	}
 	return (s);
@@ -753,7 +776,7 @@ int
 unix_connect(char *path)
 {
 	struct sockaddr_un s_un;
-	int s;
+	int s, save_errno;
 
 	if (uflag) {
 		if ((s = unix_bind(unix_dg_tmp_socket, SOCK_CLOEXEC)) < 0)
@@ -773,7 +796,9 @@ unix_connect(char *path)
 		return (-1);
 	}
 	if (connect(s, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) {
+		save_errno = errno;
 		close(s);
+		errno = save_errno;
 		return (-1);
 	}
 	return (s);
@@ -807,7 +832,7 @@ int
 remote_connect(const char *host, const char *port, struct addrinfo hints)
 {
 	struct addrinfo *res, *res0;
-	int s, error, on = 1;
+	int s, error, on = 1, save_errno;
 
 	if ((error = getaddrinfo(host, port, &hints, &res)))
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
@@ -846,7 +871,9 @@ remote_connect(const char *host, const char *port, struct addrinfo hints)
 			warn("connect to %s port %s (%s) failed", host, port,
 			    uflag ? "udp" : "tcp");
 
+		save_errno = errno;
 		close(s);
+		errno = save_errno;
 		s = -1;
 	} while ((res0 = res0->ai_next) != NULL);
 
@@ -892,7 +919,7 @@ int
 local_listen(char *host, char *port, struct addrinfo hints)
 {
 	struct addrinfo *res, *res0;
-	int s, ret, x = 1;
+	int s, ret, x = 1, save_errno;
 	int error;
 
 	/* Allow nodename to be null. */
@@ -924,7 +951,9 @@ local_listen(char *host, char *port, struct addrinfo hints)
 		    res0->ai_addrlen) == 0)
 			break;
 
+		save_errno = errno;
 		close(s);
+		errno = save_errno;
 		s = -1;
 	} while ((res0 = res0->ai_next) != NULL);
 
@@ -1273,6 +1302,27 @@ atelnet(int nfd, unsigned char *buf, unsigned int size)
 	}
 }
 
+
+int
+strtoport(char *portstr, int udp)
+{
+	struct servent *entry;
+	const char *errstr;
+	char *proto;
+	int port = -1;
+
+	proto = udp ? "udp" : "tcp";
+
+	port = strtonum(portstr, 1, PORT_MAX, &errstr);
+	if (errstr == NULL)
+		return port;
+	if (errno != EINVAL)
+		errx(1, "port number %s: %s", errstr, portstr);
+	if ((entry = getservbyname(portstr, proto)) == NULL)
+		errx(1, "service \"%s\" unknown", portstr);
+	return ntohs(entry->s_port);
+}
+
 /*
  * build_ports()
  * Build an array of ports in portlist[], listing each port
@@ -1281,7 +1331,6 @@ atelnet(int nfd, unsigned char *buf, unsigned int size)
 void
 build_ports(char *p)
 {
-	const char *errstr;
 	char *n;
 	int hi, lo, cp;
 	int x = 0;
@@ -1291,13 +1340,8 @@ build_ports(char *p)
 		n++;
 
 		/* Make sure the ports are in order: lowest->highest. */
-		hi = strtonum(n, 1, PORT_MAX, &errstr);
-		if (errstr)
-			errx(1, "port number %s: %s", errstr, n);
-		lo = strtonum(p, 1, PORT_MAX, &errstr);
-		if (errstr)
-			errx(1, "port number %s: %s", errstr, p);
-
+		hi = strtoport(n, uflag);
+		lo = strtoport(p, uflag);
 		if (lo > hi) {
 			cp = hi;
 			hi = lo;
@@ -1323,11 +1367,12 @@ build_ports(char *p)
 			}
 		}
 	} else {
-		hi = strtonum(p, 1, PORT_MAX, &errstr);
-		if (errstr)
-			errx(1, "port number %s: %s", errstr, p);
-		portlist[0] = strdup(p);
-		if (portlist[0] == NULL)
+		char *tmp;
+
+		hi = strtoport(p, uflag);
+		if (asprintf(&tmp, "%d", hi) != -1)
+			portlist[0] = tmp;
+		else
 			err(1, NULL);
 	}
 }
@@ -1367,18 +1412,13 @@ set_common_sockopts(int s, int af)
 			err(1, NULL);
 	}
 	if (Tflag != -1) {
-		int proto, option;
-
-		if (af == AF_INET6) {
-			proto = IPPROTO_IPV6;
-			option = IPV6_TCLASS;
-		} else {
-			proto = IPPROTO_IP;
-			option = IP_TOS;
-		}
-
-		if (setsockopt(s, proto, option, &Tflag, sizeof(Tflag)) == -1)
+		if (af == AF_INET && setsockopt(s, IPPROTO_IP,
+		    IP_TOS, &Tflag, sizeof(Tflag)) == -1)
 			err(1, "set IP ToS");
+
+		else if (af == AF_INET6 && setsockopt(s, IPPROTO_IPV6,
+		    IPV6_TCLASS, &Tflag, sizeof(Tflag)) == -1)
+			err(1, "set IPv6 traffic class");
 	}
 	if (Iflag) {
 		if (setsockopt(s, SOL_SOCKET, SO_RCVBUF,
@@ -1389,6 +1429,26 @@ set_common_sockopts(int s, int af)
 		if (setsockopt(s, SOL_SOCKET, SO_SNDBUF,
 		    &Oflag, sizeof(Oflag)) == -1)
 			err(1, "set TCP send buffer size");
+	}
+
+	if (ttl != -1) {
+		if (af == AF_INET && setsockopt(s, IPPROTO_IP,
+		    IP_TTL, &ttl, sizeof(ttl)))
+			err(1, "set IP TTL");
+
+		else if (af == AF_INET6 && setsockopt(s, IPPROTO_IPV6,
+		    IPV6_UNICAST_HOPS, &ttl, sizeof(ttl)))
+			err(1, "set IPv6 unicast hops");
+	}
+
+	if (minttl != -1) {
+		if (af == AF_INET && setsockopt(s, IPPROTO_IP,
+		    IP_MINTTL, &minttl, sizeof(minttl)))
+			err(1, "set IP min TTL");
+
+		else if (af == AF_INET6 && setsockopt(s, IPPROTO_IPV6,
+		    IPV6_MINHOPCOUNT, &minttl, sizeof(minttl)))
+			err(1, "set IPv6 min hop count");
 	}
 }
 
@@ -1487,12 +1547,17 @@ report_tls(struct tls * tls_ctx, char * host, char *tls_expectname)
 }
 
 void
-report_connect(const struct sockaddr *sa, socklen_t salen)
+report_connect(const struct sockaddr *sa, socklen_t salen, char *path)
 {
 	char remote_host[NI_MAXHOST];
 	char remote_port[NI_MAXSERV];
 	int herr;
 	int flags = NI_NUMERICSERV;
+
+	if (path != NULL) {
+		fprintf(stderr, "Connection on %s received!\n", path);
+		return;
+	}
 
 	if (nflag)
 		flags |= NI_NUMERICHOST;
@@ -1532,6 +1597,8 @@ help(void)
 	\t-K keyfile	Private key file\n\
 	\t-k		Keep inbound sockets open for multiple connects\n\
 	\t-l		Listen mode, for inbound connects\n\
+	\t-M ttl		Outgoing TTL / Hop Limit\n\
+	\t-m minttl	Minimum incoming TTL / Hop Limit\n\
 	\t-N		Shutdown the network socket after EOF on stdin\n\
 	\t-n		Suppress name/port resolutions\n\
 	\t-O length	TCP send buffer length\n\
@@ -1561,11 +1628,10 @@ usage(int ret)
 	fprintf(stderr,
 	    "usage: nc [-46cDdFhklNnrStUuvz] [-C certfile] [-e name] "
 	    "[-H hash] [-I length]\n"
-	    "\t  [-i interval] [-K keyfile] [-O length] [-P proxy_username]\n"
-	    "\t  [-p source_port] [-R CAfile] [-s source] "
-	    "[-T keyword] [-V rtable]\n"
-	    "\t  [-w timeout] [-X proxy_protocol] [-x proxy_address[:port]]\n"
-	    "\t  [destination] [port]\n");
+	    "\t  [-i interval] [-K keyfile] [-M ttl] [-m minttl] [-O length]\n"
+	    "\t  [-P proxy_username] [-p source_port] [-R CAfile] [-s source]\n"
+	    "\t  [-T keyword] [-V rtable] [-w timeout] [-X proxy_protocol]\n"
+	    "\t  [-x proxy_address[:port]] [destination] [port]\n");
 	if (ret)
 		exit(1);
 }
