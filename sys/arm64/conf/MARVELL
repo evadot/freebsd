@@ -1,5 +1,5 @@
 #
-# GENERIC -- Generic kernel configuration file for FreeBSD/arm64
+# MARVELL -- Marvell kernel configuration file for FreeBSD/arm64
 #
 # For more information on this file, please read the config(5) manual page,
 # and/or the handbook section on Kernel Configuration Files:
@@ -19,24 +19,7 @@
 # $FreeBSD$
 
 cpu		ARM64
-ident		GENERIC
+ident		MARVELL
 
 include		"std.arm64"
-
-# Include SoC specific configuration
-include		"std.al"
-include		"std.allwinner"
-include		"std.altera"
-include		"std.amd"
-include		"std.arm"
-include		"std.broadcom"
-include		"std.cavium"
-include		"std.hisilicon"
-include		"std.imx"
 include		"std.marvell"
-include		"std.nvidia"
-include		"std.nxp"
-include		"std.qcom"
-include		"std.rockchip"
-include		"std.virt"
-include		"std.xilinx"

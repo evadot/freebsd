@@ -1,0 +1,152 @@
+#
+# Rockchip SoC support
+#
+
+# SoC support
+options 	SOC_ROCKCHIP_RK3328
+options 	SOC_ROCKCHIP_RK3399
+
+# CPU frequency control
+device		cpufreq
+
+# Bus drivers
+device		pci
+options 	PCI_HP			# PCI-Express native HotPlug
+options 	PCI_IOV			# PCI SR-IOV support
+
+# Block devices
+device		ahci
+device		scbus
+device		da
+
+# NVM Express (NVMe) support
+device		nvme			# base NVMe driver
+options 	NVME_USE_NVD=0		# prefer the cam(4) based nda(4) driver
+device		nvd			# expose NVMe namespaces as disks, depends on nvme
+
+# GPIO / PINCTRL
+device		dwgpio			# Synopsys DesignWare APB GPIO Controller
+device		gpio
+device		gpioled
+device		fdt_pinctrl
+device		gpioregulator
+device		rk_gpio			# RockChip GPIO Controller
+device		rk_pinctrl		# RockChip Pinmux Controller
+
+# I2C
+device		iicbus
+device		iicmux
+device		iic
+device		icee			# Generic IIC eeprom
+device		rk_i2c			# RockChip I2C controller
+device		syr827			# Silergy SYR827 PMIC
+
+# Crypto accelerators
+device		armv8crypto		# ARMv8 OpenCrypto module
+
+# Power management controllers
+device		rk805			# RockChip RK805 PMIC
+
+# SPI
+device		spibus
+device		rk_spi			# RockChip SPI controller
+
+# PWM
+device		pwm
+device		rk_pwm
+
+# Console
+device		vt
+device		kbdmux
+
+device		vt_efifb
+
+# EVDEV support
+device		evdev			# input event device support
+options		EVDEV_SUPPORT		# evdev support in legacy drivers
+device		uinput			# install /dev/uinput cdev
+
+# Serial (COM) ports
+device		uart			# Generic UART driver
+device		uart_snps
+
+# PCI/PCI-X/PCIe Ethernet NICs that use iflib infrastructure
+device		iflib
+device		em			# Intel PRO/1000 Gigabit Ethernet Family
+device		ix			# Intel 10Gb Ethernet Family
+
+# Ethernet NICs
+device		mdio
+device		mii
+device		miibus			# MII bus support
+device		dwc_rk			# Rockchip Designware
+device		re			# RealTek 8139C+/8169/8169S/8110S
+device		smc			# SMSC LAN91C111
+
+# Pseudo devices.
+device		crypto			# core crypto support
+device		loop			# Network loopback
+device		ether			# Ethernet support
+device		vlan			# 802.1Q VLAN support
+device		tuntap			# Packet tunnel.
+device		md			# Memory "disks"
+device		gif			# IPv6 and IPv4 tunneling
+device		firmware		# firmware assist module
+
+# EXT_RESOURCES pseudo devices
+options 	EXT_RESOURCES
+device		clk
+device		phy
+device		hwreset
+device		nvmem
+device		regulator
+device		syscon
+
+# IO Domains
+device		rk_iodomain
+
+# The `bpf' device enables the Berkeley Packet Filter.
+# Be aware of the administrative consequences of enabling this!
+# Note that 'bpf' is required for DHCP.
+device		bpf		# Berkeley packet filter
+
+# USB support
+options 	USB_DEBUG		# enable debug msgs
+options 	USB_HOST_ALIGN=64	# Align usb buffers to cache line size.
+device		rk_usb2phy		# Rockchip USB2PHY
+device		rk_typec_phy		# Rockchip TypeC PHY
+device		ohci			# OHCI USB interface
+device		uhci			# UHCI USB interface
+device		ehci			# EHCI USB interface (USB 2.0)
+device		xhci			# XHCI USB interface (USB 3.0)
+device		dwc3			# Synopsys DWC controller
+device		rk_dwc3			# Rockchip DWC3 controller
+device		usb			# USB Bus (required)
+device		ukbd			# Keyboard
+device		umass			# Disks/Mass storage - Requires scbus and da
+
+# USB ethernet support
+device		muge
+device		smcphy
+device		smsc
+device		ure
+
+# Sound support
+device		sound
+
+# MMC/SD/SDIO Card slot support
+device		sdhci
+device		mmc			# mmc/sd bus
+device		mmcsd			# mmc/sd flash cards
+device		dwmmc
+device		rk_dwmmc
+device		rk_emmcphy
+
+options 	FDT
+
+# DTBs
+makeoptions	MODULES_EXTRA+="dtb/rockchip"
+
+# HID support
+options 	HID_DEBUG		# enable debug msgs
+device		hid			# Generic HID support

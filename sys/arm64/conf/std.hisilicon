@@ -1,0 +1,99 @@
+#
+# HiSilicon SoC support
+#
+
+# SoC support
+options 	SOC_HISI_HI6220
+
+# CPU frequency control
+device		cpufreq
+
+# Block devices
+device		scbus
+device		da
+
+# ATA/SCSI peripherals
+device		cd			# CD
+device		pass			# Passthrough device (direct ATA/SCSI access)
+
+# GPIO / PINCTRL
+device		dwgpio			# Synopsys DesignWare APB GPIO Controller
+device		gpio
+device		gpioled
+device		fdt_pinctrl
+device		gpioregulator
+
+# Crypto accelerators
+device		armv8crypto		# ARMv8 OpenCrypto module
+
+# Console
+device		vt
+device		kbdmux
+
+# EVDEV support
+device		evdev			# input event device support
+options		EVDEV_SUPPORT		# evdev support in legacy drivers
+device		uinput			# install /dev/uinput cdev
+
+# Serial (COM) ports
+device		uart			# Generic UART driver
+device		uart_snps
+
+# Ethernet NICs
+device		mdio
+device		mii
+device		miibus			# MII bus support
+
+# Pseudo devices.
+device		crypto			# core crypto support
+device		loop			# Network loopback
+device		ether			# Ethernet support
+device		vlan			# 802.1Q VLAN support
+device		tuntap			# Packet tunnel.
+device		md			# Memory "disks"
+device		gif			# IPv6 and IPv4 tunneling
+device		firmware		# firmware assist module
+
+# EXT_RESOURCES pseudo devices
+options 	EXT_RESOURCES
+device		clk
+device		phy
+device		hwreset
+device		nvmem
+device		regulator
+device		syscon
+
+# The `bpf' device enables the Berkeley Packet Filter.
+# Be aware of the administrative consequences of enabling this!
+# Note that 'bpf' is required for DHCP.
+device		bpf		# Berkeley packet filter
+
+# USB support
+options 	USB_DEBUG		# enable debug msgs
+options 	USB_HOST_ALIGN=64	# Align usb buffers to cache line size.
+device		ohci			# OHCI USB interface
+device		uhci			# UHCI USB interface
+device		ehci			# EHCI USB interface (USB 2.0)
+device		xhci			# XHCI USB interface (USB 3.0)
+device		usb			# USB Bus (required)
+device		ukbd			# Keyboard
+device		umass			# Disks/Mass storage - Requires scbus and da
+
+# USB ethernet support
+device		muge
+device		smcphy
+device		smsc
+device		ure
+
+# MMC/SD/SDIO Card slot support
+device		mmc			# mmc/sd bus
+device		mmcsd			# mmc/sd flash cards
+device		dwmmc
+device		dwmmc_hisi
+
+options 	FDT
+device		acpi
+
+# HID support
+options 	HID_DEBUG		# enable debug msgs
+device		hid			# Generic HID support
