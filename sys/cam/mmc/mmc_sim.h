@@ -34,6 +34,8 @@ struct mmc_sim {
 	struct cam_devq			*devq;
 	struct cam_sim			*sim;
 	device_t			dev;
+	struct task			sim_task;
+	union ccb			*ccb_task;
 };
 
 int mmc_cam_sim_alloc(device_t dev, const char *name, struct mmc_sim *mmc_sim);

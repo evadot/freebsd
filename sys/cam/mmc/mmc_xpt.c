@@ -379,7 +379,7 @@ mmc_announce_periph(struct cam_periph *periph)
 	xpt_setup_ccb(&cts.ccb_h, path, CAM_PRIORITY_NORMAL);
 	cts.ccb_h.func_code = XPT_GET_TRAN_SETTINGS;
 	cts.type = CTS_TYPE_CURRENT_SETTINGS;
-	xpt_action((union ccb*)&cts);
+	xpt_polled_action((union ccb*)&cts);
 	if ((cts.ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP)
 		return;
 	xpt_path_inq(&cpi, periph->path);
@@ -613,18 +613,18 @@ mmcprobe_start(struct cam_periph *periph, union ccb *start_ccb)
 		xpt_path_inq(&start_ccb->cpi, periph->path);
 		CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("Start with PROBE_IDENTIFY\n"));
 		init_standard_ccb(start_ccb, XPT_GET_TRAN_SETTINGS);
-		xpt_action(start_ccb);
+		xpt_polled_action(start_ccb);
 		if (cts->ios.power_mode != power_off) {
 			init_standard_ccb(start_ccb, XPT_SET_TRAN_SETTINGS);
 			cts->ios.power_mode = power_off;
 			cts->ios_valid = MMC_PM;
-			xpt_action(start_ccb);
+			xpt_polled_action(start_ccb);
 			mtx_sleep(periph, p_mtx, 0, "mmcios", 100);
 		}
 		/* mmc_power_up */
 		/* Get the host OCR */
 		init_standard_ccb(start_ccb, XPT_GET_TRAN_SETTINGS);
-		xpt_action(start_ccb);
+		xpt_polled_action(start_ccb);
 
 		uint32_t host_caps = cts->host_caps;
 		if (host_caps & MMC_CAP_SIGNALING_180)
@@ -639,24 +639,23 @@ mmcprobe_start(struct cam_periph *periph, union ccb *start_ccb)
 		cts->ios.clock = 0;
 		cts->ios_valid = MMC_VDD | MMC_PM | MMC_BM |
 			MMC_CS | MMC_BW | MMC_CLK;
-		xpt_action(start_ccb);
-		mtx_sleep(periph, p_mtx, 0, "mmcios", 100);
+		printf("%s: calling XPT_SET_TRAN_SETTINGS\n", __func__);
+		xpt_polled_action(start_ccb);
+		printf("%s: Done\n", __func__);
 
 		init_standard_ccb(start_ccb, XPT_SET_TRAN_SETTINGS);
 		cts->ios.power_mode = power_on;
 		cts->ios.clock = CARD_ID_FREQUENCY;
 		cts->ios.timing = bus_timing_normal;
 		cts->ios_valid = MMC_PM | MMC_CLK | MMC_BT;
-		xpt_action(start_ccb);
-		mtx_sleep(periph, p_mtx, 0, "mmcios", 100);
+		xpt_polled_action(start_ccb);
 		/* End for mmc_power_on */
 
 		/* Begin mmc_idle_cards() */
 		init_standard_ccb(start_ccb, XPT_SET_TRAN_SETTINGS);
 		cts->ios.chip_select = cs_high;
 		cts->ios_valid = MMC_CS;
-		xpt_action(start_ccb);
-		mtx_sleep(periph, p_mtx, 0, "mmcios", 1);
+		xpt_polled_action(start_ccb);
 
 		CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("Send first XPT_MMC_IO\n"));
 		init_standard_ccb(start_ccb, XPT_MMC_IO);
@@ -775,7 +774,7 @@ mmcprobe_start(struct cam_periph *periph, union ccb *start_ccb)
 		init_standard_ccb(start_ccb, XPT_SET_TRAN_SETTINGS);
 		cts->ios.bus_mode = pushpull;
 		cts->ios_valid = MMC_BM;
-		xpt_action(start_ccb);
+		xpt_polled_action(start_ccb);
 		return;
 		/* NOTREACHED */
 		break;
@@ -787,7 +786,7 @@ mmcprobe_start(struct cam_periph *periph, union ccb *start_ccb)
 	}
 
 	start_ccb->ccb_h.flags |= CAM_DEV_QFREEZE;
-	xpt_action(start_ccb);
+	xpt_polled_action(start_ccb);
 }
 
 static void mmcprobe_cleanup(struct cam_periph *periph)
@@ -1012,7 +1011,7 @@ mmcprobe_done(struct cam_periph *periph, union ccb *done_ccb)
 					done_ccb->ccb_h.cbfcnp = NULL;
 					done_ccb->cts.proto_specific.mmc.ios.vccq = vccq_180;
 					done_ccb->cts.proto_specific.mmc.ios_valid = MMC_VCCQ;
-					xpt_action(done_ccb);
+					xpt_polled_action(done_ccb);
 				}
 			}
 		} else {
@@ -1143,7 +1142,7 @@ mmcprobe_done(struct cam_periph *periph, union ccb *done_ccb)
 			path->device->flags &= ~CAM_DEV_UNCONFIGURED;
 			xpt_acquire_device(path->device);
 			done_ccb->ccb_h.func_code = XPT_GDEV_TYPE;
-			xpt_action(done_ccb);
+			xpt_polled_action(done_ccb);
 			xpt_async(AC_FOUND_DEVICE, path, done_ccb);
 		}
 	}

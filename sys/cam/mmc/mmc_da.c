@@ -715,7 +715,7 @@ sddaasync(void *callback_arg, u_int32_t code,
 		memset(&cgd, 0, sizeof(cgd));
 		xpt_setup_ccb(&cgd.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
 		cgd.ccb_h.func_code = XPT_GDEV_TYPE;
-		xpt_action((union ccb *)&cgd);
+		xpt_polled_action((union ccb *)&cgd);
 		cam_periph_async(periph, code, path, arg);
 		break;
 	}
@@ -1085,7 +1085,7 @@ mmc_set_timing(struct cam_periph *periph,
 	ccb->ccb_h.cbfcnp = NULL;
 	cts->ios.timing = timing;
 	cts->ios_valid = MMC_BT;
-	xpt_action(ccb);
+	xpt_polled_action(ccb);
 
 	return (err);
 }
@@ -1159,7 +1159,7 @@ sdda_set_bus_width(struct cam_periph *periph, union ccb *ccb, int width) {
 	ccb->ccb_h.cbfcnp = NULL;
 	cts->ios.bus_width = width;
 	cts->ios_valid = MMC_BW;
-	xpt_action(ccb);
+	xpt_polled_action(ccb);
 }
 
 static inline const char
@@ -1211,7 +1211,7 @@ sdda_get_host_caps(struct cam_periph *periph, union ccb *ccb)
 	ccb->ccb_h.retry_count = 0;
 	ccb->ccb_h.timeout = 100;
 	ccb->ccb_h.cbfcnp = NULL;
-	xpt_action(ccb);
+	xpt_polled_action(ccb);
 
 	if (ccb->ccb_h.status != CAM_REQ_CMP)
 		panic("Cannot get host caps");
@@ -1231,7 +1231,7 @@ sdda_get_max_data(struct cam_periph *periph, union ccb *ccb)
 	ccb->ccb_h.retry_count = 0;
 	ccb->ccb_h.timeout = 100;
 	ccb->ccb_h.cbfcnp = NULL;
-	xpt_action(ccb);
+	xpt_polled_action(ccb);
 
 	if (ccb->ccb_h.status != CAM_REQ_CMP)
 		panic("Cannot get host max data");
@@ -1325,7 +1325,7 @@ sdda_start_init(void *context, union ccb *start_ccb)
 	start_ccb->ccb_h.retry_count = 0;
 	start_ccb->ccb_h.timeout = 100;
 	start_ccb->ccb_h.cbfcnp = NULL;
-	xpt_action(start_ccb);
+	xpt_polled_action(start_ccb);
 
 	if (start_ccb->ccb_h.status != CAM_REQ_CMP)
 		panic("Cannot get max host freq");
@@ -1422,6 +1422,7 @@ finish_hs_tests:
 	}
 	/* If possible, set lower-level signaling */
 	enum mmc_bus_timing timing;
+	printf("%s: start\n", __func__);
 	/* FIXME: MMCCAM supports max. bus_timing_mmc_ddr52 at the moment. */
 	for (timing = bus_timing_mmc_ddr52; timing > bus_timing_normal; timing--) {
 		if (isset(&softc->vccq_120, timing)) {
@@ -1433,7 +1434,7 @@ finish_hs_tests:
 			start_ccb->ccb_h.cbfcnp = NULL;
 			cts->ios.vccq = vccq_120;
 			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
+			xpt_polled_action(start_ccb);
 			break;
 		} else if (isset(&softc->vccq_180, timing)) {
 			/* Set VCCQ = 1.8V */
@@ -1444,7 +1445,7 @@ finish_hs_tests:
 			start_ccb->ccb_h.cbfcnp = NULL;
 			cts->ios.vccq = vccq_180;
 			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
+			xpt_polled_action(start_ccb);
 			break;
 		} else {
 			/* Set VCCQ = 3.3V */
@@ -1455,7 +1456,7 @@ finish_hs_tests:
 			start_ccb->ccb_h.cbfcnp = NULL;
 			cts->ios.vccq = vccq_330;
 			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
+			xpt_polled_action(start_ccb);
 			break;
 		}
 	}
@@ -1468,7 +1469,8 @@ finish_hs_tests:
 	start_ccb->ccb_h.cbfcnp = NULL;
 	cts->ios.clock = f_max;
 	cts->ios_valid = MMC_CLK;
-	xpt_action(start_ccb);
+	xpt_polled_action(start_ccb);
+	printf("%s: end\n", __func__);
 
 	/* Set bus width */
 	enum mmc_bus_width desired_bus_width = bus_width_1;
@@ -1568,7 +1570,7 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	bzero(&cpi, sizeof(cpi));
 	xpt_setup_ccb(&cpi.ccb_h, periph->path, CAM_PRIORITY_NONE);
 	cpi.ccb_h.func_code = XPT_PATH_INQ;
-	xpt_action((union ccb *)&cpi);
+	xpt_polled_action((union ccb *)&cpi);
 
 	/*
 	 * Register this media as a disk
@@ -1793,7 +1795,7 @@ sdda_init_switch_part(struct cam_periph *periph, union ccb *start_ccb,
 
 	sc->outstanding_cmds++;
 	cam_periph_unlock(periph);
-	xpt_action(start_ccb);
+	xpt_polled_action(start_ccb);
 	cam_periph_lock(periph);
 }
 
@@ -1926,7 +1928,7 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 	softc->outstanding_cmds++;
 	softc->refcount++;
 	cam_periph_unlock(periph);
-	xpt_action(start_ccb);
+	xpt_polled_action(start_ccb);
 	cam_periph_lock(periph);
 
 	/* May have more work to do, so ensure we stay scheduled */

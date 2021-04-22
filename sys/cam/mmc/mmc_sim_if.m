@@ -27,7 +27,7 @@
 # $FreeBSD$
 
 #include <sys/types.h>
-#include <sys/callout.h>
+#include <sys/taskqueue.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>

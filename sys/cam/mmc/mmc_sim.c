@@ -33,6 +33,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
+#include <sys/taskqueue.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
@@ -48,6 +49,36 @@ mmc_cam_default_poll(struct cam_sim *sim)
 {
 
 	return;
+}
+
+static void
+mmc_sim_task(void *arg, int pending)
+{
+	struct mmc_sim *mmc_sim;
+	int rv;
+
+	printf("%s called\n", __func__);
+	mmc_sim = arg;
+	if (mmc_sim->ccb_task == NULL)
+		return;
+
+	switch (mmc_sim->ccb_task->ccb_h.func_code) {
+	case XPT_SET_TRAN_SETTINGS:
+	{
+		struct ccb_trans_settings *cts = &mmc_sim->ccb_task->cts;
+
+		rv = MMC_SIM_SET_TRAN_SETTINGS(mmc_sim->dev, &cts->proto_specific.mmc);
+		if (rv != 0)
+			mmc_sim->ccb_task->ccb_h.status = CAM_REQ_INVALID;
+		else
+			mmc_sim->ccb_task->ccb_h.status = CAM_REQ_CMP;
+		/* mmc_sim->ccb_task = NULL; */
+	}
+	default:
+		mmc_sim->ccb_task->ccb_h.status = CAM_REQ_INVALID;
+		break;
+	}
+	xpt_done(mmc_sim->ccb_task);
 }
 
 static void
@@ -96,13 +127,19 @@ mmc_cam_sim_default_action(struct cam_sim *sim, union ccb *ccb)
 	}
 	case XPT_SET_TRAN_SETTINGS:
 	{
-		struct ccb_trans_settings *cts = &ccb->cts;
+		/* struct ccb_trans_settings *cts = &ccb->cts; */
 
-		rv = MMC_SIM_SET_TRAN_SETTINGS(mmc_sim->dev, &cts->proto_specific.mmc);
-		if (rv != 0)
-			ccb->ccb_h.status = CAM_REQ_INVALID;
-		else
-			ccb->ccb_h.status = CAM_REQ_CMP;
+		printf("%s: Got XPT_SET_TRAN_SETTINGS\n", __func__);
+		mmc_sim->ccb_task = ccb;
+		ccb->ccb_h.status = CAM_REQ_INPROG;
+		taskqueue_enqueue(taskqueue_thread, &mmc_sim->sim_task);
+		/* rv = MMC_SIM_SET_TRAN_SETTINGS(mmc_sim->dev, &cts->proto_specific.mmc); */
+		/* if (rv != 0) */
+		/* 	ccb->ccb_h.status = CAM_REQ_INVALID; */
+		/* else */
+		/* 	ccb->ccb_h.status = CAM_REQ_CMP; */
+		return;
+		/* NOTREACHED */
 		break;
 	}
 	case XPT_RESET_BUS:
@@ -161,6 +198,8 @@ mmc_cam_sim_alloc(device_t dev, const char *name, struct mmc_sim *mmc_sim)
 		mtx_unlock(&mmc_sim->mtx);
 		goto fail;
 	}
+
+	TASK_INIT(&mmc_sim->sim_task, 0, mmc_sim_task, mmc_sim);
 
 	mtx_unlock(&mmc_sim->mtx);
 
