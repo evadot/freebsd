@@ -98,11 +98,6 @@ int nfs_maxcopyrange = 10 * 1024 * 1024;
 SYSCTL_INT(_vfs_nfs, OID_AUTO, maxcopyrange, CTLFLAG_RW,
     &nfs_maxcopyrange, 0, "Max size of a Copy so RPC times reasonable");
 
-static int nfs_allowskip_sessionseq = 1;
-SYSCTL_INT(_vfs_nfs, OID_AUTO, linuxseqsesshack, CTLFLAG_RW,
-    &nfs_allowskip_sessionseq, 0, "Allow client to skip ahead one seq# for"
-    " session slot");
-
 /*
  * This array of structures indicates, for V4:
  * retfh - which of 3 types of calling args are used
@@ -4653,24 +4648,12 @@ nfsv4_seqsession(uint32_t seqid, uint32_t slotid, uint32_t highslot,
 		} else
 			/* No reply cached, so just do it. */
 			slots[slotid].nfssl_inprog = 1;
-	} else if (slots[slotid].nfssl_seq + 1 == seqid ||
-	    (slots[slotid].nfssl_seq + 2 == seqid &&
-	     nfs_allowskip_sessionseq != 0)) {
-		/*
-		 * Allowing the seqid to be ahead by 2 is technically
-		 * a violation of RFC5661, but it seems harmless to do
-		 * and avoids returning NFSERR_SEQMISORDERED to a
-		 * slightly broken Linux NFSv4.1/4.2 client.
-		 * If the RPCs are really out of order, one with a
-		 * lower seqid will be subsequently received and that
-		 * one will get a NFSERR_SEQMISORDERED reply.
-		 * Can be disabled by setting vfs.nfs.linuxseqsesshack to 0.
-		 */
+	} else if ((slots[slotid].nfssl_seq + 1) == seqid) {
 		if (slots[slotid].nfssl_reply != NULL)
 			m_freem(slots[slotid].nfssl_reply);
 		slots[slotid].nfssl_reply = NULL;
 		slots[slotid].nfssl_inprog = 1;
-		slots[slotid].nfssl_seq = seqid;
+		slots[slotid].nfssl_seq++;
 	} else
 		error = NFSERR_SEQMISORDERED;
 	return (error);
@@ -4828,7 +4811,7 @@ nfsv4_sequencelookup(struct nfsmount *nmp, struct nfsclsession *sep,
  * Free a session slot.
  */
 void
-nfsv4_freeslot(struct nfsclsession *sep, int slot)
+nfsv4_freeslot(struct nfsclsession *sep, int slot, bool resetseq)
 {
 	uint64_t bitval;
 
@@ -4836,6 +4819,8 @@ nfsv4_freeslot(struct nfsclsession *sep, int slot)
 	if (slot > 0)
 		bitval <<= slot;
 	mtx_lock(&sep->nfsess_mtx);
+	if (resetseq)
+		sep->nfsess_slotseq[slot]--;
 	if ((bitval & sep->nfsess_slots) == 0)
 		printf("freeing free slot!!\n");
 	sep->nfsess_slots &= ~bitval;

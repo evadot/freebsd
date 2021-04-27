@@ -3262,15 +3262,15 @@ ixgbe_config_delay_values(struct adapter *adapter)
  *   Called whenever multicast address list is updated.
  ************************************************************************/
 static u_int
-ixgbe_mc_filter_apply(void *arg, struct sockaddr_dl *sdl, u_int count)
+ixgbe_mc_filter_apply(void *arg, struct sockaddr_dl *sdl, u_int idx)
 {
 	struct adapter *adapter = arg;
 	struct ixgbe_mc_addr *mta = adapter->mta;
 
-	if (count == MAX_NUM_MULTICAST_ADDRESSES)
+	if (idx == MAX_NUM_MULTICAST_ADDRESSES)
 		return (0);
-	bcopy(LLADDR(sdl), mta[count].addr, IXGBE_ETH_LENGTH_OF_ADDRESS);
-	mta[count].vmdq = adapter->pool;
+	bcopy(LLADDR(sdl), mta[idx].addr, IXGBE_ETH_LENGTH_OF_ADDRESS);
+	mta[idx].vmdq = adapter->pool;
 
 	return (1);
 } /* ixgbe_mc_filter_apply */
@@ -3294,7 +3294,7 @@ ixgbe_if_multi_set(if_ctx_t ctx)
 	    adapter);
 
 	fctrl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
-	fctrl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
+
 	if (ifp->if_flags & IFF_PROMISC)
 		fctrl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 	else if (mcnt >= MAX_NUM_MULTICAST_ADDRESSES ||
