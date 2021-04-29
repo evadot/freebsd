@@ -1,7 +1,10 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2021 Rubicon Communications, LLC (Netgate)
+ * Copyright (c) 2021 Ruslan Bukin <br@bsdpad.com>
+ *
+ * This work was supported by Innovate UK project 105694, "Digital Security
+ * by Design (DSbD) Technology Platform Prototype".
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,38 +27,25 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
+ * $FreeBSD$
  */
-#ifndef _PF_NV_H_
-#define _PF_NV_H_
 
-#include <sys/types.h>
-#include <sys/nv.h>
+#ifndef	_ARM64_IOMMU_IOMMU_PMAP_H_
+#define	_ARM64_IOMMU_IOMMU_PMAP_H_
 
-int	pf_nvbinary(const nvlist_t *, const char *, void *, size_t);
-int	pf_nvint(const nvlist_t *, const char *, int *);
-int	pf_nvuint8(const nvlist_t *, const char *, uint8_t *);
-int	pf_nvuint8_array(const nvlist_t *, const char *, uint8_t *,
-	    size_t, size_t *);
-void	pf_uint8_array_nv(nvlist_t *, const char *, const uint8_t *,
-	    size_t);
-int	pf_nvuint16(const nvlist_t *, const char *, uint16_t *);
-int	pf_nvuint16_array(const nvlist_t *, const char *, uint16_t *,
-	    size_t, size_t *);
-void	pf_uint16_array_nv(nvlist_t *, const char *, const uint16_t *,
-	    size_t);
-int	pf_nvuint32(const nvlist_t *, const char *, uint32_t *);
-int	pf_nvuint32_array(const nvlist_t *, const char *, uint32_t *,
-	    size_t, size_t *);
-void	pf_uint32_array_nv(nvlist_t *, const char *, const uint32_t *,
-	    size_t);
+/* System MMU (SMMU). */
+int pmap_smmu_enter(pmap_t pmap, vm_offset_t va, vm_paddr_t pa, vm_prot_t prot,
+    u_int flags);
+int pmap_smmu_remove(pmap_t pmap, vm_offset_t va);
 
-int	pf_nvstring(const nvlist_t *, const char *, char *, size_t);
+/* Mali GPU */
+int pmap_gpu_enter(pmap_t pmap, vm_offset_t va, vm_paddr_t pa,
+    vm_prot_t prot, u_int flags);
+int pmap_gpu_remove(pmap_t pmap, vm_offset_t va);
 
-#define	PFNV_CHK(x)	do {	\
-	error = (x);		\
-	SDT_PROBE2(pf, ioctl, nvchk, error, error, __LINE__);	\
-	if (error != 0)		\
-		goto errout;	\
-	} while (0)
+/* Common */
+void iommu_pmap_remove_pages(pmap_t pmap);
+void iommu_pmap_release(pmap_t pmap);
+int iommu_pmap_pinit(pmap_t);
 
-#endif
+#endif /* !_ARM64_IOMMU_IOMMU_PMAP_H_ */
