@@ -193,6 +193,16 @@ SYSCTL_INT(_net_inet_tcp_sack_attack, OID_AUTO, sad_low_pps,
     &tcp_sad_low_pps, 100,
     "What is the input pps that below which we do not decay?");
 #endif
+uint32_t tcp_ack_war_time_window = 1000;
+SYSCTL_UINT(_net_inet_tcp, OID_AUTO, ack_war_timewindow,
+    CTLFLAG_RW,
+    &tcp_ack_war_time_window, 1000,
+   "If the tcp_stack does ack-war prevention how many milliseconds are in its time window?");
+uint32_t tcp_ack_war_cnt = 5;
+SYSCTL_UINT(_net_inet_tcp, OID_AUTO, ack_war_cnt,
+    CTLFLAG_RW,
+    &tcp_ack_war_cnt, 5,
+   "If the tcp_stack does ack-war prevention how many acks can be sent in its time window?");
 
 struct rwlock tcp_function_lock;
 
@@ -267,6 +277,18 @@ VNET_DEFINE(int, tcp_ts_offset_per_conn) = 1;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, ts_offset_per_conn, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_ts_offset_per_conn), 0,
     "Initialize TCP timestamps per connection instead of per host pair");
+
+/* How many connections are pacing */
+static volatile uint32_t number_of_tcp_connections_pacing = 0;
+static uint32_t shadow_num_connections = 0;
+
+static int tcp_pacing_limit = 10000;
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, pacing_limit, CTLFLAG_RW,
+    &tcp_pacing_limit, 1000,
+    "If the TCP stack does pacing, is there a limit (-1 = no, 0 = no pacing N = number of connections)");
+
+SYSCTL_UINT(_net_inet_tcp, OID_AUTO, pacing_count, CTLFLAG_RD,
+    &shadow_num_connections, 0, "Number of TCP connections being paced");
 
 static int	tcp_log_debug = 0;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_debug, CTLFLAG_RW,
@@ -2149,6 +2171,8 @@ tcp_newtcpcb(struct inpcb *inp)
 	if (V_tcp_perconn_stats_enable == 1)
 		tp->t_stats = stats_blob_alloc(V_tcp_perconn_stats_dflt_tpl, 0);
 #endif
+	if (V_tcp_do_lrd)
+		tp->t_flags |= TF_LRD;
 	return (tp);		/* XXX */
 }
 
@@ -2287,62 +2311,6 @@ tcp_discardcb(struct tcpcb *tp)
 		tp->t_fb->tfb_tcp_timer_stop_all(tp);
 	}
 
-	/*
-	 * If we got enough samples through the srtt filter,
-	 * save the rtt and rttvar in the routing entry.
-	 * 'Enough' is arbitrarily defined as 4 rtt samples.
-	 * 4 samples is enough for the srtt filter to converge
-	 * to within enough % of the correct value; fewer samples
-	 * and we could save a bogus rtt. The danger is not high
-	 * as tcp quickly recovers from everything.
-	 * XXX: Works very well but needs some more statistics!
-	 */
-	if (tp->t_rttupdated >= 4) {
-		struct hc_metrics_lite metrics;
-		uint32_t ssthresh;
-
-		bzero(&metrics, sizeof(metrics));
-		/*
-		 * Update the ssthresh always when the conditions below
-		 * are satisfied. This gives us better new start value
-		 * for the congestion avoidance for new connections.
-		 * ssthresh is only set if packet loss occurred on a session.
-		 *
-		 * XXXRW: 'so' may be NULL here, and/or socket buffer may be
-		 * being torn down.  Ideally this code would not use 'so'.
-		 */
-		ssthresh = tp->snd_ssthresh;
-		if (ssthresh != 0 && ssthresh < so->so_snd.sb_hiwat / 2) {
-			/*
-			 * convert the limit from user data bytes to
-			 * packets then to packet data bytes.
-			 */
-			ssthresh = (ssthresh + tp->t_maxseg / 2) / tp->t_maxseg;
-			if (ssthresh < 2)
-				ssthresh = 2;
-			ssthresh *= (tp->t_maxseg +
-#ifdef INET6
-			    (isipv6 ? sizeof (struct ip6_hdr) +
-				sizeof (struct tcphdr) :
-#endif
-				sizeof (struct tcpiphdr)
-#ifdef INET6
-			    )
-#endif
-			    );
-		} else
-			ssthresh = 0;
-		metrics.rmx_ssthresh = ssthresh;
-
-		metrics.rmx_rtt = tp->t_srtt;
-		metrics.rmx_rttvar = tp->t_rttvar;
-		metrics.rmx_cwnd = tp->snd_cwnd;
-		metrics.rmx_sendpipe = 0;
-		metrics.rmx_recvpipe = 0;
-
-		tcp_hc_update(&inp->inp_inc, &metrics);
-	}
-
 	/* free the reassembly queue, if any */
 	tcp_reass_flush(tp);
 
@@ -2382,6 +2350,68 @@ tcp_discardcb(struct tcpcb *tp)
 		TCPSTATES_DEC(tp->t_state);
 		if (tp->t_fb->tfb_tcp_fb_fini)
 			(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
+
+		/*
+		 * If we got enough samples through the srtt filter,
+		 * save the rtt and rttvar in the routing entry.
+		 * 'Enough' is arbitrarily defined as 4 rtt samples.
+		 * 4 samples is enough for the srtt filter to converge
+		 * to within enough % of the correct value; fewer samples
+		 * and we could save a bogus rtt. The danger is not high
+		 * as tcp quickly recovers from everything.
+		 * XXX: Works very well but needs some more statistics!
+		 *
+		 * XXXRRS: Updating must be after the stack fini() since
+		 * that may be converting some internal representation of
+		 * say srtt etc into the general one used by other stacks.
+		 * Lets also at least protect against the so being NULL
+		 * as RW stated below.
+		 */
+		if ((tp->t_rttupdated >= 4) && (so != NULL)) {
+			struct hc_metrics_lite metrics;
+			uint32_t ssthresh;
+
+			bzero(&metrics, sizeof(metrics));
+			/*
+			 * Update the ssthresh always when the conditions below
+			 * are satisfied. This gives us better new start value
+			 * for the congestion avoidance for new connections.
+			 * ssthresh is only set if packet loss occurred on a session.
+			 *
+			 * XXXRW: 'so' may be NULL here, and/or socket buffer may be
+			 * being torn down.  Ideally this code would not use 'so'.
+			 */
+			ssthresh = tp->snd_ssthresh;
+			if (ssthresh != 0 && ssthresh < so->so_snd.sb_hiwat / 2) {
+				/*
+				 * convert the limit from user data bytes to
+				 * packets then to packet data bytes.
+				 */
+				ssthresh = (ssthresh + tp->t_maxseg / 2) / tp->t_maxseg;
+				if (ssthresh < 2)
+					ssthresh = 2;
+				ssthresh *= (tp->t_maxseg +
+#ifdef INET6
+					     (isipv6 ? sizeof (struct ip6_hdr) +
+					      sizeof (struct tcphdr) :
+#endif
+					      sizeof (struct tcpiphdr)
+#ifdef INET6
+						     )
+#endif
+					);
+			} else
+				ssthresh = 0;
+			metrics.rmx_ssthresh = ssthresh;
+
+			metrics.rmx_rtt = tp->t_srtt;
+			metrics.rmx_rttvar = tp->t_rttvar;
+			metrics.rmx_cwnd = tp->snd_cwnd;
+			metrics.rmx_sendpipe = 0;
+			metrics.rmx_recvpipe = 0;
+
+			tcp_hc_update(&inp->inp_inc, &metrics);
+		}
 		refcount_release(&tp->t_fb->tfb_refcnt);
 		tp->t_inpcb = NULL;
 		uma_zfree(V_tcpcb_zone, tp);
@@ -3511,6 +3541,54 @@ tcp_maxseg(const struct tcpcb *tp)
 	return (tp->t_maxseg - optlen);
 }
 
+
+u_int
+tcp_fixed_maxseg(const struct tcpcb *tp)
+{
+	int optlen;
+
+	if (tp->t_flags & TF_NOOPT)
+		return (tp->t_maxseg);
+
+	/*
+	 * Here we have a simplified code from tcp_addoptions(),
+	 * without a proper loop, and having most of paddings hardcoded.
+	 * We only consider fixed options that we would send every
+	 * time I.e. SACK is not considered. This is important
+	 * for cc modules to figure out what the modulo of the
+	 * cwnd should be.
+	 */
+#define	PAD(len)	((((len) / 4) + !!((len) % 4)) * 4)
+	if (TCPS_HAVEESTABLISHED(tp->t_state)) {
+		if (tp->t_flags & TF_RCVD_TSTMP)
+			optlen = TCPOLEN_TSTAMP_APPA;
+		else
+			optlen = 0;
+#if defined(IPSEC_SUPPORT) || defined(TCP_SIGNATURE)
+		if (tp->t_flags & TF_SIGNATURE)
+			optlen += PAD(TCPOLEN_SIGNATURE);
+#endif
+	} else {
+		if (tp->t_flags & TF_REQ_TSTMP)
+			optlen = TCPOLEN_TSTAMP_APPA;
+		else
+			optlen = PAD(TCPOLEN_MAXSEG);
+		if (tp->t_flags & TF_REQ_SCALE)
+			optlen += PAD(TCPOLEN_WINDOW);
+#if defined(IPSEC_SUPPORT) || defined(TCP_SIGNATURE)
+		if (tp->t_flags & TF_SIGNATURE)
+			optlen += PAD(TCPOLEN_SIGNATURE);
+#endif
+		if (tp->t_flags & TF_SACK_PERMIT)
+			optlen += PAD(TCPOLEN_SACK_PERMITTED);
+	}
+#undef PAD
+	optlen = min(optlen, TCP_MAXOLEN);
+	return (tp->t_maxseg - optlen);
+}
+
+
+
 static int
 sysctl_drop(SYSCTL_HANDLER_ARGS)
 {
@@ -3969,6 +4047,41 @@ tcp_log_end_status(struct tcpcb *tp, uint8_t status)
 			tp->t_end_info_bytes[i] = status;
 			tp->t_end_info_status |= bit;
 			break;
+		}
+	}
+}
+
+int
+tcp_can_enable_pacing(void)
+{
+
+	if ((tcp_pacing_limit == -1) ||
+	    (tcp_pacing_limit > number_of_tcp_connections_pacing)) {
+		atomic_fetchadd_int(&number_of_tcp_connections_pacing, 1);
+		shadow_num_connections = number_of_tcp_connections_pacing;
+		return (1);
+	} else {
+		return (0);
+	}
+}
+
+static uint8_t tcp_pacing_warning = 0;
+
+void
+tcp_decrement_paced_conn(void)
+{
+	uint32_t ret;
+
+	ret = atomic_fetchadd_int(&number_of_tcp_connections_pacing, -1);
+	shadow_num_connections = number_of_tcp_connections_pacing;
+	KASSERT(ret != 0, ("tcp_paced_connection_exits -1 would cause wrap?"));
+	if (ret == 0) {
+		if (tcp_pacing_limit != -1) {
+			printf("Warning all pacing is now disabled, count decrements invalidly!\n");
+			tcp_pacing_limit = 0;
+		} else if (tcp_pacing_warning == 0) {
+			printf("Warning pacing count is invalid, invalid decrement\n");
+			tcp_pacing_warning = 1;
 		}
 	}
 }

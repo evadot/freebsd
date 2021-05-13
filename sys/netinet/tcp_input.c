@@ -164,6 +164,11 @@ SYSCTL_INT(_net_inet_tcp, OID_AUTO, do_prr, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_do_prr), 1,
     "Enable Proportional Rate Reduction per RFC 6937");
 
+VNET_DEFINE(int, tcp_do_lrd) = 0;
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, do_lrd, CTLFLAG_VNET | CTLFLAG_RW,
+    &VNET_NAME(tcp_do_lrd), 1,
+    "Perform Lost Retransmission Detection");
+
 VNET_DEFINE(int, tcp_do_newcwv) = 0;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, newcwv, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_do_newcwv), 0,
@@ -526,7 +531,7 @@ cc_post_recovery(struct tcpcb *tp, struct tcphdr *th)
 	    (V_tcp_delack_enabled || (tp->t_flags & TF_NEEDSYN)))
 
 void inline
-cc_ecnpkt_handler(struct tcpcb *tp, struct tcphdr *th, uint8_t iptos)
+cc_ecnpkt_handler_flags(struct tcpcb *tp, uint16_t flags, uint8_t iptos)
 {
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 
@@ -544,7 +549,7 @@ cc_ecnpkt_handler(struct tcpcb *tp, struct tcphdr *th, uint8_t iptos)
 			break;
 		}
 
-		if (th->th_flags & TH_CWR)
+		if (flags & TH_CWR)
 			tp->ccv->flags |= CCF_TCPHDR_CWR;
 		else
 			tp->ccv->flags &= ~CCF_TCPHDR_CWR;
@@ -556,6 +561,12 @@ cc_ecnpkt_handler(struct tcpcb *tp, struct tcphdr *th, uint8_t iptos)
 			tp->t_flags |= TF_ACKNOW;
 		}
 	}
+}
+
+void inline
+cc_ecnpkt_handler(struct tcpcb *tp, struct tcphdr *th, uint8_t iptos)
+{
+	cc_ecnpkt_handler_flags(tp, th->th_flags, iptos);
 }
 
 /*
@@ -2517,9 +2528,12 @@ tcp_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		}
 		if ((tp->t_flags & TF_SACK_PERMIT) &&
 		    ((to.to_flags & TOF_SACK) ||
-		     !TAILQ_EMPTY(&tp->snd_holes)))
-			sack_changed = tcp_sack_doack(tp, &to, th->th_ack);
-		else
+		     !TAILQ_EMPTY(&tp->snd_holes))) {
+			if (((sack_changed = tcp_sack_doack(tp, &to, th->th_ack)) != 0) &&
+			    (tp->t_flags & TF_LRD)) {
+				tcp_sack_lost_retransmission(tp, th);
+			}
+		} else
 			/*
 			 * Reset the value so that previous (valid) value
 			 * from the last ack with SACK doesn't get used.

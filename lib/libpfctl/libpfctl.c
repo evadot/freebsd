@@ -50,6 +50,9 @@
 
 #include "libpfctl.h"
 
+static int	_pfctl_clear_states(int , const struct pfctl_kill *,
+		    unsigned int *, uint64_t);
+
 static void
 pf_nvuint_8_array(const nvlist_t *nvl, const char *name, size_t maxelems,
     u_int8_t *numbers, size_t *nelems)
@@ -607,4 +610,78 @@ pfctl_set_keepcounters(int dev, bool keep)
 
 	free(nv.data);
 	return (ret);
+}
+
+static void
+pfctl_nv_add_state_cmp(nvlist_t *nvl, const char *name,
+    const struct pfctl_state_cmp *cmp)
+{
+	nvlist_t	*nv;
+
+	nv = nvlist_create(0);
+
+	nvlist_add_number(nv, "id", cmp->id);
+	nvlist_add_number(nv, "creatorid", cmp->creatorid);
+	nvlist_add_number(nv, "direction", cmp->direction);
+
+	nvlist_add_nvlist(nvl, name, nv);
+}
+
+static int
+_pfctl_clear_states(int dev, const struct pfctl_kill *kill,
+    unsigned int *killed, uint64_t ioctlval)
+{
+	struct pfioc_nv	 nv;
+	nvlist_t	*nvl;
+	int		 ret;
+
+	nvl = nvlist_create(0);
+
+	pfctl_nv_add_state_cmp(nvl, "cmp", &kill->cmp);
+	nvlist_add_number(nvl, "af", kill->af);
+	nvlist_add_number(nvl, "proto", kill->proto);
+	pfctl_nv_add_rule_addr(nvl, "src", &kill->src);
+	pfctl_nv_add_rule_addr(nvl, "dst", &kill->dst);
+	pfctl_nv_add_rule_addr(nvl, "rt_addr", &kill->rt_addr);
+	nvlist_add_string(nvl, "ifname", kill->ifname);
+	nvlist_add_string(nvl, "label", kill->label);
+	nvlist_add_bool(nvl, "kill_match", kill->kill_match);
+
+	nv.data = nvlist_pack(nvl, &nv.len);
+	nv.size = nv.len;
+	nvlist_destroy(nvl);
+	nvl = NULL;
+
+	ret = ioctl(dev, ioctlval, &nv);
+	if (ret != 0) {
+		free(nv.data);
+		return (ret);
+	}
+
+	nvl = nvlist_unpack(nv.data, nv.len, 0);
+	if (nvl == NULL) {
+		free(nv.data);
+		return (EIO);
+	}
+
+	if (killed)
+		*killed = nvlist_get_number(nvl, "killed");
+
+	nvlist_destroy(nvl);
+	free(nv.data);
+
+	return (ret);
+}
+
+int
+pfctl_clear_states(int dev, const struct pfctl_kill *kill,
+    unsigned int *killed)
+{
+	return (_pfctl_clear_states(dev, kill, killed, DIOCCLRSTATESNV));
+}
+
+int
+pfctl_kill_states(int dev, const struct pfctl_kill *kill, unsigned int *killed)
+{
+	return (_pfctl_clear_states(dev, kill, killed, DIOCKILLSTATESNV));
 }
