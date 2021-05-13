@@ -307,9 +307,11 @@ dev/vnic/lmac_if.m				optional inet | inet6 | vnic
 arm/allwinner/a10_timer.c			optional a10_timer fdt
 arm/allwinner/a10_codec.c			optional sound a10_codec
 arm/allwinner/a31_dmac.c			optional a31_dmac
+arm/allwinner/a64/sun50i_a64_acodec.c		optional fdt sound a64_codec
 arm/allwinner/sunxi_dma_if.m			optional a31_dmac
 arm/allwinner/aw_cir.c				optional evdev aw_cir fdt
 arm/allwinner/aw_dwc3.c				optional aw_dwc3 fdt
+arm/allwinner/aw_i2s.c				optional fdt sound aw_i2s
 arm/allwinner/aw_gpio.c				optional gpio aw_gpio fdt
 arm/allwinner/aw_mmc.c				optional mmc aw_mmc fdt | mmccam aw_mmc fdt
 arm/allwinner/aw_nmi.c				optional aw_nmi fdt \
@@ -326,6 +328,7 @@ arm/allwinner/aw_usb3phy.c			optional xhci aw_usbphy fdt
 arm/allwinner/aw_wdog.c				optional aw_wdog fdt
 arm/allwinner/axp81x.c				optional axp81x fdt
 arm/allwinner/if_awg.c				optional awg ext_resources syscon aw_sid nvmem fdt
+arm/allwinner/sun8i_codec.c			optional fdt sound sun8i_codec
 
 # Allwinner clock driver
 arm/allwinner/clkng/aw_ccung.c			optional aw_ccu fdt
