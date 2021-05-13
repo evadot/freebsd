@@ -608,7 +608,7 @@ rk805_clk_set_gate_1(struct clknode *clk, bool enable)
 		val |= CLK32OUT_CLKOUT2_EN;
 	else
 		val &= ~CLK32OUT_CLKOUT2_EN;
-	rk805_write(sc->base_dev, CLK32OUT_REG, val);
+	rk805_write(sc->base_dev, CLK32OUT_REG, &val, 1);
 
 	return (0);
 }
@@ -859,6 +859,7 @@ rk805_attach(device_t dev)
 	struct reg_list *regp;
 	phandle_t rnode, child;
 	int error;
+	int i;
 
 	sc = device_get_softc(dev);
 
