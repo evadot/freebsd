@@ -336,7 +336,7 @@ aw_i2s_probe(device_t dev)
 	if (!ofw_bus_search_compatible(dev, compat_data)->ocd_data)
 		return (ENXIO);
 
-	device_set_desc(dev, "Rockchip I2S");
+	device_set_desc(dev, "Allwinner I2S");
 	return (BUS_PROBE_DEFAULT);
 }
 
