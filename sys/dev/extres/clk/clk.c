@@ -42,6 +42,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/sx.h>
+#include <sys/rmlock.h>
 
 #ifdef FDT
 #include <dev/fdt/fdt_common.h>
@@ -116,7 +117,7 @@ struct clknode {
 	const char		*name;		/* Globally unique name */
 	intptr_t		id;		/* Per domain unique id */
 	int			flags;		/* CLK_FLAG_*  */
-	struct sx		lock;		/* Lock for this clock */
+	struct mtx		lock;		/* Lock for this clock */
 	int			ref_cnt;	/* Reference counter */
 	int			enable_cnt;	/* Enabled counter */
 
@@ -166,18 +167,19 @@ static clknode_list_t clknode_list = TAILQ_HEAD_INITIALIZER(clknode_list);
  * - Third level is outside of this file, it protect clock device registers.
  * First two levels use sleepable locks; clock device can use mutex or sx lock.
  */
-static struct sx		clk_topo_lock;
-SX_SYSINIT(clock_topology, &clk_topo_lock, "Clock topology lock");
+static struct rmlock		clk_topo_lock;
+RM_SYSINIT(clock_topology, &clk_topo_lock, "Clock topology lock");
+static struct rm_priotracker clk_topo_track;
 
-#define CLK_TOPO_SLOCK()	sx_slock(&clk_topo_lock)
-#define CLK_TOPO_XLOCK()	sx_xlock(&clk_topo_lock)
-#define CLK_TOPO_UNLOCK()	sx_unlock(&clk_topo_lock)
-#define CLK_TOPO_ASSERT()	sx_assert(&clk_topo_lock, SA_LOCKED)
-#define CLK_TOPO_XASSERT()	sx_assert(&clk_topo_lock, SA_XLOCKED)
+#define CLK_TOPO_RLOCK()	rm_rlock(&clk_topo_lock, &clk_topo_track)
+#define CLK_TOPO_WLOCK()	rm_wlock(&clk_topo_lock)
+#define CLK_TOPO_RUNLOCK()	rm_runlock(&clk_topo_lock, &clk_topo_track)
+#define CLK_TOPO_WUNLOCK()	rm_wunlock(&clk_topo_lock)
+#define CLK_TOPO_ASSERT()	rm_assert(&clk_topo_lock, RA_LOCKED)
+#define CLK_TOPO_XASSERT()	rm_assert(&clk_topo_lock, RA_WLOCKED)
 
-#define CLKNODE_SLOCK(_sc)	sx_slock(&((_sc)->lock))
-#define CLKNODE_XLOCK(_sc)	sx_xlock(&((_sc)->lock))
-#define CLKNODE_UNLOCK(_sc)	sx_unlock(&((_sc)->lock))
+#define CLKNODE_XLOCK(_sc)	mtx_lock(&((_sc)->lock))
+#define CLKNODE_UNLOCK(_sc)	mtx_unlock(&((_sc)->lock))
 
 static void clknode_adjust_parent(struct clknode *clknode, int idx);
 
@@ -414,14 +416,14 @@ void
 clkdom_unlock(struct clkdom *clkdom)
 {
 
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_WUNLOCK();
 }
 
 void
 clkdom_xlock(struct clkdom *clkdom)
 {
 
-	CLK_TOPO_XLOCK();
+	CLK_TOPO_WLOCK();
 }
 
 /*
@@ -447,7 +449,7 @@ clkdom_finit(struct clkdom *clkdom)
 	rv = 0;
 
 	/* Make clock domain globally visible. */
-	CLK_TOPO_XLOCK();
+	CLK_TOPO_WLOCK();
 	TAILQ_INSERT_TAIL(&clkdom_list, clkdom, link);
 #ifdef FDT
 	OF_device_register_xref(OF_xref_from_node(node), clkdom->dev);
@@ -497,7 +499,7 @@ clkdom_finit(struct clkdom *clkdom)
 		}
 		clknode_adjust_parent(clknode, clknode->parent_idx);
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_WUNLOCK();
 	return (rv);
 }
 
@@ -509,7 +511,7 @@ clkdom_dump(struct clkdom * clkdom)
 	int rv;
 	uint64_t freq;
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	TAILQ_FOREACH(clknode, &clkdom->clknode_list, clkdom_link) {
 		rv = clknode_get_freq(clknode, &freq);
 		printf("Clock: %s, parent: %s(%d), freq: %ju\n", clknode->name,
@@ -517,7 +519,7 @@ clkdom_dump(struct clkdom * clkdom)
 		    clknode->parent_idx,
 		    (uintmax_t)((rv == 0) ? freq: rv));
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 }
 
 /*
@@ -541,9 +543,9 @@ clknode_create(struct clkdom * clkdom, clknode_class_t clknode_class,
 	}
 
 	/* Process duplicated clocks */
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	clknode = clknode_find_by_name(def->name);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 	if (clknode !=  NULL) {
 		if (!(clknode->flags & CLK_NODE_LINKED) &&
 		    def->flags & CLK_NODE_LINKED) {
@@ -588,7 +590,7 @@ clknode_create(struct clkdom * clkdom, clknode_class_t clknode_class,
 		/* Create clknode object and initialize it. */
 		clknode = malloc(sizeof(struct clknode), M_CLOCK,
 		    M_WAITOK | M_ZERO);
-		sx_init(&clknode->lock, "Clocknode lock");
+		mtx_init(&clknode->lock, "Clocknode lock", NULL, MTX_DEF);
 		TAILQ_INIT(&clknode->children);
 		replaced = false;
 	}
@@ -694,13 +696,13 @@ clknode_finish(void *dummy)
 {
 	struct clknode *clknode;
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	TAILQ_FOREACH(clknode, &clknode_list, clklist_link) {
 		if (clknode->flags & CLK_NODE_LINKED)
 			printf("Unresolved linked clock found: %s\n",
 			    clknode->name);
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 }
 /*
  * Clock providers interface.
@@ -1109,17 +1111,22 @@ clknode_stop(struct clknode *clknode, int depth)
  */
 /* Helper function for clk_get*() */
 static clk_t
-clk_create(struct clknode *clknode, device_t dev)
+clk_create(struct clknode *clknode, device_t dev, int *rv)
 {
 	struct clk *clk;
 
 	CLK_TOPO_ASSERT();
 
-	clk =  malloc(sizeof(struct clk), M_CLOCK, M_WAITOK);
+	clk = malloc(sizeof(struct clk), M_CLOCK, M_NOWAIT);
+	if (clk == NULL) {
+		*rv = ENOMEM;
+		return (NULL);
+	}
 	clk->dev = dev;
 	clk->clknode = clknode;
 	clk->enable_cnt = 0;
 	clknode->ref_cnt++;
+	*rv = 0;
 
 	return (clk);
 }
@@ -1134,9 +1141,9 @@ clk_get_freq(clk_t clk, uint64_t *freq)
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	rv = clknode_get_freq(clknode, freq);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 	return (rv);
 }
 
@@ -1151,9 +1158,9 @@ clk_set_freq(clk_t clk, uint64_t freq, int flags)
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 
-	CLK_TOPO_XLOCK();
+	CLK_TOPO_WLOCK();
 	rv = clknode_set_freq(clknode, freq, flags, clk->enable_cnt);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_WUNLOCK();
 	return (rv);
 }
 
@@ -1168,9 +1175,9 @@ clk_test_freq(clk_t clk, uint64_t freq, int flags)
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 
-	CLK_TOPO_XLOCK();
+	CLK_TOPO_WLOCK();
 	rv = clknode_set_freq(clknode, freq, flags | CLK_SET_DRYRUN, 0);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_WUNLOCK();
 	return (rv);
 }
 
@@ -1179,20 +1186,21 @@ clk_get_parent(clk_t clk, clk_t *parent)
 {
 	struct clknode *clknode;
 	struct clknode *parentnode;
+	int rv;
 
 	clknode = clk->clknode;
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	parentnode = clknode_get_parent(clknode);
 	if (parentnode == NULL) {
-		CLK_TOPO_UNLOCK();
+		CLK_TOPO_RUNLOCK();
 		return (ENODEV);
 	}
-	*parent = clk_create(parentnode, clk->dev);
-	CLK_TOPO_UNLOCK();
-	return (0);
+	*parent = clk_create(parentnode, clk->dev, &rv);
+	CLK_TOPO_RUNLOCK();
+	return (rv);
 }
 
 int
@@ -1208,9 +1216,9 @@ clk_set_parent_by_clk(clk_t clk, clk_t parent)
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 	KASSERT(parentnode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
-	CLK_TOPO_XLOCK();
+	CLK_TOPO_WLOCK();
 	rv = clknode_set_parent_by_name(clknode, parentnode->name);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_WUNLOCK();
 	return (rv);
 }
 
@@ -1223,11 +1231,11 @@ clk_enable(clk_t clk)
 	clknode = clk->clknode;
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	rv = clknode_enable(clknode);
 	if (rv == 0)
 		clk->enable_cnt++;
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 	return (rv);
 }
 
@@ -1242,11 +1250,11 @@ clk_disable(clk_t clk)
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
 	KASSERT(clk->enable_cnt > 0,
 	   ("Attempt to disable already disabled clock: %s\n", clknode->name));
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	rv = clknode_disable(clknode);
 	if (rv == 0)
 		clk->enable_cnt--;
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 	return (rv);
 }
 
@@ -1262,9 +1270,9 @@ clk_stop(clk_t clk)
 	KASSERT(clk->enable_cnt == 0,
 	   ("Attempt to stop already enabled clock: %s\n", clknode->name));
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	rv = clknode_stop(clknode, 0);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 	return (rv);
 }
 
@@ -1276,7 +1284,7 @@ clk_release(clk_t clk)
 	clknode = clk->clknode;
 	KASSERT(clknode->ref_cnt > 0,
 	   ("Attempt to access unreferenced clock: %s\n", clknode->name));
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	while (clk->enable_cnt > 0) {
 		clknode_disable(clknode);
 		clk->enable_cnt--;
@@ -1284,7 +1292,7 @@ clk_release(clk_t clk)
 	CLKNODE_XLOCK(clknode);
 	clknode->ref_cnt--;
 	CLKNODE_UNLOCK(clknode);
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 
 	free(clk, M_CLOCK);
 	return (0);
@@ -1307,34 +1315,36 @@ int
 clk_get_by_name(device_t dev, const char *name, clk_t *clk)
 {
 	struct clknode *clknode;
+	int rv;
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	clknode = clknode_find_by_name(name);
 	if (clknode == NULL) {
-		CLK_TOPO_UNLOCK();
+		CLK_TOPO_RUNLOCK();
 		return (ENODEV);
 	}
-	*clk = clk_create(clknode, dev);
-	CLK_TOPO_UNLOCK();
-	return (0);
+	*clk = clk_create(clknode, dev, &rv);
+	CLK_TOPO_RUNLOCK();
+	return (rv);
 }
 
 int
 clk_get_by_id(device_t dev, struct clkdom *clkdom, intptr_t id, clk_t *clk)
 {
 	struct clknode *clknode;
+	int rv;
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 
 	clknode = clknode_find_by_id(clkdom, id);
 	if (clknode == NULL) {
-		CLK_TOPO_UNLOCK();
+		CLK_TOPO_RUNLOCK();
 		return (ENODEV);
 	}
-	*clk = clk_create(clknode, dev);
-	CLK_TOPO_UNLOCK();
+	*clk = clk_create(clknode, dev, &rv);
+	CLK_TOPO_RUNLOCK();
 
-	return (0);
+	return (rv);
 }
 
 #ifdef FDT
@@ -1466,19 +1476,19 @@ clk_get_by_ofw_index_prop(device_t dev, phandle_t cnode, const char *prop, int i
 		goto done;
 	}
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	clkdom = clkdom_get_by_dev(clockdev);
 	if (clkdom == NULL){
-		CLK_TOPO_UNLOCK();
+		CLK_TOPO_RUNLOCK();
 		rv = ENXIO;
 		goto done;
 	}
 
 	rv = clkdom->ofw_mapper(clkdom, ncells, cells, &clknode);
 	if (rv == 0) {
-		*clk = clk_create(clknode, dev);
+		*clk = clk_create(clknode, dev, &rv);
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 
 done:
 	if (cells != NULL)
@@ -1594,11 +1604,11 @@ clkdom_sysctl(SYSCTL_HANDLER_ARGS)
 	if (sb == NULL)
 		return (ENOMEM);
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	TAILQ_FOREACH(clknode, &clkdom->clknode_list, clkdom_link) {
 		sbuf_printf(sb, "%s ", clknode->name);
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 
 	ret = sbuf_finish(sb);
 	sbuf_delete(sb);
@@ -1619,7 +1629,7 @@ clknode_sysctl(SYSCTL_HANDLER_ARGS)
 	if (sb == NULL)
 		return (ENOMEM);
 
-	CLK_TOPO_SLOCK();
+	CLK_TOPO_RLOCK();
 	switch (type) {
 	case CLKNODE_SYSCTL_PARENT:
 		if (clknode->parent)
@@ -1636,7 +1646,7 @@ clknode_sysctl(SYSCTL_HANDLER_ARGS)
 		}
 		break;
 	}
-	CLK_TOPO_UNLOCK();
+	CLK_TOPO_RUNLOCK();
 
 	ret = sbuf_finish(sb);
 	sbuf_delete(sb);
