@@ -11,3 +11,7 @@ options		MMCCAM
 
 nodevice	mmc
 nodevice	mmcsd
+
+nodevice	rk_dwmmc
+nodevice	dwmmc
+nodevice	sdhci
