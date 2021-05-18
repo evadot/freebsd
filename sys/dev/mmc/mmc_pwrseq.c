@@ -57,8 +57,8 @@ struct mmc_pwrseq_softc {
 	clk_t			ext_clock;
 	struct gpiobus_pin	*reset_gpio;
 
-	uint32_t		post_power_on_delay;
-	uint32_t		power_off_delay;
+	uint32_t		post_power_on_delay_ms;
+	uint32_t		power_off_delay_us;
 };
 
 static int
@@ -101,8 +101,8 @@ mmc_pwrseq_attach(device_t dev)
 				return (ENXIO);
 			}
 		}
-		OF_getencprop(node, "post-power-on-delay-ms", &sc->post_power_on_delay, sizeof(uint32_t));
-		OF_getencprop(node, "power-off-delay-us", &sc->post_power_on_delay, sizeof(uint32_t));
+		OF_getencprop(node, "post-power-on-delay-ms", &sc->post_power_on_delay_ms, sizeof(uint32_t));
+		OF_getencprop(node, "power-off-delay-us", &sc->power_off_delay_us, sizeof(uint32_t));
 	}
 
 	if (OF_hasprop(node, "reset-gpios")) {
@@ -147,8 +147,8 @@ mmv_pwrseq_set_power(device_t dev, bool power_on)
 				return (rv);
 		}
 
-		if (sc->post_power_on_delay)
-			DELAY(sc->post_power_on_delay * 1000);
+		if (sc->post_power_on_delay_ms)
+			DELAY(sc->post_power_on_delay_ms * 1000);
 	} else {
 		if (sc->reset_gpio) {
 			rv = gpio_pin_set_active(sc->reset_gpio, true);
@@ -161,8 +161,8 @@ mmv_pwrseq_set_power(device_t dev, bool power_on)
 			if (rv != 0)
 				return (rv);
 		}
-		if (sc->power_off_delay)
-			DELAY(sc->power_off_delay);
+		if (sc->power_off_delay_us)
+			DELAY(sc->power_off_delay_us);
 	}
 
 	return (0);
