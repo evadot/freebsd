@@ -18,6 +18,7 @@ DTS=	\
 DTSO=	rk3328-dwc3.dtso \
 	rk3399-mmc0-disable.dtso \
 	rk3399-mmc1-disable.dtso \
+	rk3399-rockpro-sdio.dtso \
 	rk3399-sdhci-disable.dtso
 .endif
 

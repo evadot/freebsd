@@ -1,0 +1,29 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	compatible = "pine64,rockpro64";
+};
+
+&{/mmc@fe310000} {
+	brcmf: wifi@1 {
+		reg = <1>;
+		compatible = "brcm,bcm4329-fmac";
+		interrupt-parent = <&gpio0>;
+		interrupt-names = "host-wake";
+		interrupts = <RK_PA3 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&wifi_host_wake_l>;
+	}
+};
+
+&{/pinctrl} {
+	wifi {
+		wifi_host_wake_l: wifi-host-wake-l {
+			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+	
+}
