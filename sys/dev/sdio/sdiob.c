@@ -454,6 +454,49 @@ sdiob_write_extended(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
 	return (sdiob_rw_extended(dev, fn, addr, true, size, buffer, incaddr));
 }
 
+static int
+sdiob_claim_function(device_t dev, uint8_t fn, struct sdio_func **func)
+{
+	struct sdiob_softc *sc;
+
+	sc = device_get_softc(dev);
+	if (fn > sc->cardinfo.num_funcs)
+		return (EINVAL);
+
+#if 0
+	if (sc->cardinfo.f[fn].dev != NULL)
+		return (EBUSY);
+#endif
+
+	sc->cardinfo.f[fn].dev = dev;
+	if (func)
+		*func = &sc->cardinfo.f[fn];
+	return (0);
+}
+
+static int
+sdiob_get_function_num(device_t dev, uint8_t fn, struct sdio_func **func)
+{
+	struct sdiob_softc *sc;
+
+	sc = device_get_softc(dev);
+	if (fn > sc->cardinfo.num_funcs)
+		return (EINVAL);
+
+	if (func)
+		*func = &sc->cardinfo.f[fn];
+	return (0);
+}
+
+static uint8_t
+sdiob_get_nfunc(device_t dev)
+{
+	struct sdiob_softc *sc;
+
+	sc = device_get_softc(dev);
+	return (sc->cardinfo.num_funcs);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Bus interface, ivars handling. */
 
@@ -551,23 +594,15 @@ sdiob_attach(device_t dev)
 		return (ENXIO);
 
 	/*
-	 * Now that we are a dev, create one child device per function,
-	 * initialize the backpointer, so we can pass them around and
-	 * call CAM operations on the parent, and also set the function
-	 * itself as ivars, so that we can query/update them.
-	 * Do this before any child gets a chance to attach.
+	 * Add a child for function 0
 	 */
-	for (i = 0; i < sc->cardinfo.num_funcs; i++) {
-		sc->child[i] = device_add_child(dev, NULL, DEVICE_UNIT_ANY);
-		if (sc->child[i] == NULL) {
-			device_printf(dev, "%s: failed to add child\n", __func__);
-			return (ENXIO);
-		}
-		sc->cardinfo.f[i].dev = sc->child[i];
-
-		/* Set the function as ivar to the child device. */
-		device_set_ivars(sc->child[i], &sc->cardinfo.f[i]);
+	sc->child[0] = device_add_child(dev, NULL, -1);
+	if (sc->child[0] == NULL) {
+		device_printf(dev, "failed to add function0 child\n");
+		return (ENXIO);
 	}
+	sc->cardinfo.f[0].dev = sc->child[0];
+	device_set_ivars(sc->child[0], &sc->cardinfo.f[0]);
 
 	/*
 	 * No one will ever attach to F0; we do the above to have a "device"
@@ -578,6 +613,17 @@ sdiob_attach(device_t dev)
 	 * ivars are available for all.
 	 */
 	for (i = 1; i < sc->cardinfo.num_funcs; i++) {
+		if (sc->cardinfo.f[i].dev != NULL) {
+			if (bootverbose)
+				device_printf(dev,
+				    "Function %d is already claimed\n", i);
+			continue;
+		}
+		sc->child[i] = device_add_child(dev, NULL, -1);
+		sc->cardinfo.f[i].dev = sc->child[i];
+
+		/* Set the function as ivar to the child device. */
+		device_set_ivars(sc->child[i], &sc->cardinfo.f[i]);
 		error = device_probe_and_attach(sc->child[i]);
 		if (error != 0 && bootverbose)
 			device_printf(dev, "%s: device_probe_and_attach(%p %s) "
@@ -629,6 +675,9 @@ static device_method_t sdiob_methods[] = {
 	DEVMETHOD(sdio_write_direct,	sdiob_write_direct),
 	DEVMETHOD(sdio_read_extended,	sdiob_read_extended),
 	DEVMETHOD(sdio_write_extended,	sdiob_write_extended),
+	DEVMETHOD(sdio_claim_function,	sdiob_claim_function),
+	DEVMETHOD(sdio_get_function_num,	sdiob_get_function_num),
+	DEVMETHOD(sdio_get_nfunc,		sdiob_get_nfunc),
 
 	DEVMETHOD_END
 };

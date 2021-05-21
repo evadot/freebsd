@@ -31,6 +31,10 @@
 
 INTERFACE sdio;
 
+HEADER {
+	struct sdio_func;
+};
+
 #
 # READ DIRECT (1byte)
 #
@@ -73,6 +77,31 @@ METHOD int write_extended {
 	uint32_t size;
 	uint8_t *buffer;
 	bool incaddr;
+};
+
+#
+# CLAIM Function
+#
+METHOD int claim_function {
+	device_t dev;
+	uint8_t fn;
+	struct sdio_func **func;
+};
+
+#
+# GET Function
+#
+METHOD int get_function_num {
+	device_t dev;
+	uint8_t fn;
+	struct sdio_func **func;
+};
+
+#
+# GET nfunc
+#
+METHOD uint8_t get_nfunc {
+	device_t dev;
 };
 
 # end

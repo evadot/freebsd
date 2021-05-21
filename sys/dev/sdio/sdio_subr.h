@@ -91,6 +91,9 @@ struct card_info {
 #ifdef _KERNEL
 int sdio_enable_func(struct sdio_func *);
 int sdio_disable_func(struct sdio_func *);
+int sdio_claim_func(device_t dev, uint8_t fn, struct sdio_func **func);
+int sdio_get_func(device_t dev, uint8_t fn, struct sdio_func **func);
+int sdio_get_nfunc(device_t dev);
 int sdio_set_block_size(struct sdio_func *, uint16_t);
 
 uint8_t sdio_read_1(struct sdio_func *, uint32_t, int *);

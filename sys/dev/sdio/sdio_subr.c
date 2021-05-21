@@ -111,6 +111,33 @@ sdio_disable_func(struct sdio_func *f)
 }
 
 int
+sdio_claim_func(device_t dev, uint8_t fn, struct sdio_func **func)
+{
+	device_t pdev;
+
+	pdev = device_get_parent(dev);
+	return (SDIO_CLAIM_FUNCTION(pdev, fn, func));
+}
+
+int
+sdio_get_func(device_t dev, uint8_t fn, struct sdio_func **func)
+{
+	device_t pdev;
+
+	pdev = device_get_parent(dev);
+	return (SDIO_GET_FUNCTION_NUM(pdev, fn, func));
+}
+
+int
+sdio_get_nfunc(device_t dev)
+{
+	device_t pdev;
+
+	pdev = device_get_parent(dev);
+	return (SDIO_GET_NFUNC(pdev));
+}
+
+int
 sdio_set_block_size(struct sdio_func *f, uint16_t bs)
 {
 	device_t pdev;
