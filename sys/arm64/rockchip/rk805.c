@@ -858,8 +858,7 @@ rk805_attach(device_t dev)
 	struct rk805_regdef *regdefs;
 	struct reg_list *regp;
 	phandle_t rnode, child;
-	int error;
-	int i;
+	int error, i;
 
 	sc = device_get_softc(dev);
 

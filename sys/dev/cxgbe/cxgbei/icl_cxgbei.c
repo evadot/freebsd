@@ -100,15 +100,16 @@ __FBSDID("$FreeBSD$");
 #include "tom/t4_tom.h"
 #include "cxgbei.h"
 
+static MALLOC_DEFINE(M_CXGBEI, "cxgbei", "cxgbei(4)");
+
 SYSCTL_NODE(_kern_icl, OID_AUTO, cxgbei, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Chelsio iSCSI offload");
-static int coalesce = 1;
-SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, coalesce, CTLFLAG_RWTUN,
-	&coalesce, 0, "Try to coalesce PDUs before sending");
-static int partial_receive_len = 128 * 1024;
-SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, partial_receive_len, CTLFLAG_RWTUN,
-    &partial_receive_len, 0, "Minimum read size for partially received "
-    "data segment");
+static int first_burst_length = 8192;
+SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, first_burst_length, CTLFLAG_RWTUN,
+    &first_burst_length, 0, "First burst length");
+static int max_burst_length = 2 * 1024 * 1024;
+SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, max_burst_length, CTLFLAG_RWTUN,
+    &max_burst_length, 0, "Maximum burst length");
 static int sendspace = 1048576;
 SYSCTL_INT(_kern_icl_cxgbei, OID_AUTO, sendspace, CTLFLAG_RWTUN,
     &sendspace, 0, "Default send socket buffer size");
@@ -130,6 +131,7 @@ static icl_conn_pdu_data_segment_length_t
 static icl_conn_pdu_append_data_t	icl_cxgbei_conn_pdu_append_data;
 static icl_conn_pdu_get_data_t	icl_cxgbei_conn_pdu_get_data;
 static icl_conn_pdu_queue_t	icl_cxgbei_conn_pdu_queue;
+static icl_conn_pdu_queue_cb_t	icl_cxgbei_conn_pdu_queue_cb;
 static icl_conn_handoff_t	icl_cxgbei_conn_handoff;
 static icl_conn_free_t		icl_cxgbei_conn_free;
 static icl_conn_close_t		icl_cxgbei_conn_close;
@@ -146,6 +148,7 @@ static kobj_method_t icl_cxgbei_methods[] = {
 	KOBJMETHOD(icl_conn_pdu_append_data, icl_cxgbei_conn_pdu_append_data),
 	KOBJMETHOD(icl_conn_pdu_get_data, icl_cxgbei_conn_pdu_get_data),
 	KOBJMETHOD(icl_conn_pdu_queue, icl_cxgbei_conn_pdu_queue),
+	KOBJMETHOD(icl_conn_pdu_queue_cb, icl_cxgbei_conn_pdu_queue_cb),
 	KOBJMETHOD(icl_conn_handoff, icl_cxgbei_conn_handoff),
 	KOBJMETHOD(icl_conn_free, icl_cxgbei_conn_free),
 	KOBJMETHOD(icl_conn_close, icl_cxgbei_conn_close),
@@ -161,22 +164,82 @@ DEFINE_CLASS(icl_cxgbei, icl_cxgbei_methods, sizeof(struct icl_cxgbei_conn));
 void
 icl_cxgbei_conn_pdu_free(struct icl_conn *ic, struct icl_pdu *ip)
 {
-#ifdef INVARIANTS
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-#endif
 
+	KASSERT(icp->ref_cnt != 0, ("freeing deleted PDU"));
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
-	MPASS(ip->ip_bhs_mbuf != NULL);
 
 	m_freem(ip->ip_ahs_mbuf);
 	m_freem(ip->ip_data_mbuf);
-	m_freem(ip->ip_bhs_mbuf);	/* storage for icl_cxgbei_pdu itself */
+	m_freem(ip->ip_bhs_mbuf);
 
+	KASSERT(ic != NULL || icp->ref_cnt == 1,
+	    ("orphaned PDU has oustanding references"));
+
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) != 1)
+		return;
+
+	free(icp, M_CXGBEI);
 #ifdef DIAGNOSTIC
 	if (__predict_true(ic != NULL))
 		refcount_release(&ic->ic_outstanding_pdus);
 #endif
+}
+
+static void
+icl_cxgbei_pdu_call_cb(struct icl_pdu *ip)
+{
+	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
+
+	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
+
+	if (icp->cb != NULL)
+		icp->cb(ip, icp->error);
+#ifdef DIAGNOSTIC
+	if (__predict_true(ip->ip_conn != NULL))
+		refcount_release(&ip->ip_conn->ic_outstanding_pdus);
+#endif
+	free(icp, M_CXGBEI);
+}
+
+static void
+icl_cxgbei_pdu_done(struct icl_pdu *ip, int error)
+{
+	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
+
+	if (error != 0)
+		icp->error = error;
+
+	m_freem(ip->ip_ahs_mbuf);
+	ip->ip_ahs_mbuf = NULL;
+	m_freem(ip->ip_data_mbuf);
+	ip->ip_data_mbuf = NULL;
+	m_freem(ip->ip_bhs_mbuf);
+	ip->ip_bhs_mbuf = NULL;
+
+	/*
+	 * All other references to this PDU should have been dropped
+	 * by the m_freem() of ip_data_mbuf.
+	 */
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1)
+		icl_cxgbei_pdu_call_cb(ip);
+	else
+		__assert_unreachable();
+}
+
+static void
+icl_cxgbei_mbuf_done(struct mbuf *mb)
+{
+
+	struct icl_cxgbei_pdu *icp = (struct icl_cxgbei_pdu *)mb->m_ext.ext_arg1;
+
+	/*
+	 * NB: mb_free_mext() might leave ref_cnt as 1 without
+	 * decrementing it if it hits the fast path in the ref_cnt
+	 * check.
+	 */
+	icl_cxgbei_pdu_call_cb(&icp->ip);
 }
 
 struct icl_pdu *
@@ -185,30 +248,24 @@ icl_cxgbei_new_pdu(int flags)
 	struct icl_cxgbei_pdu *icp;
 	struct icl_pdu *ip;
 	struct mbuf *m;
-	uintptr_t a;
 
-	m = m_gethdr(flags, MT_DATA);
-	if (__predict_false(m == NULL))
+	icp = malloc(sizeof(*icp), M_CXGBEI, flags | M_ZERO);
+	if (__predict_false(icp == NULL))
 		return (NULL);
 
-	a = roundup2(mtod(m, uintptr_t), _Alignof(struct icl_cxgbei_pdu));
-	icp = (struct icl_cxgbei_pdu *)a;
-	bzero(icp, sizeof(*icp));
-
 	icp->icp_signature = CXGBEI_PDU_SIGNATURE;
+	icp->ref_cnt = 1;
 	ip = &icp->ip;
+
+	m = m_gethdr(flags, MT_DATA);
+	if (__predict_false(m == NULL)) {
+		free(icp, M_CXGBEI);
+		return (NULL);
+	}
+
 	ip->ip_bhs_mbuf = m;
-
-	a = roundup2((uintptr_t)(icp + 1), _Alignof(struct iscsi_bhs *));
-	ip->ip_bhs = (struct iscsi_bhs *)a;
-#ifdef INVARIANTS
-	/* Everything must fit entirely in the mbuf. */
-	a = (uintptr_t)(ip->ip_bhs + 1);
-	MPASS(a <= (uintptr_t)m + MSIZE);
-#endif
-	bzero(ip->ip_bhs, sizeof(*ip->ip_bhs));
-
-	m->m_data = (void *)ip->ip_bhs;
+	ip->ip_bhs = mtod(m, struct iscsi_bhs *);
+	memset(ip->ip_bhs, 0, sizeof(*ip->ip_bhs));
 	m->m_len = sizeof(struct iscsi_bhs);
 	m->m_pkthdr.len = m->m_len;
 
@@ -280,7 +337,7 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
 		last = m_last(m);
 
 		/*
-		 * Round up the data segment to a 4B boundary.  Pad with 0 if
+		 * Round up the data segment to a 4B boundary.	Pad with 0 if
 		 * necessary.  There will definitely be room in the mbuf.
 		 */
 		padding = roundup2(ip->ip_data_len, 4) - ip->ip_data_len;
@@ -306,16 +363,22 @@ finalize_pdu(struct icl_cxgbei_conn *icc, struct icl_cxgbei_pdu *icp)
 	bhs->bhs_data_segment_len[1] = ip->ip_data_len >> 8;
 	bhs->bhs_data_segment_len[0] = ip->ip_data_len >> 16;
 
-	/* "Convert" PDU to mbuf chain.  Do not use icp/ip after this. */
-	m->m_pkthdr.len = sizeof(struct iscsi_bhs) + ip->ip_data_len + padding;
+	/*
+	 * Extract mbuf chain from PDU.
+	 */
+	m->m_pkthdr.len += ip->ip_data_len + padding;
 	m->m_next = ip->ip_data_mbuf;
 	set_mbuf_ulp_submode(m, ulp_submode);
-#ifdef INVARIANTS
-	bzero(icp, sizeof(*icp));
-#endif
-#ifdef DIAGNOSTIC
-	refcount_release(&icc->ic.ic_outstanding_pdus);
-#endif
+	ip->ip_bhs_mbuf = NULL;
+	ip->ip_data_mbuf = NULL;
+	ip->ip_bhs = NULL;
+
+	/*
+	 * Drop PDU reference on icp.  Additional references might
+	 * still be held by zero-copy PDU buffers (ICL_NOCOPY).
+	 */
+	if (atomic_fetchadd_int(&icp->ref_cnt, -1) == 1)
+		icl_cxgbei_pdu_call_cb(ip);
 
 	return (m);
 }
@@ -324,35 +387,91 @@ int
 icl_cxgbei_conn_pdu_append_data(struct icl_conn *ic, struct icl_pdu *ip,
     const void *addr, size_t len, int flags)
 {
-	struct mbuf *m;
-#ifdef INVARIANTS
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
-#endif
+	struct mbuf *m, *m_tail;
+	const char *src;
 
 	MPASS(icp->icp_signature == CXGBEI_PDU_SIGNATURE);
 	MPASS(ic == ip->ip_conn);
 	KASSERT(len > 0, ("%s: len is %jd", __func__, (intmax_t)len));
 
-	m = ip->ip_data_mbuf;
-	if (m == NULL) {
+	m_tail = ip->ip_data_mbuf;
+	if (m_tail != NULL)
+		for (; m_tail->m_next != NULL; m_tail = m_tail->m_next)
+			;
+
+	if (flags & ICL_NOCOPY) {
+		m = m_get(flags & ~ICL_NOCOPY, MT_DATA);
+		if (m == NULL) {
+			ICL_WARN("failed to allocate mbuf");
+			return (ENOMEM);
+		}
+
+		m->m_flags |= M_RDONLY;
+		m_extaddref(m, __DECONST(char *, addr), len, &icp->ref_cnt,
+		    icl_cxgbei_mbuf_done, icp, NULL);
+		m->m_len = len;
+		if (ip->ip_data_mbuf == NULL) {
+			ip->ip_data_mbuf = m;
+			ip->ip_data_len = len;
+		} else {
+			m_tail->m_next = m;
+			m_tail = m_tail->m_next;
+			ip->ip_data_len += len;
+		}
+
+		return (0);
+	}
+
+	src = (const char *)addr;
+
+	/* Allocate as jumbo mbufs of size MJUM16BYTES. */
+	while (len >= MJUM16BYTES) {
 		m = m_getjcl(M_NOWAIT, MT_DATA, 0, MJUM16BYTES);
+		if (__predict_false(m == NULL)) {
+			if ((flags & M_WAITOK) != 0) {
+				/* Fall back to non-jumbo mbufs. */
+				break;
+			}
+			return (ENOMEM);
+		}
+		memcpy(mtod(m, void *), src, MJUM16BYTES);
+		m->m_len = MJUM16BYTES;
+		if (ip->ip_data_mbuf == NULL) {
+			ip->ip_data_mbuf = m_tail = m;
+			ip->ip_data_len = MJUM16BYTES;
+		} else {
+			m_tail->m_next = m;
+			m_tail = m_tail->m_next;
+			ip->ip_data_len += MJUM16BYTES;
+		}
+		src += MJUM16BYTES;
+		len -= MJUM16BYTES;
+	}
+
+	/* Allocate mbuf chain for the remaining data. */
+	if (len != 0) {
+		m = m_getm2(NULL, len, flags, MT_DATA, 0);
 		if (__predict_false(m == NULL))
 			return (ENOMEM);
-
-		ip->ip_data_mbuf = m;
-	}
-
-	if (__predict_true(m_append(m, len, addr) != 0)) {
-		ip->ip_data_len += len;
-		MPASS(ip->ip_data_len <= ic->ic_max_data_segment_length);
-		return (0);
-	} else {
-	    	if (flags & M_WAITOK) {
-			CXGBE_UNIMPLEMENTED("fail safe append");
+		if (ip->ip_data_mbuf == NULL) {
+			ip->ip_data_mbuf = m;
+			ip->ip_data_len = len;
+		} else {
+			m_tail->m_next = m;
+			ip->ip_data_len += len;
 		}
-		ip->ip_data_len = m_length(m, NULL);
-		return (1);
+		for (; m != NULL; m = m->m_next) {
+			m->m_len = min(len, M_SIZE(m));
+			memcpy(mtod(m, void *), src, m->m_len);
+			src += m->m_len;
+			len -= m->m_len;
+		}
+		MPASS(len == 0);
 	}
+	MPASS(ip->ip_data_len <= ic->ic_max_send_data_segment_length);
+
+	return (0);
 }
 
 void
@@ -369,6 +488,13 @@ icl_cxgbei_conn_pdu_get_data(struct icl_conn *ic, struct icl_pdu *ip,
 void
 icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 {
+	icl_cxgbei_conn_pdu_queue_cb(ic, ip, NULL);
+}
+
+void
+icl_cxgbei_conn_pdu_queue_cb(struct icl_conn *ic, struct icl_pdu *ip,
+			     icl_pdu_cb cb)
+{
 	struct epoch_tracker et;
 	struct icl_cxgbei_conn *icc = ic_to_icc(ic);
 	struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
@@ -383,9 +509,12 @@ icl_cxgbei_conn_pdu_queue(struct icl_conn *ic, struct icl_pdu *ip)
 	MPASS(ip->ip_ahs_mbuf == NULL && ip->ip_ahs_len == 0);
 
 	ICL_CONN_LOCK_ASSERT(ic);
+
+	icp->cb = cb;
+
 	/* NOTE: sowriteable without so_snd lock is a mostly harmless race. */
 	if (ic->ic_disconnecting || so == NULL || !sowriteable(so)) {
-		icl_cxgbei_conn_pdu_free(ic, ip);
+		icl_cxgbei_pdu_done(ip, ENOTCONN);
 		return;
 	}
 
@@ -436,8 +565,6 @@ icl_cxgbei_new_conn(const char *name, struct mtx *lock)
 #ifdef DIAGNOSTIC
 	refcount_init(&ic->ic_outstanding_pdus, 0);
 #endif
-	/* This is a stop-gap value that will be corrected during handoff. */
-	ic->ic_max_data_segment_length = 16384;
 	ic->ic_name = name;
 	ic->ic_offload = "cxgbei";
 	ic->ic_unmapped = false;
@@ -576,7 +703,7 @@ send_iscsi_flowc_wr(struct adapter *sc, struct toepcb *toep, int maxlen)
 		toep->txsd_pidx = 0;
 	toep->txsd_avail--;
 
-        t4_wrq_tx(sc, wr);
+	t4_wrq_tx(sc, wr);
 }
 
 static void
@@ -591,6 +718,9 @@ set_ulp_mode_iscsi(struct adapter *sc, struct toepcb *toep, u_int ulp_submode)
 	t4_set_tcb_field(sc, toep->ctrlq, toep, W_TCB_ULP_TYPE,
 	    V_TCB_ULP_TYPE(M_TCB_ULP_TYPE) | V_TCB_ULP_RAW(M_TCB_ULP_RAW), val,
 	    0, 0);
+
+	val = V_TF_RX_FLOW_CONTROL_DISABLE(1ULL);
+	t4_set_tcb_field(sc, toep->ctrlq, toep, W_TCB_T_FLAGS, val, val, 0, 0);
 }
 
 /*
@@ -674,26 +804,11 @@ icl_cxgbei_conn_handoff(struct icl_conn *ic, int fd)
 		icc->toep = toep;
 		icc->cwt = cxgbei_select_worker_thread(icc);
 
-		/*
-		 * We maintain the _send_ DSL in this field just to have a
-		 * convenient way to assert that the kernel never sends
-		 * oversized PDUs.  This field is otherwise unused in the driver
-		 * or the kernel.
-		 */
-		ic->ic_max_data_segment_length = ci->max_tx_pdu_len -
-		    ISCSI_BHS_SIZE;
-
 		icc->ulp_submode = 0;
-		if (ic->ic_header_crc32c) {
+		if (ic->ic_header_crc32c)
 			icc->ulp_submode |= ULP_CRC_HEADER;
-			ic->ic_max_data_segment_length -=
-			    ISCSI_HEADER_DIGEST_SIZE;
-		}
-		if (ic->ic_data_crc32c) {
+		if (ic->ic_data_crc32c)
 			icc->ulp_submode |= ULP_CRC_DATA;
-			ic->ic_max_data_segment_length -=
-			    ISCSI_DATA_DIGEST_SIZE;
-		}
 		so->so_options |= SO_NO_DDP;
 		toep->params.ulp_mode = ULP_MODE_ISCSI;
 		toep->ulpcb = icc;
@@ -771,7 +886,7 @@ icl_cxgbei_conn_close(struct icl_conn *ic)
 		while (!STAILQ_EMPTY(&icc->rcvd_pdus)) {
 			ip = STAILQ_FIRST(&icc->rcvd_pdus);
 			STAILQ_REMOVE_HEAD(&icc->rcvd_pdus, ip_next);
-			icl_cxgbei_conn_pdu_free(ic, ip);
+			icl_cxgbei_pdu_done(ip, ENOTCONN);
 		}
 		SOCKBUF_UNLOCK(sb);
 	}
@@ -810,7 +925,7 @@ icl_cxgbei_conn_task_setup(struct icl_conn *ic, struct icl_pdu *ip,
 	    csio->dxfer_len < ci->ddp_threshold) {
 no_ddp:
 		/*
-		 * No DDP for this I/O.  Allocate an ITT (based on the one
+		 * No DDP for this I/O.	 Allocate an ITT (based on the one
 		 * passed in) that cannot be a valid hardware DDP tag in the
 		 * iSCSI region.
 		 */
@@ -819,7 +934,8 @@ no_ddp:
 		*ittp = htobe32(itt);
 		MPASS(*arg == NULL);	/* State is maintained for DDP only. */
 		if (rc != 0)
-			counter_u64_add(ci->ddp_setup_error, 1);
+			counter_u64_add(
+			    toep->ofld_rxq->rx_iscsi_ddp_setup_error, 1);
 		return (0);
 	}
 
@@ -843,8 +959,8 @@ no_ddp:
 		goto no_ddp;
 	}
 
-	rc = t4_write_page_pods_for_buf(sc, &toep->ofld_txq->wrq, toep->tid,
-	    prsv, (vm_offset_t)csio->data_ptr, csio->dxfer_len);
+	rc = t4_write_page_pods_for_buf(sc, toep, prsv,
+	    (vm_offset_t)csio->data_ptr, csio->dxfer_len);
 	if (rc != 0) {
 		t4_free_page_pods(prsv);
 		uma_zfree(prsv_zone, prsv);
@@ -853,7 +969,7 @@ no_ddp:
 
 	*ittp = htobe32(prsv->prsv_tag);
 	*arg = prsv;
-	counter_u64_add(ci->ddp_setup_ok, 1);
+	counter_u64_add(toep->ofld_rxq->rx_iscsi_ddp_setup_ok, 1);
 	return (0);
 }
 
@@ -867,6 +983,28 @@ icl_cxgbei_conn_task_done(struct icl_conn *ic, void *arg)
 		t4_free_page_pods(prsv);
 		uma_zfree(prsv_zone, prsv);
 	}
+}
+
+static inline bool
+ddp_sgl_check(struct ctl_sg_entry *sg, int entries, int xferlen)
+{
+	int total_len = 0;
+
+	MPASS(entries > 0);
+	if (((vm_offset_t)sg[--entries].addr & 3U) != 0)
+		return (false);
+
+	total_len += sg[entries].len;
+
+	while (--entries >= 0) {
+		if (((vm_offset_t)sg[entries].addr & PAGE_MASK) != 0 ||
+		    (sg[entries].len % PAGE_SIZE) != 0)
+			return (false);
+		total_len += sg[entries].len;
+	}
+
+	MPASS(total_len == xferlen);
+	return (true);
 }
 
 /* XXXNP: PDU should be passed in as parameter, like on the initiator. */
@@ -884,6 +1022,8 @@ icl_cxgbei_conn_transfer_setup(struct icl_conn *ic, union ctl_io *io,
 	struct cxgbei_data *ci = sc->iscsi_ulp_softc;
 	struct ppod_region *pr = &ci->pr;
 	struct ppod_reservation *prsv;
+	struct ctl_sg_entry *sgl, sg_entry;
+	int sg_entries = ctsio->kern_sg_entries;
 	uint32_t ttt;
 	int xferlen, rc = 0, alias;
 
@@ -894,7 +1034,6 @@ icl_cxgbei_conn_transfer_setup(struct icl_conn *ic, union ctl_io *io,
 	if (ctsio->ext_data_filled == 0) {
 		int first_burst;
 		struct icl_pdu *ip = io_to_request_pdu(io);
-		vm_offset_t buf;
 #ifdef INVARIANTS
 		struct icl_cxgbei_pdu *icp = ip_to_icp(ip);
 
@@ -907,10 +1046,15 @@ icl_cxgbei_conn_transfer_setup(struct icl_conn *ic, union ctl_io *io,
 		/*
 		 * Note that ICL calls conn_transfer_setup even if the first
 		 * burst had everything and there's nothing left to transfer.
+		 *
+		 * NB: The CTL frontend might have provided a buffer
+		 * whose length (kern_data_len) is smaller than the
+		 * FirstBurstLength of unsolicited data.  Treat those
+		 * as an empty transfer.
 		 */
-		MPASS(ctsio->kern_data_len >= first_burst);
 		xferlen = ctsio->kern_data_len;
-		if (xferlen - first_burst < ci->ddp_threshold) {
+		if (xferlen < first_burst ||
+		    xferlen - first_burst < ci->ddp_threshold) {
 no_ddp:
 			/*
 			 * No DDP for this transfer.  Allocate a TTT (based on
@@ -922,22 +1066,21 @@ no_ddp:
 			*tttp = htobe32(ttt);
 			MPASS(io_to_ppod_reservation(io) == NULL);
 			if (rc != 0)
-				counter_u64_add(ci->ddp_setup_error, 1);
+				counter_u64_add(
+				    toep->ofld_rxq->rx_iscsi_ddp_setup_error, 1);
 			return (0);
 		}
 
-		if (ctsio->kern_sg_entries == 0)
-			buf = (vm_offset_t)ctsio->kern_data_ptr;
-		else if (ctsio->kern_sg_entries == 1) {
-			struct ctl_sg_entry *sgl = (void *)ctsio->kern_data_ptr;
+		if (sg_entries == 0) {
+			sgl = &sg_entry;
+			sgl->len = xferlen;
+			sgl->addr = (void *)ctsio->kern_data_ptr;
+			sg_entries = 1;
+		} else
+			sgl = (void *)ctsio->kern_data_ptr;
 
-			MPASS(sgl->len == xferlen);
-			buf = (vm_offset_t)sgl->addr;
-		} else {
-			rc = EAGAIN;	/* XXX implement */
+		if (!ddp_sgl_check(sgl, sg_entries, xferlen))
 			goto no_ddp;
-		}
-
 
 		/*
 		 * Reserve resources for DDP, update the ttt that should be used
@@ -951,15 +1094,15 @@ no_ddp:
 			goto no_ddp;
 		}
 
-		rc = t4_alloc_page_pods_for_buf(pr, buf, xferlen, prsv);
+		rc = t4_alloc_page_pods_for_sgl(pr, sgl, sg_entries, prsv);
 		if (rc != 0) {
 			uma_zfree(prsv_zone, prsv);
 			goto no_ddp;
 		}
 
-		rc = t4_write_page_pods_for_buf(sc, &toep->ofld_txq->wrq,
-		    toep->tid, prsv, buf, xferlen);
-		if (rc != 0) {
+		rc = t4_write_page_pods_for_sgl(sc, toep, prsv, sgl, sg_entries,
+		    xferlen);
+		if (__predict_false(rc != 0)) {
 			t4_free_page_pods(prsv);
 			uma_zfree(prsv_zone, prsv);
 			goto no_ddp;
@@ -968,7 +1111,7 @@ no_ddp:
 		*tttp = htobe32(prsv->prsv_tag);
 		io_to_ppod_reservation(io) = prsv;
 		*arg = ctsio;
-		counter_u64_add(ci->ddp_setup_ok, 1);
+		counter_u64_add(toep->ofld_rxq->rx_iscsi_ddp_setup_ok, 1);
 		return (0);
 	}
 
@@ -997,7 +1140,8 @@ icl_cxgbei_conn_transfer_done(struct icl_conn *ic, void *arg)
 {
 	struct ctl_scsiio *ctsio = arg;
 
-	if (ctsio != NULL && ctsio->kern_data_len == ctsio->ext_data_filled) {
+	if (ctsio != NULL && (ctsio->kern_data_len == ctsio->ext_data_filled ||
+	    ic->ic_disconnecting)) {
 		struct ppod_reservation *prsv;
 
 		prsv = io_to_ppod_reservation(ctsio);
@@ -1005,6 +1149,7 @@ icl_cxgbei_conn_transfer_done(struct icl_conn *ic, void *arg)
 
 		t4_free_page_pods(prsv);
 		uma_zfree(prsv_zone, prsv);
+		io_to_ppod_reservation(ctsio) = NULL;
 	}
 }
 
@@ -1045,13 +1190,13 @@ static int
 icl_cxgbei_limits(struct icl_drv_limits *idl)
 {
 
-	/* Maximum allowed by the RFC.  cxgbei_limits will clip them. */
+	/* Maximum allowed by the RFC.	cxgbei_limits will clip them. */
 	idl->idl_max_recv_data_segment_length = (1 << 24) - 1;
 	idl->idl_max_send_data_segment_length = (1 << 24) - 1;
 
 	/* These are somewhat arbitrary. */
-	idl->idl_max_burst_length = 2 * 1024 * 1024;
-	idl->idl_first_burst_length = 8192;
+	idl->idl_max_burst_length = max_burst_length;
+	idl->idl_first_burst_length = first_burst_length;
 
 	t4_iterate(cxgbei_limits, idl);
 

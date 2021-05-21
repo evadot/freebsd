@@ -68,16 +68,6 @@ MALLOC_DECLARE(M_CXGBE);
 #define CXGBE_UNIMPLEMENTED(s) \
     panic("%s (%s, line %d) not implemented yet.", s, __FILE__, __LINE__)
 
-#if defined(__i386__) || defined(__amd64__)
-static __inline void
-prefetch(void *x)
-{
-	__asm volatile("prefetcht0 %0" :: "m" (*(unsigned long *)x));
-}
-#else
-#define prefetch(x) __builtin_prefetch(x)
-#endif
-
 #ifndef SYSCTL_ADD_UQUAD
 #define SYSCTL_ADD_UQUAD SYSCTL_ADD_QUAD
 #define sysctl_handle_64 sysctl_handle_quad
@@ -656,11 +646,16 @@ iq_to_rxq(struct sge_iq *iq)
 	return (__containerof(iq, struct sge_rxq, iq));
 }
 
-
 /* ofld_rxq: SGE ingress queue + SGE free list + miscellaneous items */
 struct sge_ofld_rxq {
 	struct sge_iq iq;	/* MUST be first */
 	struct sge_fl fl;	/* MUST follow iq */
+	counter_u64_t rx_iscsi_ddp_setup_ok;
+	counter_u64_t rx_iscsi_ddp_setup_error;
+	uint64_t rx_iscsi_ddp_pdus;
+	uint64_t rx_iscsi_ddp_octets;
+	uint64_t rx_iscsi_fl_pdus;
+	uint64_t rx_iscsi_fl_octets;
 	u_long	rx_toe_tls_records;
 	u_long	rx_toe_tls_octets;
 } __aligned(CACHE_LINE_SIZE);
