@@ -70,6 +70,8 @@ SUBDIR=	\
 	${_blake2} \
 	bnxt \
 	bridgestp \
+	${_if_bwfm} \
+	${_bwfmfw} \
 	bwi \
 	bwn \
 	${_bytgpio} \
@@ -616,6 +618,8 @@ _rockchip=	rockchip
 
 .if ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "arm"
 _sdhci_fdt=	sdhci_fdt
+_bwfmfw=	bwfmfw
+_if_bwfm=	if_bwfm
 .endif
 
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
