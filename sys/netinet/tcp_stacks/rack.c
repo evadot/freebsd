@@ -408,8 +408,8 @@ counter_u64_t rack_opts_arry[RACK_OPTS_SIZE];
 
 #define	RACK_REXMTVAL(tp) max(rack_rto_min, ((tp)->t_srtt + ((tp)->t_rttvar << 2)))
 
-#define	RACK_TCPT_RANGESET(tv, value, tvmin, tvmax) do { \
-	(tv) = (value) + TICKS_2_USEC(tcp_rexmit_slop);	 \
+#define	RACK_TCPT_RANGESET(tv, value, tvmin, tvmax, slop) do {	\
+	(tv) = (value) + slop;	 \
 	if ((u_long)(tv) < (u_long)(tvmin)) \
 		(tv) = (tvmin); \
 	if ((u_long)(tv) > (u_long)(tvmax)) \
@@ -2448,7 +2448,7 @@ rack_log_rtt_sample(struct tcp_rack *rack, uint32_t rtt)
 		/* Lets capture all the things that make up t_rtxcur */
 		log.u_bbr.applimited = rack_rto_min;
 		log.u_bbr.epoch = rack_rto_max;
-		log.u_bbr.lt_epoch = rtt;
+		log.u_bbr.lt_epoch = rack->r_ctl.timer_slop;
 		log.u_bbr.lost = rack_rto_min;
 		log.u_bbr.pkt_epoch = TICKS_2_USEC(tcp_rexmit_slop);
 		log.u_bbr.rttProp = RACK_REXMTVAL(rack->rc_tp);
@@ -5260,7 +5260,7 @@ rack_get_persists_timer_val(struct tcpcb *tp, struct tcp_rack *rack)
 
 	t = (tp->t_srtt + (tp->t_rttvar << 2));
 	RACK_TCPT_RANGESET(tt, t * tcp_backoff[tp->t_rxtshift],
-	    rack_persist_min, rack_persist_max);
+ 	    rack_persist_min, rack_persist_max, rack->r_ctl.timer_slop);
 	if (tp->t_rxtshift < TCP_MAXRXTSHIFT)
 		tp->t_rxtshift++;
 	rack->r_ctl.rc_hpts_flags |= PACE_TMR_PERSIT;
@@ -5526,7 +5526,7 @@ rack_enter_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		rack_timer_cancel(tp, rack, cts, __LINE__);
 		tp->t_rxtshift = 0;
 		RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-			      rack_rto_min, rack_rto_max);
+			      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 		rack->rc_in_persist = 1;
 	}
 }
@@ -5581,7 +5581,7 @@ rack_exit_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 	rack->r_ctl.rc_went_idle_time = 0;
 	tp->t_rxtshift = 0;
 	RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-	   rack_rto_min, rack_rto_max);
+	   rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 	rack->r_ctl.rc_agg_delayed = 0;
 	rack->r_early = 0;
 	rack->r_late = 0;
@@ -6017,7 +6017,7 @@ rack_setup_offset_for_rsm(struct rack_sendmap *src_rsm, struct rack_sendmap *rsm
 	struct mbuf *m;
 	uint32_t soff;
 
-	if (src_rsm->orig_m_len != src_rsm->m->m_len) {
+	if (src_rsm->m && (src_rsm->orig_m_len != src_rsm->m->m_len)) {
 		/* Fix up the orig_m_len and possibly the mbuf offset */
 		rack_adjust_orig_mlen(src_rsm);
 	}
@@ -6058,8 +6058,12 @@ rack_clone_rsm(struct tcp_rack *rack, struct rack_sendmap *nrsm,
 	if (nrsm->r_flags & RACK_HAS_SYN)
 		nrsm->r_flags &= ~RACK_HAS_SYN;
 	/* Now if we have a FIN flag we keep it on the right edge */
-	if (nrsm->r_flags & RACK_HAS_FIN)
-		nrsm->r_flags &= ~RACK_HAS_FIN;
+	if (rsm->r_flags & RACK_HAS_FIN)
+		rsm->r_flags &= ~RACK_HAS_FIN;
+	/* Push bit must go to the right edge as well */
+	if (rsm->r_flags & RACK_HAD_PUSH)
+		rsm->r_flags &= ~RACK_HAD_PUSH;
+
 	/*
 	 * Now we need to find nrsm's new location in the mbuf chain
 	 * we basically calculate a new offset, which is soff +
@@ -6773,7 +6777,7 @@ drop_it:
 		rexmt = max(rack_rto_min, (tp->t_srtt + (tp->t_rttvar << 2))) * tcp_backoff[tp->t_rxtshift];
 
 	RACK_TCPT_RANGESET(tp->t_rxtcur, rexmt,
-	   max(rack_rto_min, rexmt), rack_rto_max);
+	   max(rack_rto_min, rexmt), rack_rto_max, rack->r_ctl.timer_slop);
 	/*
 	 * We enter the path for PLMTUD if connection is established or, if
 	 * connection is FIN_WAIT_1 status, reason for the last is that if
@@ -7698,7 +7702,7 @@ tcp_rack_xmit_timer_commit(struct tcp_rack *rack, struct tcpcb *tp)
 	 */
 	tp->t_rxtshift = 0;
 	RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-		      max(rack_rto_min, rtt + 2), rack_rto_max);
+		      max(rack_rto_min, rtt + 2), rack_rto_max, rack->r_ctl.timer_slop);
 	rack_log_rtt_sample(rack, rtt);
 	tp->t_softerror = 0;
 }
@@ -7873,7 +7877,7 @@ rack_update_rtt(struct tcpcb *tp, struct tcp_rack *rack,
 	 */
 	tp->t_rxtshift = 0;
 	RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-		      rack_rto_min, rack_rto_max);
+		      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 	tp->t_softerror = 0;
 	if (to && (to->to_flags & TOF_TS) &&
 	    (ack_type == CUM_ACKED) &&
@@ -8814,21 +8818,23 @@ more:
 	rack->r_ctl.rc_gp_cumack_ts = rsm->r_tim_lastsent[(rsm->r_rtr_cnt-1)];
 	rack_log_map_chg(tp, rack, NULL, rsm, NULL, MAP_TRIM_HEAD, th_ack, __LINE__);
 	/* Now we need to move our offset forward too */
-	if (rsm->orig_m_len != rsm->m->m_len) {
+	if (rsm->m && (rsm->orig_m_len != rsm->m->m_len)) {
 		/* Fix up the orig_m_len and possibly the mbuf offset */
 		rack_adjust_orig_mlen(rsm);
 	}
 	rsm->soff += (th_ack - rsm->r_start);
 	rsm->r_start = th_ack;
 	/* Now do we need to move the mbuf fwd too? */
-	while (rsm->soff >= rsm->m->m_len) {
-		rsm->soff -= rsm->m->m_len;
-		rsm->m = rsm->m->m_next;
-		KASSERT((rsm->m != NULL),
-			(" nrsm:%p hit at soff:%u null m",
-			 rsm, rsm->soff));
+	if (rsm->m) {
+		while (rsm->soff >= rsm->m->m_len) {
+			rsm->soff -= rsm->m->m_len;
+			rsm->m = rsm->m->m_next;
+			KASSERT((rsm->m != NULL),
+				(" nrsm:%p hit at soff:%u null m",
+				 rsm, rsm->soff));
+		}
+		rsm->orig_m_len = rsm->m->m_len;
 	}
-	rsm->orig_m_len = rsm->m->m_len;
 	if (rack->app_limited_needs_set)
 		rack_need_set_test(tp, rack, rsm, tp->snd_una, __LINE__, RACK_USE_BEG);
 }
@@ -9651,7 +9657,7 @@ rack_adjust_sendmap(struct tcp_rack *rack, struct sockbuf *sb, tcp_seq snd_una)
 		/* Nothing outstanding */
 		return;
 	}
-	while (rsm->m == m) {
+	while (rsm->m && (rsm->m == m)) {
 		/* one to adjust */
 #ifdef INVARIANTS
 		struct mbuf *tm;
@@ -9672,10 +9678,16 @@ rack_adjust_sendmap(struct tcp_rack *rack, struct sockbuf *sb, tcp_seq snd_una)
 		}
 		rsm->m = tm;
 		rsm->soff = soff;
-		rsm->orig_m_len = rsm->m->m_len;
+		if (tm)
+			rsm->orig_m_len = rsm->m->m_len;
+		else
+			rsm->orig_m_len = 0;
 #else
 		rsm->m = sbsndmbuf(sb, (rsm->r_start - snd_una), &rsm->soff);
-		rsm->orig_m_len = rsm->m->m_len;
+		if (rsm->m)
+			rsm->orig_m_len = rsm->m->m_len;
+		else
+			rsm->orig_m_len = 0;
 #endif
 		rsm = RB_NEXT(rack_rb_tree_head, &rack->r_ctl.rc_mtree,
 			      rsm);
@@ -9723,7 +9735,7 @@ rack_process_ack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		if (rack->rc_in_persist) {
 			tp->t_rxtshift = 0;
 			RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-				      rack_rto_min, rack_rto_max);
+				      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 		}
 		if ((th->th_ack == tp->snd_una) && (tiwin == tp->snd_wnd)) {
 			rack_strike_dupack(rack);
@@ -9786,7 +9798,7 @@ rack_process_ack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		/* assure we are not backed off */
 		tp->t_rxtshift = 0;
 		RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-			      rack_rto_min, rack_rto_max);
+			      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 		rack->rc_tlp_in_progress = 0;
 		rack->r_ctl.rc_tlp_cnt_out = 0;
 		/*
@@ -10054,6 +10066,7 @@ rack_validate_fo_sendwin_up(struct tcpcb *tp, struct tcp_rack *rack)
 	}
 }
 
+
 /*
  * Return value of 1, the TCB is unlocked and most
  * likely gone, return value of 0, the TCP is still
@@ -10222,9 +10235,10 @@ rack_process_data(struct mbuf *m, struct tcphdr *th, struct socket *so,
 			 * trimming from the head.
 			 */
 			tcp_seq temp = save_start;
-
-			thflags = tcp_reass(tp, th, &temp, &tlen, m);
-			tp->t_flags |= TF_ACKNOW;
+			if (tlen) {
+				thflags = tcp_reass(tp, th, &temp, &tlen, m);
+				tp->t_flags |= TF_ACKNOW;
+			}
 		}
 		if ((tp->t_flags & TF_SACK_PERMIT) &&
 		    (save_tlen > 0) &&
@@ -10478,6 +10492,7 @@ rack_do_fastnewdata(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	rack_handle_delayed_ack(tp, rack, tlen, 0);
 	if (tp->snd_una == tp->snd_max)
 		sack_filter_clear(&rack->r_ctl.rack_sf, tp->snd_una);
+	tcp_handle_wakeup(tp, so);
 	return (1);
 }
 
@@ -10629,11 +10644,11 @@ rack_fastack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		rack_adjust_sendmap(rack, &so->so_snd, tp->snd_una);
 		/* Wake up the socket if we have room to write more */
 		rack_log_wakeup(tp,rack, &so->so_snd, acked, 2);
-		sowwakeup(so);
+		sowwakeup_locked(so);
 		m_freem(mfree);
 		tp->t_rxtshift = 0;
 		RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-			      rack_rto_min, rack_rto_max);
+			      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 		rack->rc_tlp_in_progress = 0;
 		rack->r_ctl.rc_tlp_cnt_out = 0;
 		/*
@@ -12074,6 +12089,7 @@ rack_init(struct tcpcb *tp)
 	rack->r_ctl.rc_lowest_us_rtt = 0xffffffff;
 	rack->r_ctl.rc_highest_us_rtt = 0;
 	rack->r_ctl.bw_rate_cap = rack_bw_rate_cap;
+	rack->r_ctl.timer_slop = TICKS_2_USEC(tcp_rexmit_slop);
 	if (rack_use_cmp_acks)
 		rack->r_use_cmp_ack = 1;
 	if (rack_disable_prr)
@@ -12185,7 +12201,10 @@ rack_init(struct tcpcb *tp)
 		rsm->r_dupack = 0;
 		if (rack->rc_inp->inp_socket->so_snd.sb_mb != NULL) {
 			rsm->m = sbsndmbuf(&rack->rc_inp->inp_socket->so_snd, 0, &rsm->soff);
-			rsm->orig_m_len = rsm->m->m_len;
+			if (rsm->m)
+				rsm->orig_m_len = rsm->m->m_len;
+			else
+				rsm->orig_m_len = 0;
 		} else {
 			/*
 			 * This can happen if we have a stand-alone FIN or
@@ -13154,7 +13173,7 @@ rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mb
 			rack_adjust_sendmap(rack, &so->so_snd, tp->snd_una);
 			/* Wake up the socket if we have room to write more */
 			rack_log_wakeup(tp,rack, &so->so_snd, acked, 2);
-			sowwakeup(so);
+			sowwakeup_locked(so);
 			m_freem(mfree);
 		}
 		/* update progress */
@@ -13164,7 +13183,7 @@ rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mb
 		/* Clear out shifts and such */
 		tp->t_rxtshift = 0;
 		RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
-				   rack_rto_min, rack_rto_max);
+				   rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
 		rack->rc_tlp_in_progress = 0;
 		rack->r_ctl.rc_tlp_cnt_out = 0;
 		/* Send recover and snd_nxt must be dragged along */
@@ -15069,6 +15088,7 @@ rack_fast_rsm_output(struct tcpcb *tp, struct tcp_rack *rack, struct rack_sendma
 	uint32_t us_cts;
 	uint32_t if_hw_tsomaxsegcount = 0, startseq;
 	uint32_t if_hw_tsomaxsegsize;
+
 #ifdef INET6
 	struct ip6_hdr *ip6 = NULL;
 
@@ -15178,7 +15198,15 @@ rack_fast_rsm_output(struct tcpcb *tp, struct tcp_rack *rack, struct rack_sendma
 	}
 	th->th_seq = htonl(rsm->r_start);
 	th->th_ack = htonl(tp->rcv_nxt);
-	if(rsm->r_flags & RACK_HAD_PUSH)
+	/*
+	 * The PUSH bit should only be applied
+	 * if the full retransmission is made. If
+	 * we are sending less than this is the
+	 * left hand edge and should not have
+	 * the PUSH bit.
+	 */
+	if ((rsm->r_flags & RACK_HAD_PUSH) &&
+	    (len == (rsm->r_end - rsm->r_start)))
 		flags |= TH_PUSH;
 	th->th_flags = flags;
 	th->th_win = htons((u_short)(rack->r_ctl.fsb.recwin >> tp->rcv_scale));
@@ -18852,6 +18880,19 @@ rack_process_option(struct tcpcb *tp, struct tcp_rack *rack, int sopt_name,
 			rack->r_ctl.rc_saved_beta.beta = optval;
 		}
 		break;
+	case TCP_RACK_TIMER_SLOP:
+		RACK_OPTS_INC(tcp_rack_timer_slop);
+		rack->r_ctl.timer_slop = optval;
+		if (rack->rc_tp->t_srtt) {
+			/*
+			 * If we have an SRTT lets update t_rxtcur
+			 * to have the new slop.
+			 */
+			RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
+					   rack_rto_min, rack_rto_max,
+					   rack->r_ctl.timer_slop);
+		}
+		break;
 	case TCP_RACK_PACING_BETA_ECN:
 		RACK_OPTS_INC(tcp_rack_beta_ecn);
 		if (strcmp(tp->cc_algo->name, CCALGONAME_NEWRENO) != 0) {
@@ -19407,6 +19448,34 @@ rack_apply_deferred_options(struct tcp_rack *rack)
 	}
 }
 
+static int
+rack_pru_options(struct tcpcb *tp, int flags)
+{
+	if (flags & PRUS_OOB)
+		return (EOPNOTSUPP);
+	return (0);
+}
+
+static struct tcp_function_block __tcp_rack = {
+	.tfb_tcp_block_name = __XSTRING(STACKNAME),
+	.tfb_tcp_output = rack_output,
+	.tfb_do_queued_segments = ctf_do_queued_segments,
+	.tfb_do_segment_nounlock = rack_do_segment_nounlock,
+	.tfb_tcp_do_segment = rack_do_segment,
+	.tfb_tcp_ctloutput = rack_ctloutput,
+	.tfb_tcp_fb_init = rack_init,
+	.tfb_tcp_fb_fini = rack_fini,
+	.tfb_tcp_timer_stop_all = rack_stopall,
+	.tfb_tcp_timer_activate = rack_timer_activate,
+	.tfb_tcp_timer_active = rack_timer_active,
+	.tfb_tcp_timer_stop = rack_timer_stop,
+	.tfb_tcp_rexmit_tmr = rack_remxt_tmr,
+	.tfb_tcp_handoff_ok = rack_handoff_ok,
+	.tfb_tcp_mtu_chg = rack_mtu_change,
+	.tfb_pru_options = rack_pru_options,
+
+};
+
 /*
  * rack_ctloutput() must drop the inpcb lock before performing copyin on
  * socket option arguments.  When it re-acquires the lock after the copy, it
@@ -19470,6 +19539,7 @@ rack_set_sockopt(struct socket *so, struct sockopt *sopt,
 	case TCP_DEFER_OPTIONS:			/*  URL:defer */
 	case TCP_RACK_PACING_BETA:		/*  URL:pacing_beta */
 	case TCP_RACK_PACING_BETA_ECN:		/*  URL:pacing_beta_ecn */
+	case TCP_RACK_TIMER_SLOP:		/*  URL:timer_slop */
 		break;
 	default:
 		/* Filter off all unknown options to the base stack */
@@ -19495,6 +19565,10 @@ rack_set_sockopt(struct socket *so, struct sockopt *sopt,
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_WUNLOCK(inp);
 		return (ECONNRESET);
+	}
+	if (tp->t_fb != &__tcp_rack) {
+		INP_WUNLOCK(inp);
+		return (ENOPROTOOPT);
 	}
 	if (rack->defer_options && (rack->gp_ready == 0) &&
 	    (sopt->sopt_name != TCP_DEFER_OPTIONS) &&
@@ -19797,6 +19871,9 @@ rack_get_sockopt(struct socket *so, struct sockopt *sopt,
 	case TCP_SHARED_CWND_TIME_LIMIT:
 		optval = rack->r_limit_scw;
 		break;
+	case TCP_RACK_TIMER_SLOP:
+		optval = rack->r_ctl.timer_slop;
+		break;
 	default:
 		return (tcp_default_ctloutput(so, sopt, inp, tp));
 		break;
@@ -19831,34 +19908,6 @@ out:
 	INP_WUNLOCK(inp);
 	return (error);
 }
-
-static int
-rack_pru_options(struct tcpcb *tp, int flags)
-{
-	if (flags & PRUS_OOB)
-		return (EOPNOTSUPP);
-	return (0);
-}
-
-static struct tcp_function_block __tcp_rack = {
-	.tfb_tcp_block_name = __XSTRING(STACKNAME),
-	.tfb_tcp_output = rack_output,
-	.tfb_do_queued_segments = ctf_do_queued_segments,
-	.tfb_do_segment_nounlock = rack_do_segment_nounlock,
-	.tfb_tcp_do_segment = rack_do_segment,
-	.tfb_tcp_ctloutput = rack_ctloutput,
-	.tfb_tcp_fb_init = rack_init,
-	.tfb_tcp_fb_fini = rack_fini,
-	.tfb_tcp_timer_stop_all = rack_stopall,
-	.tfb_tcp_timer_activate = rack_timer_activate,
-	.tfb_tcp_timer_active = rack_timer_active,
-	.tfb_tcp_timer_stop = rack_timer_stop,
-	.tfb_tcp_rexmit_tmr = rack_remxt_tmr,
-	.tfb_tcp_handoff_ok = rack_handoff_ok,
-	.tfb_tcp_mtu_chg = rack_mtu_change,
-	.tfb_pru_options = rack_pru_options,
-
-};
 
 static const char *rack_stack_names[] = {
 	__XSTRING(STACKNAME),

@@ -1349,33 +1349,6 @@ vnlru_free_vfsops(int count, struct vfsops *mnt_op, struct vnode *mvp)
 	mtx_unlock(&vnode_list_mtx);
 }
 
-/*
- * Temporary binary compat, don't use. Call vnlru_free_vfsops instead.
- */
-void
-vnlru_free(int count, struct vfsops *mnt_op)
-{
-	struct vnode *mvp;
-
-	if (count == 0)
-		return;
-	mtx_lock(&vnode_list_mtx);
-	mvp = vnode_list_free_marker;
-	if (vnlru_free_impl(count, mnt_op, mvp) == 0) {
-		/*
-		 * It is possible the marker was moved over eligible vnodes by
-		 * callers which filtered by different ops. If so, start from
-		 * scratch.
-		 */
-		if (vnlru_read_freevnodes() > 0) {
-			TAILQ_REMOVE(&vnode_list, mvp, v_vnodelist);
-			TAILQ_INSERT_HEAD(&vnode_list, mvp, v_vnodelist);
-		}
-		vnlru_free_impl(count, mnt_op, mvp);
-	}
-	mtx_unlock(&vnode_list_mtx);
-}
-
 struct vnode *
 vnlru_alloc_marker(void)
 {
@@ -4464,8 +4437,6 @@ DB_SHOW_COMMAND(mount, db_show_mount)
 	    mp->mnt_lazyvnodelistsize);
 	db_printf("    mnt_writeopcount = %d (with %d in the struct)\n",
 	    vfs_mount_fetch_counter(mp, MNT_COUNT_WRITEOPCOUNT), mp->mnt_writeopcount);
-	db_printf("    mnt_maxsymlinklen = %jd\n",
-	    (uintmax_t)mp->mnt_maxsymlinklen);
 	db_printf("    mnt_iosize_max = %d\n", mp->mnt_iosize_max);
 	db_printf("    mnt_hashseed = %u\n", mp->mnt_hashseed);
 	db_printf("    mnt_lockref = %d (with %d in the struct)\n",
@@ -5184,14 +5155,10 @@ int
 vn_need_pageq_flush(struct vnode *vp)
 {
 	struct vm_object *obj;
-	int need;
 
-	MPASS(mtx_owned(VI_MTX(vp)));
-	need = 0;
-	if ((obj = vp->v_object) != NULL && (vp->v_vflag & VV_NOSYNC) == 0 &&
-	    vm_object_mightbedirty(obj))
-		need = 1;
-	return (need);
+	obj = vp->v_object;
+	return (obj != NULL && (vp->v_vflag & VV_NOSYNC) == 0 &&
+	    vm_object_mightbedirty(obj));
 }
 
 /*

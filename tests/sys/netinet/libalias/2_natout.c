@@ -1,66 +1,42 @@
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Copyright 2021 Lutz Donnerhacke
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above
+ *    copyright notice, this list of conditions and the following
+ *    disclaimer in the documentation and/or other materials provided
+ *    with the distribution.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+ * TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+ * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
 #include <atf-c.h>
 #include <alias.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "util.h"
-
-/* common ip ranges */
-static struct in_addr masq = { htonl(0x01020304) };
-static struct in_addr pub  = { htonl(0x0102dead) };
-static struct in_addr prv1 = { htonl(0x0a00dead) };
-static struct in_addr prv2 = { htonl(0xac10dead) };
-static struct in_addr prv3 = { htonl(0xc0a8dead) };
-static struct in_addr cgn  = { htonl(0x6440dead) };
-static struct in_addr ext  = { htonl(0x12345678) };
-
-#define NAT_CHECK(pip, src, msq)	do {	\
-	int res;				\
-	int len = ntohs(pip->ip_len);		\
-	struct in_addr dst = pip->ip_dst;	\
-	pip->ip_src = src;			\
-	res = LibAliasOut(la, pip, len);	\
-	ATF_CHECK_MSG(res == PKT_ALIAS_OK,	\
-	    ">%d< not met PKT_ALIAS_OK", res);	\
-	ATF_CHECK(addr_eq(msq, pip->ip_src));	\
-	ATF_CHECK(addr_eq(dst, pip->ip_dst));	\
-} while(0)
-
-#define NAT_FAIL(pip, src, dst)	do {		\
-	int res;				\
-	int len = ntohs(pip->ip_len);		\
-	pip->ip_src = src;			\
-	pip->ip_dst = dst;			\
-	res = LibAliasOut(la, pip, len);	\
-	ATF_CHECK_MSG(res != PKT_ALIAS_OK),	\
-	    ">%d< not met !PKT_ALIAS_OK", res);	\
-	ATF_CHECK(addr_eq(src, pip->ip_src));	\
-	ATF_CHECK(addr_eq(dst, pip->ip_dst));	\
-} while(0)
-
-#define UNNAT_CHECK(pip, src, dst, rel)	do {	\
-	int res;				\
-	int len = ntohs(pip->ip_len);		\
-	pip->ip_src = src;			\
-	pip->ip_dst = dst;			\
-	res = LibAliasIn(la, pip, len);		\
-	ATF_CHECK_MSG(res == PKT_ALIAS_OK,	\
-	    ">%d< not met PKT_ALIAS_OK", res);	\
-	ATF_CHECK(addr_eq(src, pip->ip_src));	\
-	ATF_CHECK(addr_eq(rel, pip->ip_dst));	\
-} while(0)
-
-#define UNNAT_FAIL(pip, src, dst)	do {	\
-	int res;				\
-	int len = ntohs(pip->ip_len);		\
-	pip->ip_src = src;			\
-	pip->ip_dst = dst;			\
-	res = LibAliasIn(la, pip, len);		\
-	ATF_CHECK_MSG(res != PKT_ALIAS_OK,	\
-	    ">%d< not met !PKT_ALIAS_OK", res);	\
-	ATF_CHECK(addr_eq(src, pip->ip_src));	\
-	ATF_CHECK(addr_eq(dst, pip->ip_dst));	\
-} while(0)
 
 ATF_TC_WITHOUT_HEAD(1_simplemasq);
 ATF_TC_BODY(1_simplemasq, dummy)
@@ -72,12 +48,12 @@ ATF_TC_BODY(1_simplemasq, dummy)
 	LibAliasSetAddress(la, masq);
 	LibAliasSetMode(la, 0, ~0);
 
-	pip = ip_packet(prv1, ext, 254, 64);
-	NAT_CHECK(pip, prv1, masq);
-	NAT_CHECK(pip, prv2, masq);
-	NAT_CHECK(pip, prv3, masq);
-	NAT_CHECK(pip, cgn,  masq);
-	NAT_CHECK(pip, pub,  masq);
+	pip = ip_packet(254, 64);
+	NAT_CHECK(pip, prv1, ext, masq);
+	NAT_CHECK(pip, prv2, ext, masq);
+	NAT_CHECK(pip, prv3, ext, masq);
+	NAT_CHECK(pip, cgn,  ext, masq);
+	NAT_CHECK(pip, pub,  ext, masq);
 
 	free(pip);
 	LibAliasUninit(la);
@@ -93,12 +69,12 @@ ATF_TC_BODY(2_unregistered, dummy)
 	LibAliasSetAddress(la, masq);
 	LibAliasSetMode(la, PKT_ALIAS_UNREGISTERED_ONLY, ~0);
 
-	pip = ip_packet(prv1, ext, 254, 64);
-	NAT_CHECK(pip, prv1, masq);
-	NAT_CHECK(pip, prv2, masq);
-	NAT_CHECK(pip, prv3, masq);
-	NAT_CHECK(pip, cgn,  cgn);
-	NAT_CHECK(pip, pub,  pub);
+	pip = ip_packet(254, 64);
+	NAT_CHECK(pip, prv1, ext, masq);
+	NAT_CHECK(pip, prv2, ext, masq);
+	NAT_CHECK(pip, prv3, ext, masq);
+	NAT_CHECK(pip, cgn,  ext, cgn);
+	NAT_CHECK(pip, pub,  ext, pub);
 
 	/*
 	 * State is only for new connections
@@ -106,11 +82,11 @@ ATF_TC_BODY(2_unregistered, dummy)
 	 * the mode setting should be ignored
 	 */
 	LibAliasSetMode(la, 0, PKT_ALIAS_UNREGISTERED_ONLY);
-	NAT_CHECK(pip, prv1, masq);
-	NAT_CHECK(pip, prv2, masq);
-	NAT_CHECK(pip, prv3, masq);
-	NAT_CHECK(pip, cgn,  cgn);
-	NAT_CHECK(pip, pub,  pub);
+	NAT_CHECK(pip, prv1, ext, masq);
+	NAT_CHECK(pip, prv2, ext, masq);
+	NAT_CHECK(pip, prv3, ext, masq);
+	NAT_CHECK(pip, cgn,  ext, cgn);
+	NAT_CHECK(pip, pub,  ext, pub);
 
 	free(pip);
 	LibAliasUninit(la);
@@ -126,12 +102,12 @@ ATF_TC_BODY(3_cgn, dummy)
 	LibAliasSetAddress(la, masq);
 	LibAliasSetMode(la, PKT_ALIAS_UNREGISTERED_CGN, ~0);
 
-	pip = ip_packet(prv1, ext, 254, 64);
-	NAT_CHECK(pip, prv1, masq);
-	NAT_CHECK(pip, prv2, masq);
-	NAT_CHECK(pip, prv3, masq);
-	NAT_CHECK(pip, cgn,  masq);
-	NAT_CHECK(pip, pub,  pub);
+	pip = ip_packet(254, 64);
+	NAT_CHECK(pip, prv1, ext, masq);
+	NAT_CHECK(pip, prv2, ext, masq);
+	NAT_CHECK(pip, prv3, ext, masq);
+	NAT_CHECK(pip, cgn,  ext, masq);
+	NAT_CHECK(pip, pub,  ext, pub);
 
 	/*
 	 * State is only for new connections
@@ -139,11 +115,11 @@ ATF_TC_BODY(3_cgn, dummy)
 	 * the mode setting should be ignored
 	 */
 	LibAliasSetMode(la, 0, PKT_ALIAS_UNREGISTERED_CGN);
-	NAT_CHECK(pip, prv1, masq);
-	NAT_CHECK(pip, prv2, masq);
-	NAT_CHECK(pip, prv3, masq);
-	NAT_CHECK(pip, cgn,  masq);
-	NAT_CHECK(pip, pub,  pub);
+	NAT_CHECK(pip, prv1, ext, masq);
+	NAT_CHECK(pip, prv2, ext, masq);
+	NAT_CHECK(pip, prv3, ext, masq);
+	NAT_CHECK(pip, cgn,  ext, masq);
+	NAT_CHECK(pip, pub,  ext, pub);
 
 	free(pip);
 	LibAliasUninit(la);
@@ -164,41 +140,27 @@ ATF_TC_BODY(4_udp, dummy)
 	LibAliasSetMode(la, 0, ~0);
 
 	/* Query from prv1 */
-	po = ip_packet(prv1, ext, 0, 64);
-	uo = set_udp(po, sport, dport);
-	NAT_CHECK(po, prv1, masq);
-	ATF_CHECK(uo->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(po->ip_dst, ext));
+	po = ip_packet(0, 64);
+	UDP_NAT_CHECK(po, uo, prv1, sport, ext, dport, masq);
 	aport = ntohs(uo->uh_sport);
 	/* should use a different external port */
 	ATF_CHECK(aport != sport);
 
 	/* Response */
-	pi = ip_packet(po->ip_dst, po->ip_src, 0, 64);
-	ui = set_udp(pi, ntohs(uo->uh_dport), ntohs(uo->uh_sport));
-	UNNAT_CHECK(pi, ext, masq, prv1);
-	ATF_CHECK(ui->uh_sport == htons(dport));
-	ATF_CHECK(ui->uh_dport == htons(sport));
+	pi = ip_packet(0, 64);
+	UDP_UNNAT_CHECK(pi, ui, ext, dport, masq, aport, prv1, sport);
 
 	/* Query from different source with same ports */
-	uo = set_udp(po, sport, dport);
-	NAT_CHECK(po, prv2, masq);
-	ATF_CHECK(uo->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(po->ip_dst, ext));
+	UDP_NAT_CHECK(po, uo, prv2, sport, ext, dport, masq);
 	/* should use a different external port */
 	ATF_CHECK(uo->uh_sport != htons(aport));
 
 	/* Response to prv2 */
 	ui->uh_dport = uo->uh_sport;
-	UNNAT_CHECK(pi, ext, masq, prv2);
-	ATF_CHECK(ui->uh_sport == htons(dport));
-	ATF_CHECK(ui->uh_dport == htons(sport));
+	UDP_UNNAT_CHECK(pi, ui, ext, dport, masq, htons(uo->uh_sport), prv2, sport);
 
 	/* Response to prv1 again */
-	ui->uh_dport = htons(aport);
-	UNNAT_CHECK(pi, ext, masq, prv1);
-	ATF_CHECK(ui->uh_sport == htons(dport));
-	ATF_CHECK(ui->uh_dport == htons(sport));
+	UDP_UNNAT_CHECK(pi, ui, ext, dport, masq, aport, prv1, sport);
 
 	free(pi);
 	free(po);
@@ -220,20 +182,14 @@ ATF_TC_BODY(5_sameport, dummy)
 	LibAliasSetMode(la, PKT_ALIAS_SAME_PORTS, ~0);
 
 	/* Query from prv1 */
-	p = ip_packet(prv1, ext, 0, 64);
-	u = set_udp(p, sport, dport);
-	NAT_CHECK(p, prv1, masq);
-	ATF_CHECK(u->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(p->ip_dst, ext));
+	p = ip_packet(0, 64);
+	UDP_NAT_CHECK(p, u, prv1, sport, ext, dport, masq);
 	aport = ntohs(u->uh_sport);
 	/* should use the same external port */
 	ATF_CHECK(aport == sport);
 
 	/* Query from different source with same ports */
-	u = set_udp(p, sport, dport);
-	NAT_CHECK(p, prv2, masq);
-	ATF_CHECK(u->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(p->ip_dst, ext));
+	UDP_NAT_CHECK(p, u, prv2, sport, ext, dport, masq);
 	/* should use a different external port */
 	ATF_CHECK(u->uh_sport != htons(aport));
 
@@ -258,43 +214,30 @@ ATF_TC_BODY(6_cleartable, dummy)
 	LibAliasSetMode(la, PKT_ALIAS_DENY_INCOMING, PKT_ALIAS_DENY_INCOMING);
 
 	/* Query from prv1 */
-	po = ip_packet(prv1, ext, 0, 64);
-	uo = set_udp(po, sport, dport);
-	NAT_CHECK(po, prv1, masq);
-	ATF_CHECK(uo->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(po->ip_dst, ext));
+	po = ip_packet(0, 64);
+	UDP_NAT_CHECK(po, uo, prv1, sport, ext, dport, masq);
 	aport = ntohs(uo->uh_sport);
 	/* should use the same external port */
 	ATF_CHECK(aport == sport);
 
 	/* Response */
-	pi = ip_packet(po->ip_dst, po->ip_src, 0, 64);
-	ui = set_udp(pi, ntohs(uo->uh_dport), ntohs(uo->uh_sport));
-	UNNAT_CHECK(pi, ext, masq, prv1);
-	ATF_CHECK(ui->uh_sport == htons(dport));
-	ATF_CHECK(ui->uh_dport == htons(sport));
+	pi = ip_packet(0, 64);
+	UDP_UNNAT_CHECK(po, uo, ext, dport, masq, aport, prv1, sport);
 
 	/* clear table by keeping the address */
 	LibAliasSetAddress(la, ext);
 	LibAliasSetAddress(la, masq);
 
 	/* Response to prv1 again -> DENY_INCOMING */
-	ui->uh_dport = htons(aport);
-	UNNAT_FAIL(pi, ext, masq);
+	UDP_UNNAT_FAIL(pi, ui, ext, dport, masq, aport);
 
 	/* Query from different source with same ports */
-	uo = set_udp(po, sport, dport);
-	NAT_CHECK(po, prv2, masq);
-	ATF_CHECK(uo->uh_dport == htons(dport));
-	ATF_CHECK(addr_eq(po->ip_dst, ext));
+	UDP_NAT_CHECK(po, uo, prv2, sport, ext, dport, masq);
 	/* should use the same external port, because it's free */
 	ATF_CHECK(uo->uh_sport == htons(aport));
 
 	/* Response to prv2 */
-	ui->uh_dport = uo->uh_sport;
-	UNNAT_CHECK(pi, ext, masq, prv2);
-	ATF_CHECK(ui->uh_sport == htons(dport));
-	ATF_CHECK(ui->uh_dport == htons(sport));
+	UDP_UNNAT_CHECK(po, uo, ext, dport, masq, htons(uo->uh_sport), prv2, sport);
 
 	free(pi);
 	free(po);
@@ -311,15 +254,14 @@ ATF_TC_BODY(7_stress, dummy)
 		struct in_addr src, dst;
 		uint16_t sport, dport, aport;
 	} *batch;
-	size_t const batch_size = 12000;
+	size_t const batch_size = 1200;
 	size_t const rounds = 25;
 	size_t i, j;
 
 	ATF_REQUIRE(la != NULL);
 	LibAliasSetAddress(la, masq);
 
-	p = ip_packet(prv1, ext, 0, 64);
-	u = set_udp(p, 0, 0);
+	p = ip_packet(0, 64);
 
 	batch = calloc(batch_size, sizeof(*batch));
 	ATF_REQUIRE(batch != NULL);
@@ -341,21 +283,20 @@ ATF_TC_BODY(7_stress, dummy)
 		}
 
 		for (i = 0; i < batch_size; i++) {
-			p->ip_dst = batch[i].dst;
-			u = set_udp(p, batch[i].sport, batch[i].dport);
-			NAT_CHECK(p, batch[i].src, masq);
-			ATF_CHECK(u->uh_dport == htons(batch[i].dport));
-			ATF_CHECK(addr_eq(p->ip_dst, batch[i].dst));
+			UDP_NAT_CHECK(p, u,
+			    batch[i].src, batch[i].sport,
+			    batch[i].dst, batch[i].dport,
+			    masq);
 			batch[i].aport = htons(u->uh_sport);
 		}
 
 		qsort(batch, batch_size, sizeof(*batch), randcmp);
 
 		for (i = 0; i < batch_size; i++) {
-			u = set_udp(p, batch[i].dport, batch[i].aport);
-			UNNAT_CHECK(p, batch[i].dst, masq, batch[i].src);
-			ATF_CHECK(u->uh_dport == htons(batch[i].sport));
-			ATF_CHECK(u->uh_sport == htons(batch[i].dport));
+			UDP_UNNAT_CHECK(p, u,
+			    batch[i].dst,  batch[i].dport,
+			    masq, batch[i].aport,
+			    batch[i].src, batch[i].sport);
 		}
 	}
 

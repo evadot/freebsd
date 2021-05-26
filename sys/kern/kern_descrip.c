@@ -79,9 +79,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/unistd.h>
 #include <sys/user.h>
 #include <sys/vnode.h>
-#ifdef KTRACE
 #include <sys/ktrace.h>
-#endif
 
 #include <net/vnet.h>
 
@@ -4363,9 +4361,7 @@ kern_proc_filedesc_out(struct proc *p,  struct sbuf *sb, ssize_t maxlen,
 	PROC_LOCK_ASSERT(p, MA_OWNED);
 
 	/* ktrace vnode */
-	tracevp = p->p_tracevp;
-	if (tracevp != NULL)
-		vrefact(tracevp);
+	tracevp = ktr_get_tracevp(p, true);
 	/* text vnode */
 	textvp = p->p_textvp;
 	if (textvp != NULL)
@@ -4405,17 +4401,20 @@ kern_proc_filedesc_out(struct proc *p,  struct sbuf *sb, ssize_t maxlen,
 		/* working directory */
 		if (pwd->pwd_cdir != NULL) {
 			vrefact(pwd->pwd_cdir);
-			export_vnode_to_sb(pwd->pwd_cdir, KF_FD_TYPE_CWD, FREAD, efbuf);
+			export_vnode_to_sb(pwd->pwd_cdir, KF_FD_TYPE_CWD,
+			    FREAD, efbuf);
 		}
 		/* root directory */
 		if (pwd->pwd_rdir != NULL) {
 			vrefact(pwd->pwd_rdir);
-			export_vnode_to_sb(pwd->pwd_rdir, KF_FD_TYPE_ROOT, FREAD, efbuf);
+			export_vnode_to_sb(pwd->pwd_rdir, KF_FD_TYPE_ROOT,
+			    FREAD, efbuf);
 		}
 		/* jail directory */
 		if (pwd->pwd_jdir != NULL) {
 			vrefact(pwd->pwd_jdir);
-			export_vnode_to_sb(pwd->pwd_jdir, KF_FD_TYPE_JAIL, FREAD, efbuf);
+			export_vnode_to_sb(pwd->pwd_jdir, KF_FD_TYPE_JAIL,
+			    FREAD, efbuf);
 		}
 	}
 	PWDDESC_XUNLOCK(pdp);

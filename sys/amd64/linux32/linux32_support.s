@@ -30,11 +30,15 @@
 
 #include "linux32_assym.h"		/* system definitions */
 #include <machine/asmacros.h>		/* miscellaneous asm macros */
+#include <machine/specialreg.h>
 
 #include "assym.inc"
 
 futex_fault:
-	movq	$0,PCB_ONFAULT(%r8)
+	testl	$CPUID_STDEXT_SMAP,cpu_stdext_feature(%rip)
+	je	1f
+	clac
+1:	movq	$0,PCB_ONFAULT(%r8)
 	movl	$-EFAULT,%eax
 	ret
 

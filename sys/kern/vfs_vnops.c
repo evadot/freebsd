@@ -79,6 +79,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/syslog.h>
 #include <sys/unistd.h>
 #include <sys/user.h>
+#include <sys/ktrace.h>
 
 #include <security/audit/audit.h>
 #include <security/mac/mac_framework.h>
@@ -2359,17 +2360,23 @@ int
 vn_rlimit_fsize(const struct vnode *vp, const struct uio *uio,
     struct thread *td)
 {
+	off_t lim;
+	bool ktr_write;
 
-	if (vp->v_type != VREG || td == NULL)
+	if (vp->v_type != VREG || td == NULL ||
+	    (td->td_pflags2 & TDP2_ACCT) != 0)
 		return (0);
-	if ((uoff_t)uio->uio_offset + uio->uio_resid >
-	    lim_cur(td, RLIMIT_FSIZE)) {
+	ktr_write = (td->td_pflags & TDP_INKTRACE) != 0;
+	lim = ktr_write ? td->td_ktr_io_lim : lim_cur(td, RLIMIT_FSIZE);
+	if ((uoff_t)uio->uio_offset + uio->uio_resid <= lim)
+		return (0);
+
+	if (!ktr_write || ktr_filesize_limit_signal) {
 		PROC_LOCK(td->td_proc);
 		kern_psignal(td->td_proc, SIGXFSZ);
 		PROC_UNLOCK(td->td_proc);
-		return (EFBIG);
 	}
-	return (0);
+	return (EFBIG);
 }
 
 int
