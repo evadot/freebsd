@@ -62,7 +62,7 @@ device		uinput			# install /dev/uinput cdev
 # Serial (COM) ports
 device		uart			# Generic UART driver
 device		uart_mu			# RPI3 aux port
-device		uart_snps
+device		pl011
 
 # PCI/PCI-X/PCIe Ethernet NICs that use iflib infrastructure
 device		iflib
