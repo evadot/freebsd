@@ -22,4 +22,5 @@ cpu		ARM64
 ident		VIRM
 
 include		"std.arm64"
+include		"std.dev"
 include		"std.virt"

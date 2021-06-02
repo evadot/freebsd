@@ -22,6 +22,7 @@ cpu		ARM64
 ident		GENERIC
 
 include		"std.arm64"
+include		"std.dev"
 
 # Include SoC specific configuration
 include		"std.al"

@@ -22,4 +22,5 @@ cpu		ARM64
 ident		ROCKCHIP
 
 include		"std.arm64"
+include		"std.dev"
 include		"std.rockchip"

@@ -22,4 +22,5 @@ cpu		ARM64
 ident		ALTERA
 
 include		"std.arm64"
+include		"std.dev"
 include		"std.altera"
