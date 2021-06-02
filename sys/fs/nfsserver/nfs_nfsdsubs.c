@@ -1890,7 +1890,8 @@ nfsrv_parsename(struct nfsrv_descript *nd, char *bufp, u_long *hashp,
 	 * For V4, check for lookup parent.
 	 * Otherwise, get the component name.
 	 */
-	if ((nd->nd_flag & ND_NFSV4) && nd->nd_procnum == NFSV4OP_LOOKUPP) {
+	if ((nd->nd_flag & ND_NFSV4) && (nd->nd_procnum == NFSV4OP_LOOKUPP ||
+	    nd->nd_procnum == NFSV4OP_SECINFONONAME)) {
 	    *tocp++ = '.';
 	    hash += ((u_char)'.');
 	    *tocp++ = '.';
@@ -2064,7 +2065,7 @@ nfsrv_parsename(struct nfsrv_descript *nd, char *bufp, u_long *hashp,
 	    }
 	}
 	*tocp = '\0';
-	*outlenp = (size_t)outlen;
+	*outlenp = (size_t)outlen + 1;
 	if (hashp != NULL)
 		*hashp = hash;
 nfsmout:

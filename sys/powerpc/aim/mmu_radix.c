@@ -2207,11 +2207,11 @@ mmu_radix_advise(pmap_t pmap, vm_offset_t sva, vm_offset_t eva,
 	pt_entry_t *pte;
 	vm_offset_t va, va_next;
 	vm_page_t m;
-	boolean_t anychanged;
+	bool anychanged;
 
 	if (advice != MADV_DONTNEED && advice != MADV_FREE)
 		return;
-	anychanged = FALSE;
+	anychanged = false;
 	PMAP_LOCK(pmap);
 	for (; sva < eva; sva = va_next) {
 		l1e = pmap_pml1e(pmap, sva);
@@ -2252,17 +2252,25 @@ mmu_radix_advise(pmap_t pmap, vm_offset_t sva, vm_offset_t eva,
 			/*
 			 * Unless the page mappings are wired, remove the
 			 * mapping to a single page so that a subsequent
-			 * access may repromote.  Since the underlying page
-			 * table page is fully populated, this removal never
-			 * frees a page table page.
+			 * access may repromote.  Choosing the last page
+			 * within the address range [sva, min(va_next, eva))
+			 * generally results in more repromotions.  Since the
+			 * underlying page table page is fully populated, this
+			 * removal never frees a page table page.
 			 */
 			if ((oldl3e & PG_W) == 0) {
-				pte = pmap_l3e_to_pte(l3e, sva);
+				va = eva;
+				if (va > va_next)
+					va = va_next;
+				va -= PAGE_SIZE;
+				KASSERT(va >= sva,
+				    ("mmu_radix_advise: no address gap"));
+				pte = pmap_l3e_to_pte(l3e, va);
 				KASSERT((be64toh(*pte) & PG_V) != 0,
 				    ("pmap_advise: invalid PTE"));
-				pmap_remove_pte(pmap, pte, sva, be64toh(*l3e), NULL,
+				pmap_remove_pte(pmap, pte, va, be64toh(*l3e), NULL,
 				    &lock);
-				anychanged = TRUE;
+				anychanged = true;
 			}
 			if (lock != NULL)
 				rw_wunlock(lock);
@@ -2291,7 +2299,7 @@ mmu_radix_advise(pmap_t pmap, vm_offset_t sva, vm_offset_t eva,
 				atomic_clear_long(pte, htobe64(PG_A));
 			else
 				goto maybe_invlrng;
-			anychanged = TRUE;
+			anychanged = true;
 			continue;
 maybe_invlrng:
 			if (va != va_next) {
@@ -2433,28 +2441,24 @@ restart:
 		va = pv->pv_va;
 		l3e = pmap_pml3e(pmap, va);
 		oldl3e = be64toh(*l3e);
-		if ((oldl3e & PG_RW) != 0) {
-			if (pmap_demote_l3e_locked(pmap, l3e, va, &lock)) {
-				if ((oldl3e & PG_W) == 0) {
-					/*
-					 * Write protect the mapping to a
-					 * single page so that a subsequent
-					 * write access may repromote.
-					 */
-					va += VM_PAGE_TO_PHYS(m) - (oldl3e &
-					    PG_PS_FRAME);
-					pte = pmap_l3e_to_pte(l3e, va);
-					oldpte = be64toh(*pte);
-					if ((oldpte & PG_V) != 0) {
-						while (!atomic_cmpset_long(pte,
-						    htobe64(oldpte),
-							htobe64((oldpte | RPTE_EAA_R) & ~(PG_M | PG_RW))))
-							   oldpte = be64toh(*pte);
-						vm_page_dirty(m);
-						pmap_invalidate_page(pmap, va);
-					}
-				}
-			}
+		if ((oldl3e & PG_RW) != 0 &&
+		    pmap_demote_l3e_locked(pmap, l3e, va, &lock) &&
+		    (oldl3e & PG_W) == 0) {
+			/*
+			 * Write protect the mapping to a
+			 * single page so that a subsequent
+			 * write access may repromote.
+			 */
+			va += VM_PAGE_TO_PHYS(m) - (oldl3e &
+			    PG_PS_FRAME);
+			pte = pmap_l3e_to_pte(l3e, va);
+			oldpte = be64toh(*pte);
+			while (!atomic_cmpset_long(pte,
+			    htobe64(oldpte),
+				htobe64((oldpte | RPTE_EAA_R) & ~(PG_M | PG_RW))))
+				   oldpte = be64toh(*pte);
+			vm_page_dirty(m);
+			pmap_invalidate_page(pmap, va);
 		}
 		PMAP_UNLOCK(pmap);
 	}
@@ -4722,7 +4726,7 @@ _pmap_unwire_ptp(pmap_t pmap, vm_offset_t va, vm_page_t m, struct spglist *free)
 	/*
 	 * unmap the page table page
 	 */
-	if (m->pindex >= (NUPDE + NUPDPE)) {
+	if (m->pindex >= NUPDE + NUPDPE) {
 		/* PDP page */
 		pml1_entry_t *pml1;
 		pml1 = pmap_pml1e(pmap, va);
@@ -4746,7 +4750,7 @@ _pmap_unwire_ptp(pmap_t pmap, vm_offset_t va, vm_page_t m, struct spglist *free)
 		pdpg = PHYS_TO_VM_PAGE(be64toh(*pmap_pml2e(pmap, va)) & PG_FRAME);
 		pmap_unwire_ptp(pmap, va, pdpg, free);
 	}
-	if (m->pindex >= NUPDE && m->pindex < (NUPDE + NUPDPE)) {
+	else if (m->pindex >= NUPDE && m->pindex < (NUPDE + NUPDPE)) {
 		/* We just released a PD, unhold the matching PDP */
 		vm_page_t pdppg;
 

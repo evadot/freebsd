@@ -913,6 +913,7 @@ extern pid_t pid_max;
 #define	PROC_TRYLOCK(p)	mtx_trylock(&(p)->p_mtx)
 #define	PROC_UNLOCK(p)	mtx_unlock(&(p)->p_mtx)
 #define	PROC_LOCKED(p)	mtx_owned(&(p)->p_mtx)
+#define	PROC_WAIT_UNLOCKED(p)	mtx_wait_unlocked(&(p)->p_mtx)
 #define	PROC_LOCK_ASSERT(p, type)	mtx_assert(&(p)->p_mtx, (type))
 
 /* Lock and unlock a process group. */
@@ -1188,6 +1189,7 @@ int	thread_create(struct thread *td, struct rtprio *rtp,
 void	thread_exit(void) __dead2;
 void	thread_free(struct thread *td);
 void	thread_link(struct thread *td, struct proc *p);
+void	thread_reap_barrier(void);
 int	thread_single(struct proc *p, int how);
 void	thread_single_end(struct proc *p, int how);
 void	thread_stash(struct thread *td);

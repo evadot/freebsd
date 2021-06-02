@@ -130,6 +130,7 @@ pfctl_nv_add_addr(nvlist_t *nvparent, const char *name,
 	nvlist_add_binary(nvl, "addr", addr, sizeof(*addr));
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -159,6 +160,7 @@ pfctl_nv_add_addr_wrap(nvlist_t *nvparent, const char *name,
 	pfctl_nv_add_addr(nvl, "mask", &addr->v.a.mask);
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -192,6 +194,7 @@ pfctl_nv_add_rule_addr(nvlist_t *nvparent, const char *name,
 	nvlist_add_number(nvl, "port_op", addr->port_op);
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -214,6 +217,7 @@ pfctl_nv_add_mape(nvlist_t *nvparent, const char *name,
 	nvlist_add_number(nvl, "psidlen", mape->psidlen);
 	nvlist_add_number(nvl, "psid", mape->psid);
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -234,6 +238,7 @@ pfctl_nv_add_pool(nvlist_t *nvparent, const char *name,
 	pfctl_nv_add_mape(nvl, "mape", &pool->mape);
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -277,6 +282,7 @@ pfctl_nv_add_uid(nvlist_t *nvparent, const char *name,
 	nvlist_add_number(nvl, "op", uid->op);
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -296,6 +302,7 @@ pfctl_nv_add_divert(nvlist_t *nvparent, const char *name,
 	nvlist_add_number(nvl, "port", r->divert.port);
 
 	nvlist_add_nvlist(nvparent, name, nvl);
+	nvlist_destroy(nvl);
 }
 
 static void
@@ -511,6 +518,7 @@ pfctl_add_rule(int dev, const struct pfctl_rule *r, const char *anchor,
 	pfctl_nv_add_divert(nvlr, "divert", r);
 
 	nvlist_add_nvlist(nvl, "rule", nvlr);
+	nvlist_destroy(nvlr);
 
 	/* Now do the call. */
 	nv.data = nvlist_pack(nvl, &nv.len);
@@ -625,6 +633,7 @@ pfctl_nv_add_state_cmp(nvlist_t *nvl, const char *name,
 	nvlist_add_number(nv, "direction", cmp->direction);
 
 	nvlist_add_nvlist(nvl, name, nv);
+	nvlist_destroy(nv);
 }
 
 static void
@@ -722,9 +731,10 @@ int
 pfctl_get_states(int dev, struct pfctl_states *states)
 {
 	struct pfioc_nv		 nv;
-	nvlist_t		*nvl;
+	nvlist_t		*nvl = NULL;
 	const nvlist_t * const	*slist;
 	size_t			 found_count;
+	int			 error = 0;
 
 	bzero(states, sizeof(*states));
 	TAILQ_INIT(&states->states);
@@ -735,14 +745,14 @@ pfctl_get_states(int dev, struct pfctl_states *states)
 
 	for (;;) {
 		if (ioctl(dev, DIOCGETSTATESNV, &nv)) {
-			free(nv.data);
-			return (errno);
+			error = errno;
+			goto out;
 		}
 
 		nvl = nvlist_unpack(nv.data, nv.len, 0);
 		if (nvl == NULL) {
-			free(nv.data);
-			return (EIO);
+			error = EIO;
+			goto out;
 		}
 
 		states->count = nvlist_get_number(nvl, "count");
@@ -767,8 +777,10 @@ pfctl_get_states(int dev, struct pfctl_states *states)
 			nv.data = realloc(nv.data, new_size);
 			nv.size = new_size;
 
-			if (nv.data == NULL)
-				return (ENOMEM);
+			if (nv.data == NULL) {
+				error = ENOMEM;
+				goto out;
+			}
 			continue;
 		}
 
@@ -776,9 +788,8 @@ pfctl_get_states(int dev, struct pfctl_states *states)
 			struct pfctl_state *s = malloc(sizeof(*s));
 			if (s == NULL) {
 				pfctl_free_states(states);
-				nvlist_destroy(nvl);
-				free(nv.data);
-				return (ENOMEM);
+				error = ENOMEM;
+				goto out;
 			}
 
 			pf_nvstate_to_state(slist[i], s);
@@ -787,7 +798,11 @@ pfctl_get_states(int dev, struct pfctl_states *states)
 		break;
 	}
 
-	return (0);
+out:
+	nvlist_destroy(nvl);
+	free(nv.data);
+
+	return (error);
 }
 
 void

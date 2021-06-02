@@ -41,6 +41,21 @@ __FBSDID("$FreeBSD$");
 
 #define	PF_NV_IMPL_UINT(fnname, type, max)					\
 	int									\
+	pf_nv ## fnname ## _opt(const nvlist_t *nvl, const char *name,		\
+	    type *val, type dflt)						\
+	{									\
+		uint64_t raw;							\
+		if (! nvlist_exists_number(nvl, name)) {			\
+			*val = dflt;						\
+			return (0);						\
+		}								\
+		raw = nvlist_get_number(nvl, name);				\
+		if (raw > max)							\
+			return (ERANGE);					\
+		*val = (type)raw;						\
+		return (0);							\
+	}									\
+	int									\
 	pf_nv ## fnname(const nvlist_t *nvl, const char *name, type *val)	\
 	{									\
 		uint64_t raw;							\
@@ -846,6 +861,7 @@ pf_state_key_to_nvstate_key(const struct pf_state_key *key)
 		if (tmp == NULL)
 			goto errout;
 		nvlist_append_nvlist_array(nvl, "addr", tmp);
+		nvlist_destroy(tmp);
 		nvlist_append_number_array(nvl, "port", key->port[i]);
 	}
 	nvlist_add_number(nvl, "af", key->af);

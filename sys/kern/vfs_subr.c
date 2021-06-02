@@ -2032,13 +2032,11 @@ bufobj_invalbuf(struct bufobj *bo, int flags, int slpflag, int slptimeo)
 			} while (error == ERELOOKUP);
 			if (error != 0)
 				return (error);
-			/*
-			 * XXX We could save a lock/unlock if this was only
-			 * enabled under INVARIANTS
-			 */
 			BO_LOCK(bo);
-			if (bo->bo_numoutput > 0 || bo->bo_dirty.bv_cnt > 0)
-				panic("vinvalbuf: dirty bufs");
+			if (bo->bo_numoutput > 0 || bo->bo_dirty.bv_cnt > 0) {
+				BO_UNLOCK(bo);
+				return (EBUSY);
+			}
 		}
 	}
 	/*
@@ -6861,23 +6859,15 @@ vn_dir_check_exec(struct vnode *vp, struct componentname *cnp)
  * to prevent the vnode from getting freed.
  */
 void
-vn_seqc_write_begin_unheld_locked(struct vnode *vp)
-{
-
-	ASSERT_VI_LOCKED(vp, __func__);
-	VNPASS(vp->v_seqc_users >= 0, vp);
-	vp->v_seqc_users++;
-	if (vp->v_seqc_users == 1)
-		seqc_sleepable_write_begin(&vp->v_seqc);
-}
-
-void
 vn_seqc_write_begin_locked(struct vnode *vp)
 {
 
 	ASSERT_VI_LOCKED(vp, __func__);
 	VNPASS(vp->v_holdcnt > 0, vp);
-	vn_seqc_write_begin_unheld_locked(vp);
+	VNPASS(vp->v_seqc_users >= 0, vp);
+	vp->v_seqc_users++;
+	if (vp->v_seqc_users == 1)
+		seqc_sleepable_write_begin(&vp->v_seqc);
 }
 
 void
@@ -6886,15 +6876,6 @@ vn_seqc_write_begin(struct vnode *vp)
 
 	VI_LOCK(vp);
 	vn_seqc_write_begin_locked(vp);
-	VI_UNLOCK(vp);
-}
-
-void
-vn_seqc_write_begin_unheld(struct vnode *vp)
-{
-
-	VI_LOCK(vp);
-	vn_seqc_write_begin_unheld_locked(vp);
 	VI_UNLOCK(vp);
 }
 

@@ -3664,7 +3664,8 @@ nfsrvd_secinfo(struct nfsrv_descript *nd, int isdgram,
 	struct nfsrvfh fh;
 	struct nfsexstuff retnes;
 	u_int32_t *sizp;
-	int error = 0, savflag, i;
+	int error = 0, i;
+	uint64_t savflag;
 	char *bufp;
 	u_long *hashp;
 	struct thread *p = curthread;
@@ -3750,6 +3751,116 @@ nfsrvd_secinfo(struct nfsrv_descript *nd, int isdgram,
 	*sizp = txdr_unsigned(len);
 
 out:
+	NFSEXITCODE2(error, nd);
+	return (error);
+}
+
+/*
+ * nfsv4 security info no name service
+ */
+int
+nfsrvd_secinfononame(struct nfsrv_descript *nd, int isdgram,
+    vnode_t dp, struct nfsexstuff *exp)
+{
+	uint32_t *tl, *sizp;
+	struct nameidata named;
+	vnode_t dirp = NULL, vp;
+	struct nfsrvfh fh;
+	struct nfsexstuff retnes;
+	int error = 0, fhstyle, i, len;
+	uint64_t savflag;
+	char *bufp;
+	u_long *hashp;
+	struct thread *p = curthread;
+
+	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
+	fhstyle = fxdr_unsigned(int, *tl);
+	switch (fhstyle) {
+	case NFSSECINFONONAME_PARENT:
+		NFSNAMEICNDSET(&named.ni_cnd, nd->nd_cred, LOOKUP,
+		    LOCKLEAF | SAVESTART);
+		nfsvno_setpathbuf(&named, &bufp, &hashp);
+		error = nfsrv_parsename(nd, bufp, hashp, &named.ni_pathlen);
+		if (error != 0) {
+			vput(dp);
+			nfsvno_relpathbuf(&named);
+			goto nfsmout;
+		}
+		if (nd->nd_repstat == 0)
+			nd->nd_repstat = nfsvno_namei(nd, &named, dp, 1, exp, p, &dirp);
+		else
+			vput(dp);
+		if (dirp != NULL)
+			vrele(dirp);
+		vrele(named.ni_startdir);
+		nfsvno_relpathbuf(&named);
+		vp = named.ni_vp;
+		break;
+	case NFSSECINFONONAME_CURFH:
+		vp = dp;
+		break;
+	default:
+		nd->nd_repstat = NFSERR_INVAL;
+		vput(dp);
+	}
+	if (nd->nd_repstat != 0)
+		goto nfsmout;
+	fh.nfsrvfh_len = NFSX_MYFH;
+	nd->nd_repstat = nfsvno_getfh(vp, (fhandle_t *)fh.nfsrvfh_data, p);
+	vput(vp);
+	savflag = nd->nd_flag;
+	if (nd->nd_repstat == 0) {
+		nfsd_fhtovp(nd, &fh, LK_SHARED, &vp, &retnes, NULL, 0);
+		if (vp != NULL)
+			vput(vp);
+	}
+	nd->nd_flag = savflag;
+	if (nd->nd_repstat != 0)
+		goto nfsmout;
+
+	/*
+	 * Finally have the export flags for fh/parent, so we can create
+	 * the security info.
+	 */
+	len = 0;
+	NFSM_BUILD(sizp, uint32_t *, NFSX_UNSIGNED);
+	for (i = 0; i < retnes.nes_numsecflavor; i++) {
+		if (retnes.nes_secflavors[i] == AUTH_SYS) {
+			NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
+			*tl = txdr_unsigned(RPCAUTH_UNIX);
+			len++;
+		} else if (retnes.nes_secflavors[i] == RPCSEC_GSS_KRB5) {
+			NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
+			*tl = txdr_unsigned(RPCAUTH_GSS);
+			nfsm_strtom(nd, nfsgss_mechlist[KERBV_MECH].str,
+			    nfsgss_mechlist[KERBV_MECH].len);
+			NFSM_BUILD(tl, uint32_t *, 2 * NFSX_UNSIGNED);
+			*tl++ = txdr_unsigned(GSS_KERBV_QOP);
+			*tl = txdr_unsigned(RPCAUTHGSS_SVCNONE);
+			len++;
+		} else if (retnes.nes_secflavors[i] == RPCSEC_GSS_KRB5I) {
+			NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
+			*tl = txdr_unsigned(RPCAUTH_GSS);
+			nfsm_strtom(nd, nfsgss_mechlist[KERBV_MECH].str,
+			    nfsgss_mechlist[KERBV_MECH].len);
+			NFSM_BUILD(tl, uint32_t *, 2 * NFSX_UNSIGNED);
+			*tl++ = txdr_unsigned(GSS_KERBV_QOP);
+			*tl = txdr_unsigned(RPCAUTHGSS_SVCINTEGRITY);
+			len++;
+		} else if (retnes.nes_secflavors[i] == RPCSEC_GSS_KRB5P) {
+			NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
+			*tl = txdr_unsigned(RPCAUTH_GSS);
+			nfsm_strtom(nd, nfsgss_mechlist[KERBV_MECH].str,
+			    nfsgss_mechlist[KERBV_MECH].len);
+			NFSM_BUILD(tl, uint32_t *, 2 * NFSX_UNSIGNED);
+			*tl++ = txdr_unsigned(GSS_KERBV_QOP);
+			*tl = txdr_unsigned(RPCAUTHGSS_SVCPRIVACY);
+			len++;
+		}
+	}
+	*sizp = txdr_unsigned(len);
+
+nfsmout:
 	NFSEXITCODE2(error, nd);
 	return (error);
 }
@@ -4412,10 +4523,6 @@ nfsrvd_reclaimcomplete(struct nfsrv_descript *nd, __unused int isdgram,
 	uint32_t *tl;
 	int error = 0, onefs;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
 	/*
 	 * I believe that a ReclaimComplete with rca_one_fs == TRUE is only
@@ -4533,10 +4640,6 @@ nfsrvd_freestateid(struct nfsrv_descript *nd, __unused int isdgram,
 	int error = 0;
 	struct thread *p = curthread;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_STATEID);
 	stateid.seqid = fxdr_unsigned(uint32_t, *tl++);
 	NFSBCOPY(tl, stateid.other, NFSX_STATEIDOTHER);
@@ -4583,10 +4686,6 @@ nfsrvd_layoutget(struct nfsrv_descript *nd, __unused int isdgram,
 	char *layp;
 	struct thread *p = curthread;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 4 * NFSX_UNSIGNED + 3 * NFSX_HYPER +
 	    NFSX_STATEID);
 	tl++;		/* Signal layout available. Ignore for now. */
@@ -4684,10 +4783,6 @@ nfsrvd_layoutcommit(struct nfsrv_descript *nd, __unused int isdgram,
 	struct thread *p = curthread;
 
 	layp = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED + 2 * NFSX_HYPER +
 	    NFSX_STATEID);
 	offset = fxdr_hyper(tl); tl += 2;
@@ -4767,10 +4862,6 @@ nfsrvd_layoutreturn(struct nfsrv_descript *nd, __unused int isdgram,
 	struct thread *p = curthread;
 
 	layp = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 4 * NFSX_UNSIGNED);
 	reclaim = *tl++;
 	layouttype = fxdr_unsigned(int, *tl++);
@@ -4853,10 +4944,6 @@ nfsrvd_layouterror(struct nfsrv_descript *nd, __unused int isdgram,
 	char devid[NFSX_V4DEVICEID];
 	uint64_t offset, len;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_HYPER + NFSX_STATEID +
 	    NFSX_UNSIGNED);
 	offset = fxdr_hyper(tl); tl += 2;
@@ -4921,10 +5008,6 @@ nfsrvd_layoutstats(struct nfsrv_descript *nd, __unused int isdgram,
 	uint64_t offset, len, readcount, readbytes, writecount, writebytes
 	    __unused;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 6 * NFSX_HYPER + NFSX_STATEID +
 	    NFSX_V4DEVICEID + 2 * NFSX_UNSIGNED);
 	offset = fxdr_hyper(tl); tl += 2;
@@ -4981,10 +5064,6 @@ nfsrvd_ioadvise(struct nfsrv_descript *nd, __unused int isdgram,
 	int error = 0, ret;
 	off_t offset, len;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_STATEID + 2 * NFSX_HYPER);
 	stateid.seqid = fxdr_unsigned(uint32_t, *tl++);
 	NFSBCOPY(tl, stateid.other, NFSX_STATEIDOTHER);
@@ -5074,10 +5153,6 @@ nfsrvd_getdevinfo(struct nfsrv_descript *nd, __unused int isdgram,
 	char devid[NFSX_V4DEVICEID], *devaddr;
 	time_t dev_time;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 3 * NFSX_UNSIGNED + NFSX_V4DEVICEID);
 	NFSBCOPY(tl, devid, NFSX_V4DEVICEID);
 	tl += (NFSX_V4DEVICEID / NFSX_UNSIGNED);
@@ -5146,10 +5221,6 @@ nfsrvd_teststateid(struct nfsrv_descript *nd, __unused int isdgram,
 	int cnt, error = 0, i, ret;
 	struct thread *p = curthread;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
 	cnt = fxdr_unsigned(int, *tl);
 	if (cnt <= 0 || cnt > 1024) {
@@ -5196,10 +5267,6 @@ nfsrvd_allocate(struct nfsrv_descript *nd, __unused int isdgram,
 	nfsquad_t clientid;
 	nfsattrbit_t attrbits;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	gotproxystateid = 0;
 	NFSM_DISSECT(tl, uint32_t *, NFSX_STATEID + 2 * NFSX_HYPER);
 	stp->ls_flags = (NFSLCK_CHECK | NFSLCK_WRITEACCESS);
@@ -5293,10 +5360,6 @@ nfsrvd_copy_file_range(struct nfsrv_descript *nd, __unused int isdgram,
 	void *rl_rcookie, *rl_wcookie;
 
 	rl_rcookie = rl_wcookie = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	if (nfsrv_devidcnt > 0) {
 		/*
 		 * For a pNFS server, reply NFSERR_NOTSUPP so that the client
@@ -5523,10 +5586,6 @@ nfsrvd_seek(struct nfsrv_descript *nd, __unused int isdgram,
 	nfsattrbit_t attrbits;
 	bool eof;
 
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_STATEID + NFSX_HYPER + NFSX_UNSIGNED);
 	/* Ignore the stateid for now. */
 	tl += (NFSX_STATEID / NFSX_UNSIGNED);
@@ -5596,10 +5655,6 @@ nfsrvd_getxattr(struct nfsrv_descript *nd, __unused int isdgram,
 	uint16_t off;
 
 	error = 0;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
 	len = fxdr_unsigned(int, *tl);
 	if (len <= 0) {
@@ -5668,10 +5723,6 @@ nfsrvd_setxattr(struct nfsrv_descript *nd, __unused int isdgram,
 
 	error = 0;
 	name = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED);
 	opt = fxdr_unsigned(int, *tl++);
 	len = fxdr_unsigned(int, *tl);
@@ -5761,10 +5812,6 @@ nfsrvd_rmxattr(struct nfsrv_descript *nd, __unused int isdgram,
 
 	error = 0;
 	name = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_UNSIGNED);
 	len = fxdr_unsigned(int, *tl);
 	if (len <= 0) {
@@ -5831,10 +5878,6 @@ nfsrvd_listxattr(struct nfsrv_descript *nd, __unused int isdgram,
 
 	error = 0;
 	buf = NULL;
-	if (nfs_rootfhset == 0 || nfsd_checkrootexp(nd) != 0) {
-		nd->nd_repstat = NFSERR_WRONGSEC;
-		goto nfsmout;
-	}
 	NFSM_DISSECT(tl, uint32_t *, NFSX_HYPER + NFSX_UNSIGNED);
 	/*
 	 * The cookie doesn't need to be in net byte order, but FreeBSD

@@ -120,7 +120,6 @@ void	       *LibAliasGetFragment(struct libalias *, void *_ptr);
 int		LibAliasSaveFragment(struct libalias *, void *_ptr);
 
 /* Miscellaneous functions. */
-int		LibAliasCheckNewLink(struct libalias *);
 unsigned short	LibAliasInternetChecksum(struct libalias *, unsigned short *_ptr, int _nbytes);
 void		LibAliasSetTarget(struct libalias *, struct in_addr _target_addr);
 
