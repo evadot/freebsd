@@ -40,6 +40,18 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20210607: remove publickey(5) related programs
+OLD_FILES+=usr/bin/chkey
+OLD_FILES+=usr/bin/keylogin
+OLD_FILES+=usr/bin/keylogout
+OLD_FILES+=usr/sbin/keyserv
+OLD_FILES+=usr/bin/newkey
+OLD_FILES+=usr/share/man/man1/chkey.1.gz
+OLD_FILES+=usr/share/man/man1/keylogin.1.gz
+OLD_FILES+=usr/share/man/man1/keylogin.1.gz
+OLD_FILES+=usr/share/man/man5/publickey.5.gz
+OLD_FILES+=usr/share/man/man8/keyserv.1.gz
+
 # 20210426: remove unused libexec/rc.d/addswap
 OLD_FILES+=etc/rc.d/addswap
 
