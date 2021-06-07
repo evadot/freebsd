@@ -119,6 +119,7 @@ main(argc, argv)
 	register SVCXPRT *transp;
 	struct netconfig *nconf = NULL;
 
+	fprintf(stderr, "keyserv is deprecated and removed from FreeBSD 14.\n");
 	__key_encryptsession_pk_LOCAL = &key_encrypt_pk_2_svc_prog;
 	__key_decryptsession_pk_LOCAL = &key_decrypt_pk_2_svc_prog;
 	__key_gendes_LOCAL = &key_gen_1_svc_prog;
