@@ -11,10 +11,12 @@ device		uart_snps
 
 # Ethernet NICs
 device		re			# RealTek 8139C+/8169/8169S/8110S
-device		smc			# SMSC LAN91C111
 
 # USB support
 device		tegra210_xusb_fw	# Tegra XUSB firmware
+
+# USB NICs
+device		ure
 
 # MMC/SD/SDIO Card slot support
 device		sdhci
