@@ -253,6 +253,7 @@ dev/neta/if_mvneta_fdt.c			optional neta fdt
 dev/neta/if_mvneta.c				optional neta mdio mii
 
 dev/ofw/ofw_cpu.c				optional fdt
+dev/ofw/ofw_pci.c				optional fdt pci
 dev/ofw/ofw_pcib.c				optional fdt pci
 
 dev/pci/controller/pci_n1sdp.c			optional pci_n1sdp acpi
@@ -307,6 +308,7 @@ dev/vnic/lmac_if.m				optional inet | inet6 | vnic
 arm/allwinner/a10_timer.c			optional a10_timer fdt
 arm/allwinner/a10_codec.c			optional sound a10_codec
 arm/allwinner/a31_dmac.c			optional a31_dmac
+arm/allwinner/a33_codec.c			optional fdt sound a33_codec
 arm/allwinner/a64/sun50i_a64_acodec.c		optional fdt sound a64_codec
 arm/allwinner/sunxi_dma_if.m			optional a31_dmac
 arm/allwinner/aw_cir.c				optional evdev aw_cir fdt
