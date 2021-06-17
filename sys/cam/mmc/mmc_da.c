@@ -91,6 +91,37 @@ typedef enum {
 	SDDA_STATE_PART_SWITCH,
 } sdda_state;
 
+typedef enum {
+	INIT_START = 0,
+	INIT_DECODE_CARD,
+	INIT_GET_HOST_INFO,
+	INIT_SET_CARD_FREQ,
+	INIT_SET_HOST_FREQ,
+	INIT_SET_BUS_WIDTH,
+	INIT_CAM_ANNOUCE,
+	INIT_DONE,
+} init_action;
+
+static char *init_action_text[] = {
+	"INIT_DECODE_CARD",
+	"INIT_GET_HOST_INFO",
+	"INIT_SET_CARD_FREQ",
+	"INIT_SET_HOST_FREQ",
+	"INIT_SET_BUS_WIDTH"
+	"INIT_CAM_ANNOUCE",
+	"INIT_DONE",
+};
+
+#define INIT_SET_ACTION(softc, newaction)	\
+do {									\
+	char **text;							\
+	text = init_action_text;					\
+	CAM_DEBUG((softc)->periph->path, CAM_DEBUG_PROBE,		\
+	    ("Init %s to %s\n", text[(softc)->action],			\
+	    text[(newaction)]));					\
+	(softc)->action = (newaction);					\
+} while(0)
+
 #define	SDDA_FMT_BOOT		"sdda%dboot"
 #define	SDDA_FMT_GP		"sdda%dgp"
 #define	SDDA_FMT_RPMB		"sdda%drpmb"
@@ -112,6 +143,7 @@ struct sdda_part {
 };
 
 struct sdda_softc {
+	init_action	action;
 	int	 outstanding_cmds;	/* Number of active commands */
 	int	 refcount;		/* Active xpt_action() calls */
 	sdda_state state;
@@ -1222,17 +1254,51 @@ sdda_get_max_data(struct cam_periph *periph, union ccb *ccb)
 }
 
 static void
-sdda_start_init(void *context, union ccb *start_ccb)
+sdda_card_done(struct cam_periph *periph, union ccb *done_ccb)
 {
-	struct cam_periph *periph = (struct cam_periph *)context;
+	struct sdda_softc *softc;
+
+	softc = (struct sdda_softc *)periph->softc;
+
+	CAM_DEBUG(done_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("sdda_card_done\n"));
+
+	switch (softc->action) {
+	case INIT_START:
+	case INIT_DECODE_CARD:
+		INIT_SET_ACTION(softc, INIT_GET_HOST_INFO);
+		break;
+	case INIT_GET_HOST_INFO:
+		INIT_SET_ACTION(softc, INIT_SET_CARD_FREQ);
+		break;
+	case INIT_SET_CARD_FREQ:
+		INIT_SET_ACTION(softc, INIT_DONE);
+	default:
+		panic("Default switch done\n");
+	}
+}
+
+static inline void
+init_standard_ccb(union ccb *ccb, uint32_t cmd)
+{
+
+	ccb->ccb_h.func_code = cmd;
+	ccb->ccb_h.flags = CAM_DIR_OUT;
+	ccb->ccb_h.retry_count = 0;
+	ccb->ccb_h.timeout = 15 * 1000;
+	ccb->ccb_h.cbfcnp = sdda_card_done;
+}
+
+static void
+sdda_card_init(struct cam_periph *periph, union ccb *start_ccb)
+{
 	struct ccb_trans_settings_mmc *cts;
 	uint32_t host_caps;
 	uint32_t sec_count;
 	int err;
 	int host_f_max;
-	uint8_t card_type;
+	/* uint8_t card_type; */
 
-	CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("sdda_start_init\n"));
+	CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("sdda_card_init\n"));
 	/* periph was held for us when this task was enqueued */
 	if ((periph->flags & CAM_PERIPH_INVALID) != 0) {
 		cam_periph_release(periph);
@@ -1243,265 +1309,308 @@ sdda_start_init(void *context, union ccb *start_ccb)
 	struct mmc_params *mmcp = &periph->path->device->mmc_ident_data;
 	struct cam_ed *device = periph->path->device;
 
-	if (mmcp->card_features & CARD_FEATURE_MMC) {
-		mmc_decode_csd_mmc(mmcp->card_csd, &softc->csd);
-		mmc_decode_cid_mmc(mmcp->card_cid, &softc->cid);
-		if (mmc_get_spec_vers(periph) >= 4) {
-			err = mmc_send_ext_csd(periph, start_ccb,
-					       (uint8_t *)&softc->raw_ext_csd,
-					       sizeof(softc->raw_ext_csd));
-			if (err != 0) {
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
-				    ("Cannot read EXT_CSD, err %d", err));
-				return;
-			}
-		}
-	} else {
-		mmc_decode_csd_sd(mmcp->card_csd, &softc->csd);
-		mmc_decode_cid_sd(mmcp->card_cid, &softc->cid);
-	}
+	switch (softc->action) {
+	case INIT_START:
+		CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("init start\n"));
+		softc->action = INIT_DECODE_CARD;
+		/* FALLTHROUGH */
+	case INIT_DECODE_CARD:
+		CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("decoding card info\n"));
+		init_standard_ccb(start_ccb, XPT_MMC_GET_TRAN_SETTINGS);
 
-	softc->sector_count = softc->csd.capacity / 512;
-	softc->mediasize = softc->csd.capacity;
-	softc->cmd6_time = mmc_get_cmd6_timeout(periph);
-
-	/* MMC >= 4.x have EXT_CSD that has its own opinion about capacity */
-	if (mmc_get_spec_vers(periph) >= 4) {
-		sec_count = softc->raw_ext_csd[EXT_CSD_SEC_CNT] +
-		    (softc->raw_ext_csd[EXT_CSD_SEC_CNT + 1] << 8) +
-		    (softc->raw_ext_csd[EXT_CSD_SEC_CNT + 2] << 16) +
-		    (softc->raw_ext_csd[EXT_CSD_SEC_CNT + 3] << 24);
-		if (sec_count != 0) {
-			softc->sector_count = sec_count;
-			softc->mediasize = softc->sector_count * 512;
-			/* FIXME: there should be a better name for this option...*/
-			mmcp->card_features |= CARD_FEATURE_SDHC;
-		}
-	}
-	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
-	    ("Capacity: %"PRIu64", sectors: %"PRIu64"\n",
-		softc->mediasize,
-		softc->sector_count));
-	mmc_format_card_id_string(softc, mmcp);
-
-	/* Update info for CAM */
-	device->serial_num_len = strlen(softc->card_sn_string);
-	device->serial_num = (u_int8_t *)malloc((device->serial_num_len + 1),
-	    M_CAMXPT, M_NOWAIT);
-	strlcpy(device->serial_num, softc->card_sn_string, device->serial_num_len + 1);
-
-	device->device_id_len = strlen(softc->card_id_string);
-	device->device_id = (u_int8_t *)malloc((device->device_id_len + 1),
-	    M_CAMXPT, M_NOWAIT);
-	strlcpy(device->device_id, softc->card_id_string, device->device_id_len + 1);
-
-	strlcpy(mmcp->model, softc->card_id_string, sizeof(mmcp->model));
-
-	/* Set the clock frequency that the card can handle */
-	cts = &start_ccb->cts.proto_specific.mmc;
-
-	/* First, get the host's max freq */
-	start_ccb->ccb_h.func_code = XPT_GET_TRAN_SETTINGS;
-	start_ccb->ccb_h.flags = CAM_DIR_NONE;
-	start_ccb->ccb_h.retry_count = 0;
-	start_ccb->ccb_h.timeout = 100;
-	start_ccb->ccb_h.cbfcnp = NULL;
-	xpt_action(start_ccb);
-
-	if (start_ccb->ccb_h.status != CAM_REQ_CMP)
-		panic("Cannot get max host freq");
-	host_f_max = cts->host_f_max;
-	host_caps = cts->host_caps;
-	if (cts->ios.bus_width != bus_width_1)
-		panic("Bus width in ios is not 1-bit");
-
-	/* Now check if the card supports High-speed */
-	softc->card_f_max = softc->csd.tran_speed;
-
-	if (host_caps & MMC_CAP_HSPEED) {
-		/* Find out if the card supports High speed timing */
-		if (mmcp->card_features & CARD_FEATURE_SD20) {
-			/* Get and decode SCR */
-			uint32_t rawscr[2];
-			uint8_t res[64];
-			if (mmc_app_get_scr(periph, start_ccb, rawscr)) {
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Cannot get SCR\n"));
-				goto finish_hs_tests;
-			}
-			mmc_app_decode_scr(rawscr, &softc->scr);
-
-			if ((softc->scr.sda_vsn >= 1) && (softc->csd.ccc & (1<<10))) {
-				mmc_sd_switch(periph, start_ccb, SD_SWITCH_MODE_CHECK,
-					      SD_SWITCH_GROUP1, SD_SWITCH_NOCHANGE, res);
-				if (res[13] & 2) {
-					CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS\n"));
-					softc->card_f_max = SD_HS_MAX;
+		if (mmcp->card_features & CARD_FEATURE_MMC) {
+			mmc_decode_csd_mmc(mmcp->card_csd, &softc->csd);
+			mmc_decode_cid_mmc(mmcp->card_cid, &softc->cid);
+			if (mmc_get_spec_vers(periph) >= 4) {
+				err = mmc_send_ext_csd(periph, start_ccb,
+				  (uint8_t *)&softc->raw_ext_csd,
+				  sizeof(softc->raw_ext_csd));
+				if (err != 0) {
+					CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
+					  ("Cannot read EXT_CSD, err %d", err));
+					return;
 				}
-
-				/*
-				 * We deselect then reselect the card here.  Some cards
-				 * become unselected and timeout with the above two
-				 * commands, although the state tables / diagrams in the
-				 * standard suggest they go back to the transfer state.
-				 * Other cards don't become deselected, and if we
-				 * attempt to blindly re-select them, we get timeout
-				 * errors from some controllers.  So we deselect then
-				 * reselect to handle all situations.
-				 */
-				mmc_select_card(periph, start_ccb, 0);
-				mmc_select_card(periph, start_ccb, get_rca(periph));
-			} else {
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Not trying the switch\n"));
-				goto finish_hs_tests;
 			}
-		}
-
-		if (mmcp->card_features & CARD_FEATURE_MMC && mmc_get_spec_vers(periph) >= 4) {
-			card_type = softc->raw_ext_csd[EXT_CSD_CARD_TYPE];
-			if (card_type & EXT_CSD_CARD_TYPE_HS_52)
-				softc->card_f_max = MMC_TYPE_HS_52_MAX;
-			else if (card_type & EXT_CSD_CARD_TYPE_HS_26)
-				softc->card_f_max = MMC_TYPE_HS_26_MAX;
-			if ((card_type & EXT_CSD_CARD_TYPE_DDR_52_1_2V) != 0 &&
-			    (host_caps & MMC_CAP_SIGNALING_120) != 0) {
-				setbit(&softc->timings, bus_timing_mmc_ddr52);
-				setbit(&softc->vccq_120, bus_timing_mmc_ddr52);
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports DDR52 at 1.2V\n"));
-			}
-			if ((card_type & EXT_CSD_CARD_TYPE_DDR_52_1_8V) != 0 &&
-			    (host_caps & MMC_CAP_SIGNALING_180) != 0) {
-				setbit(&softc->timings, bus_timing_mmc_ddr52);
-				setbit(&softc->vccq_180, bus_timing_mmc_ddr52);
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports DDR52 at 1.8V\n"));
-			}
-			if ((card_type & EXT_CSD_CARD_TYPE_HS200_1_2V) != 0 &&
-			    (host_caps & MMC_CAP_SIGNALING_120) != 0) {
-				setbit(&softc->timings, bus_timing_mmc_hs200);
-				setbit(&softc->vccq_120, bus_timing_mmc_hs200);
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS200 at 1.2V\n"));
-			}
-			if ((card_type & EXT_CSD_CARD_TYPE_HS200_1_8V) != 0 &&
-			    (host_caps & MMC_CAP_SIGNALING_180) != 0) {
-				setbit(&softc->timings, bus_timing_mmc_hs200);
-				setbit(&softc->vccq_180, bus_timing_mmc_hs200);
-				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS200 at 1.8V\n"));
-			}
-		}
-	}
-	int f_max;
-finish_hs_tests:
-	f_max = min(host_f_max, softc->card_f_max);
-	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Set SD freq to %d MHz (min out of host f=%d MHz and card f=%d MHz)\n", f_max  / 1000000, host_f_max / 1000000, softc->card_f_max / 1000000));
-
-	/* Enable high-speed timing on the card */
-	if (f_max > 25000000) {
-		err = mmc_set_timing(periph, start_ccb, bus_timing_hs);
-		if (err != MMC_ERR_NONE) {
-			CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("Cannot switch card to high-speed mode"));
-			f_max = 25000000;
-		}
-	}
-	/* If possible, set lower-level signaling */
-	enum mmc_bus_timing timing;
-	/* FIXME: MMCCAM supports max. bus_timing_mmc_ddr52 at the moment. */
-	for (timing = bus_timing_mmc_ddr52; timing > bus_timing_normal; timing--) {
-		if (isset(&softc->vccq_120, timing)) {
-			/* Set VCCQ = 1.2V */
-			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
-			start_ccb->ccb_h.flags = CAM_DIR_NONE;
-			start_ccb->ccb_h.retry_count = 0;
-			start_ccb->ccb_h.timeout = 100;
-			start_ccb->ccb_h.cbfcnp = NULL;
-			cts->ios.vccq = vccq_120;
-			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
-			break;
-		} else if (isset(&softc->vccq_180, timing)) {
-			/* Set VCCQ = 1.8V */
-			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
-			start_ccb->ccb_h.flags = CAM_DIR_NONE;
-			start_ccb->ccb_h.retry_count = 0;
-			start_ccb->ccb_h.timeout = 100;
-			start_ccb->ccb_h.cbfcnp = NULL;
-			cts->ios.vccq = vccq_180;
-			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
-			break;
 		} else {
-			/* Set VCCQ = 3.3V */
-			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
-			start_ccb->ccb_h.flags = CAM_DIR_NONE;
-			start_ccb->ccb_h.retry_count = 0;
-			start_ccb->ccb_h.timeout = 100;
-			start_ccb->ccb_h.cbfcnp = NULL;
-			cts->ios.vccq = vccq_330;
-			cts->ios_valid = MMC_VCCQ;
-			xpt_action(start_ccb);
-			break;
+			mmc_decode_csd_sd(mmcp->card_csd, &softc->csd);
+			mmc_decode_cid_sd(mmcp->card_cid, &softc->cid);
 		}
-	}
 
-	/* Set frequency on the controller */
-	start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
-	start_ccb->ccb_h.flags = CAM_DIR_NONE;
-	start_ccb->ccb_h.retry_count = 0;
-	start_ccb->ccb_h.timeout = 100;
-	start_ccb->ccb_h.cbfcnp = NULL;
-	cts->ios.clock = f_max;
-	cts->ios_valid = MMC_CLK;
+		softc->sector_count = softc->csd.capacity / 512;
+		softc->mediasize = softc->csd.capacity;
+		softc->cmd6_time = mmc_get_cmd6_timeout(periph);
+
+		/* MMC >= 4.x have EXT_CSD that has its own opinion about capacity */
+		if (mmc_get_spec_vers(periph) >= 4) {
+			sec_count = softc->raw_ext_csd[EXT_CSD_SEC_CNT] +
+				(softc->raw_ext_csd[EXT_CSD_SEC_CNT + 1] << 8) +
+				(softc->raw_ext_csd[EXT_CSD_SEC_CNT + 2] << 16) +
+				(softc->raw_ext_csd[EXT_CSD_SEC_CNT + 3] << 24);
+			if (sec_count != 0) {
+				softc->sector_count = sec_count;
+				softc->mediasize = softc->sector_count * 512;
+				/* FIXME: there should be a better name for this option...*/
+				mmcp->card_features |= CARD_FEATURE_SDHC;
+			}
+		}
+		CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
+		  ("Capacity: %"PRIu64", sectors: %"PRIu64"\n",
+		    softc->mediasize,
+		    softc->sector_count));
+		mmc_format_card_id_string(softc, mmcp);
+
+		/* Update info for CAM */
+		device->serial_num_len = strlen(softc->card_sn_string);
+		device->serial_num = (u_int8_t *)malloc((device->serial_num_len + 1),
+		  M_CAMXPT, M_NOWAIT);
+		strlcpy(device->serial_num, softc->card_sn_string, device->serial_num_len + 1);
+
+		device->device_id_len = strlen(softc->card_id_string);
+		device->device_id = (u_int8_t *)malloc((device->device_id_len + 1),
+		  M_CAMXPT, M_NOWAIT);
+		strlcpy(device->device_id, softc->card_id_string, device->device_id_len + 1);
+
+		strlcpy(mmcp->model, softc->card_id_string, sizeof(mmcp->model));
+		break;
+	case INIT_GET_HOST_INFO:
+		CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("getting host info\n"));
+		/* Set the clock frequency that the card can handle */
+		cts = &start_ccb->cts.proto_specific.mmc;
+
+		/* First, get the host's max freq */
+		start_ccb->ccb_h.func_code = XPT_MMC_GET_TRAN_SETTINGS;
+		start_ccb->ccb_h.flags = CAM_DIR_NONE;
+		start_ccb->ccb_h.retry_count = 0;
+		start_ccb->ccb_h.timeout = 100;
+		start_ccb->ccb_h.cbfcnp = NULL;
+		xpt_action(start_ccb);
+
+		if (start_ccb->ccb_h.status != CAM_REQ_CMP)
+			panic("Cannot get max host freq");
+		host_f_max = cts->host_f_max;
+		host_caps = cts->host_caps;
+		if (cts->ios.bus_width != bus_width_1)
+			panic("Bus width in ios is not 1-bit");
+		break;
+	default:
+		panic("Default switch\n");
+		break;
+	}
+	/* INIT_GET_HOST_INFO END */
+
+	/* start_ccb->ccb_h.flags |= CAM_DEV_QFREEZE; */
+	printf("%s: calling xpt_action for ccb %p with code %x\n", __func__, start_ccb, start_ccb->ccb_h.func_code );
 	xpt_action(start_ccb);
 
-	/* Set bus width */
-	enum mmc_bus_width desired_bus_width = bus_width_1;
-	enum mmc_bus_width max_host_bus_width =
-		(host_caps & MMC_CAP_8_BIT_DATA ? bus_width_8 :
-		 host_caps & MMC_CAP_4_BIT_DATA ? bus_width_4 : bus_width_1);
-	enum mmc_bus_width max_card_bus_width = bus_width_1;
-	if (mmcp->card_features & CARD_FEATURE_SD20 &&
-	    softc->scr.bus_widths & SD_SCR_BUS_WIDTH_4)
-		max_card_bus_width = bus_width_4;
-	/*
-	 * Unlike SD, MMC cards don't have any information about supported bus width...
-	 * So we need to perform read/write test to find out the width.
-	 */
-	/* TODO: figure out bus width for MMC; use 8-bit for now (to test on BBB) */
-	if (mmcp->card_features & CARD_FEATURE_MMC)
-		max_card_bus_width = bus_width_8;
+/* 	/\* INIT_SET_CARD_FREQ *\/ */
+/* 	/\* Now check if the card supports High-speed *\/ */
+/* 	softc->card_f_max = softc->csd.tran_speed; */
 
-	desired_bus_width = min(max_host_bus_width, max_card_bus_width);
-	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
-		  ("Set bus width to %s (min of host %s and card %s)\n",
-		   bus_width_str(desired_bus_width),
-		   bus_width_str(max_host_bus_width),
-		   bus_width_str(max_card_bus_width)));
-	sdda_set_bus_width(periph, start_ccb, desired_bus_width);
+/* 	if (host_caps & MMC_CAP_HSPEED) { */
+/* 		/\* Find out if the card supports High speed timing *\/ */
+/* 		if (mmcp->card_features & CARD_FEATURE_SD20) { */
+/* 			/\* Get and decode SCR *\/ */
+/* 			uint32_t rawscr[2]; */
+/* 			uint8_t res[64]; */
+/* 			if (mmc_app_get_scr(periph, start_ccb, rawscr)) { */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Cannot get SCR\n")); */
+/* 				goto finish_hs_tests; */
+/* 			} */
+/* 			mmc_app_decode_scr(rawscr, &softc->scr); */
 
-	softc->state = SDDA_STATE_NORMAL;
+/* 			if ((softc->scr.sda_vsn >= 1) && (softc->csd.ccc & (1<<10))) { */
+/* 				mmc_sd_switch(periph, start_ccb, SD_SWITCH_MODE_CHECK, */
+/* 					      SD_SWITCH_GROUP1, SD_SWITCH_NOCHANGE, res); */
+/* 				if (res[13] & 2) { */
+/* 					CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS\n")); */
+/* 					softc->card_f_max = SD_HS_MAX; */
+/* 				} */
 
-	cam_periph_unhold(periph);
-	/* MMC partitions support */
-	if (mmcp->card_features & CARD_FEATURE_MMC && mmc_get_spec_vers(periph) >= 4) {
-		sdda_process_mmc_partitions(periph, start_ccb);
-	} else if (mmcp->card_features & CARD_FEATURE_SD20) {
-		/* For SD[HC] cards, just add one partition that is the whole card */
-		if (sdda_add_part(periph, 0, "sdda",
-		    periph->unit_number,
-		    mmc_get_media_size(periph),
-		    sdda_get_read_only(periph, start_ccb)) == false)
-			return;
-		softc->part_curr = 0;
-	}
-	cam_periph_hold(periph, PRIBIO|PCATCH);
+/* 				/\* */
+/* 				 * We deselect then reselect the card here.  Some cards */
+/* 				 * become unselected and timeout with the above two */
+/* 				 * commands, although the state tables / diagrams in the */
+/* 				 * standard suggest they go back to the transfer state. */
+/* 				 * Other cards don't become deselected, and if we */
+/* 				 * attempt to blindly re-select them, we get timeout */
+/* 				 * errors from some controllers.  So we deselect then */
+/* 				 * reselect to handle all situations. */
+/* 				 *\/ */
+/* 				mmc_select_card(periph, start_ccb, 0); */
+/* 				mmc_select_card(periph, start_ccb, get_rca(periph)); */
+/* 			} else { */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Not trying the switch\n")); */
+/* 				goto finish_hs_tests; */
+/* 			} */
+/* 		} */
 
-	xpt_announce_periph(periph, softc->card_id_string);
-	/*
-	 * Add async callbacks for bus reset and bus device reset calls.
-	 * I don't bother checking if this fails as, in most cases,
-	 * the system will function just fine without them and the only
-	 * alternative would be to not attach the device on failure.
-	 */
-	xpt_register_async(AC_LOST_DEVICE | AC_GETDEV_CHANGED |
-	    AC_ADVINFO_CHANGED, sddaasync, periph, periph->path);
+/* 		if (mmcp->card_features & CARD_FEATURE_MMC && mmc_get_spec_vers(periph) >= 4) { */
+/* 			card_type = softc->raw_ext_csd[EXT_CSD_CARD_TYPE]; */
+/* 			if (card_type & EXT_CSD_CARD_TYPE_HS_52) */
+/* 				softc->card_f_max = MMC_TYPE_HS_52_MAX; */
+/* 			else if (card_type & EXT_CSD_CARD_TYPE_HS_26) */
+/* 				softc->card_f_max = MMC_TYPE_HS_26_MAX; */
+/* 			if ((card_type & EXT_CSD_CARD_TYPE_DDR_52_1_2V) != 0 && */
+/* 			    (host_caps & MMC_CAP_SIGNALING_120) != 0) { */
+/* 				setbit(&softc->timings, bus_timing_mmc_ddr52); */
+/* 				setbit(&softc->vccq_120, bus_timing_mmc_ddr52); */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports DDR52 at 1.2V\n")); */
+/* 			} */
+/* 			if ((card_type & EXT_CSD_CARD_TYPE_DDR_52_1_8V) != 0 && */
+/* 			    (host_caps & MMC_CAP_SIGNALING_180) != 0) { */
+/* 				setbit(&softc->timings, bus_timing_mmc_ddr52); */
+/* 				setbit(&softc->vccq_180, bus_timing_mmc_ddr52); */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports DDR52 at 1.8V\n")); */
+/* 			} */
+/* 			if ((card_type & EXT_CSD_CARD_TYPE_HS200_1_2V) != 0 && */
+/* 			    (host_caps & MMC_CAP_SIGNALING_120) != 0) { */
+/* 				setbit(&softc->timings, bus_timing_mmc_hs200); */
+/* 				setbit(&softc->vccq_120, bus_timing_mmc_hs200); */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS200 at 1.2V\n")); */
+/* 			} */
+/* 			if ((card_type & EXT_CSD_CARD_TYPE_HS200_1_8V) != 0 && */
+/* 			    (host_caps & MMC_CAP_SIGNALING_180) != 0) { */
+/* 				setbit(&softc->timings, bus_timing_mmc_hs200); */
+/* 				setbit(&softc->vccq_180, bus_timing_mmc_hs200); */
+/* 				CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card supports HS200 at 1.8V\n")); */
+/* 			} */
+/* 		} */
+/* 	} */
+/* 	int f_max; */
+/* finish_hs_tests: */
+/* 	f_max = min(host_f_max, softc->card_f_max); */
+/* 	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Set SD freq to %d MHz (min out of host f=%d MHz and card f=%d MHz)\n", f_max  / 1000000, host_f_max / 1000000, softc->card_f_max / 1000000)); */
+
+/* 	/\* Enable high-speed timing on the card *\/ */
+/* 	if (f_max > 25000000) { */
+/* 		err = mmc_set_timing(periph, start_ccb, bus_timing_hs); */
+/* 		if (err != MMC_ERR_NONE) { */
+/* 			CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("Cannot switch card to high-speed mode")); */
+/* 			f_max = 25000000; */
+/* 		} */
+/* 	} */
+/* 	/\* If possible, set lower-level signaling *\/ */
+/* 	enum mmc_bus_timing timing; */
+/* 	/\* FIXME: MMCCAM supports max. bus_timing_mmc_ddr52 at the moment. *\/ */
+/* 	for (timing = bus_timing_mmc_ddr52; timing > bus_timing_normal; timing--) { */
+/* 		if (isset(&softc->vccq_120, timing)) { */
+/* 			/\* Set VCCQ = 1.2V *\/ */
+/* 			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS; */
+/* 			start_ccb->ccb_h.flags = CAM_DIR_NONE; */
+/* 			start_ccb->ccb_h.retry_count = 0; */
+/* 			start_ccb->ccb_h.timeout = 100; */
+/* 			start_ccb->ccb_h.cbfcnp = NULL; */
+/* 			cts->ios.vccq = vccq_120; */
+/* 			cts->ios_valid = MMC_VCCQ; */
+/* 			xpt_action(start_ccb); */
+/* 			break; */
+/* 		} else if (isset(&softc->vccq_180, timing)) { */
+/* 			/\* Set VCCQ = 1.8V *\/ */
+/* 			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS; */
+/* 			start_ccb->ccb_h.flags = CAM_DIR_NONE; */
+/* 			start_ccb->ccb_h.retry_count = 0; */
+/* 			start_ccb->ccb_h.timeout = 100; */
+/* 			start_ccb->ccb_h.cbfcnp = NULL; */
+/* 			cts->ios.vccq = vccq_180; */
+/* 			cts->ios_valid = MMC_VCCQ; */
+/* 			xpt_action(start_ccb); */
+/* 			break; */
+/* 		} else { */
+/* 			/\* Set VCCQ = 3.3V *\/ */
+/* 			start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS; */
+/* 			start_ccb->ccb_h.flags = CAM_DIR_NONE; */
+/* 			start_ccb->ccb_h.retry_count = 0; */
+/* 			start_ccb->ccb_h.timeout = 100; */
+/* 			start_ccb->ccb_h.cbfcnp = NULL; */
+/* 			cts->ios.vccq = vccq_330; */
+/* 			cts->ios_valid = MMC_VCCQ; */
+/* 			xpt_action(start_ccb); */
+/* 			break; */
+/* 		} */
+/* 	} */
+/* 	/\* INIT_SET_CARD_FREQ END *\/ */
+
+/* 	/\* INIT_SET_HOST_FREQ *\/ */
+/* 	/\* Set frequency on the controller *\/ */
+/* 	start_ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS; */
+/* 	start_ccb->ccb_h.flags = CAM_DIR_NONE; */
+/* 	start_ccb->ccb_h.retry_count = 0; */
+/* 	start_ccb->ccb_h.timeout = 100; */
+/* 	start_ccb->ccb_h.cbfcnp = NULL; */
+/* 	cts->ios.clock = f_max; */
+/* 	cts->ios_valid = MMC_CLK; */
+/* 	xpt_action(start_ccb); */
+/* 	/\* INIT_SET_HOST_FREQ END *\/ */
+
+/* 	/\* INIT_SET_BUS_WIDTH *\/ */
+/* 	/\* Set bus width *\/ */
+/* 	enum mmc_bus_width desired_bus_width = bus_width_1; */
+/* 	enum mmc_bus_width max_host_bus_width = */
+/* 		(host_caps & MMC_CAP_8_BIT_DATA ? bus_width_8 : */
+/* 		 host_caps & MMC_CAP_4_BIT_DATA ? bus_width_4 : bus_width_1); */
+/* 	enum mmc_bus_width max_card_bus_width = bus_width_1; */
+/* 	if (mmcp->card_features & CARD_FEATURE_SD20 && */
+/* 	    softc->scr.bus_widths & SD_SCR_BUS_WIDTH_4) */
+/* 		max_card_bus_width = bus_width_4; */
+/* 	/\* */
+/* 	 * Unlike SD, MMC cards don't have any information about supported bus width... */
+/* 	 * So we need to perform read/write test to find out the width. */
+/* 	 *\/ */
+/* 	/\* TODO: figure out bus width for MMC; use 8-bit for now (to test on BBB) *\/ */
+/* 	if (mmcp->card_features & CARD_FEATURE_MMC) */
+/* 		max_card_bus_width = bus_width_8; */
+
+/* 	desired_bus_width = min(max_host_bus_width, max_card_bus_width); */
+/* 	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, */
+/* 		  ("Set bus width to %s (min of host %s and card %s)\n", */
+/* 		   bus_width_str(desired_bus_width), */
+/* 		   bus_width_str(max_host_bus_width), */
+/* 		   bus_width_str(max_card_bus_width))); */
+/* 	sdda_set_bus_width(periph, start_ccb, desired_bus_width); */
+/* 	/\* INIT_SET_BUS_WIDTH END *\/ */
+
+/* 	/\* INIT_CAM_ANNOUCE *\/ */
+/* 	softc->state = SDDA_STATE_NORMAL; */
+
+/* 	cam_periph_unhold(periph); */
+/* 	/\* MMC partitions support *\/ */
+/* 	if (mmcp->card_features & CARD_FEATURE_MMC && mmc_get_spec_vers(periph) >= 4) { */
+/* 		sdda_process_mmc_partitions(periph, start_ccb); */
+/* 	} else if (mmcp->card_features & CARD_FEATURE_SD20) { */
+/* 		/\* For SD[HC] cards, just add one partition that is the whole card *\/ */
+/* 		if (sdda_add_part(periph, 0, "sdda", */
+/* 		    periph->unit_number, */
+/* 		    mmc_get_media_size(periph), */
+/* 		    sdda_get_read_only(periph, start_ccb)) == false) */
+/* 			return; */
+/* 		softc->part_curr = 0; */
+/* 	} */
+/* 	cam_periph_hold(periph, PRIBIO|PCATCH); */
+
+/* 	xpt_announce_periph(periph, softc->card_id_string); */
+/* 	/\* */
+/* 	 * Add async callbacks for bus reset and bus device reset calls. */
+/* 	 * I don't bother checking if this fails as, in most cases, */
+/* 	 * the system will function just fine without them and the only */
+/* 	 * alternative would be to not attach the device on failure. */
+/* 	 *\/ */
+/* 	xpt_register_async(AC_LOST_DEVICE | AC_GETDEV_CHANGED | */
+/* 	    AC_ADVINFO_CHANGED, sddaasync, periph, periph->path); */
+
+/* 	/\* INIT_CAM_ANNOUNCE END *\/ */
+}
+
+static void
+sdda_start_init(void *context, union ccb *start_ccb)
+{
+	struct cam_periph *periph = (struct cam_periph *)context;
+	struct sdda_softc *softc;
+
+	softc = (struct sdda_softc *)periph->softc;
+	CAM_DEBUG(start_ccb->ccb_h.path, CAM_DEBUG_PROBE, ("sdda_start_init"));
+	INIT_SET_ACTION(softc, INIT_START);
+	while (softc->action != INIT_DONE)
+		sdda_card_init(periph, start_ccb);
 }
 
 static bool

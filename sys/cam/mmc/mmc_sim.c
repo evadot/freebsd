@@ -63,6 +63,7 @@ mmc_sim_task(void *arg, int pending)
 		return;
 
 	cts = &mmc_sim->ccb->cts;
+	printf("%s: called with ccb %p and code %x\n", __func__, mmc_sim->ccb, mmc_sim->ccb->ccb_h.func_code);
 	switch (mmc_sim->ccb->ccb_h.func_code) {
 	case XPT_MMC_GET_TRAN_SETTINGS:
 		rv = MMC_SIM_GET_TRAN_SETTINGS(mmc_sim->dev, &cts->proto_specific.mmc);
@@ -83,6 +84,7 @@ mmc_sim_task(void *arg, int pending)
 		break;
 	}
 
+	printf("%s: calling xpt done for ccb %p with code %x\n", __func__, mmc_sim->ccb, mmc_sim->ccb->ccb_h.func_code );
 	xpt_done(mmc_sim->ccb);
 	mmc_sim->ccb = NULL;
 }
@@ -95,6 +97,7 @@ mmc_cam_sim_default_action(struct cam_sim *sim, union ccb *ccb)
 	struct ccb_trans_settings_mmc mmc;
 	int rv;
 
+	printf("%s: got an xpt for ccb %p with code %x\n", __func__, ccb, ccb->ccb_h.func_code );
 	mmc_sim = cam_sim_softc(sim);
 
 	if (mmc_sim == NULL) {
@@ -162,6 +165,7 @@ mmc_cam_sim_default_action(struct cam_sim *sim, union ccb *ccb)
 	{
 		ccb->ccb_h.status = CAM_SIM_QUEUED;
 		mmc_sim->ccb = ccb;
+		printf("%s: enqueuing xpt for ccb %p with code %x\n", __func__, mmc_sim->ccb, mmc_sim->ccb->ccb_h.func_code );
 		taskqueue_enqueue(taskqueue_thread, &mmc_sim->sim_task);
 		return;
 		/* NOTREACHED */
@@ -185,6 +189,7 @@ mmc_cam_sim_default_action(struct cam_sim *sim, union ccb *ccb)
 		ccb->ccb_h.status = CAM_REQ_INVALID;
 		break;
 	}
+	printf("%s: calling xpt done for ccb %p with code %x\n", __func__, ccb, ccb->ccb_h.func_code );
 	xpt_done(ccb);
 	return;
 }
