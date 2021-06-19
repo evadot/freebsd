@@ -58,9 +58,9 @@ device		aw_dwc3			# Allwinner DWC3 controller
 
 # Sound support
 device		a10_codec
+device		a33_codec
 device		a64_codec
 device		aw_i2s
-device		sun8i_codec
 
 # MMC/SD/SDIO Card slot support
 device		aw_mmc			# Allwinner SD/MMC controller
