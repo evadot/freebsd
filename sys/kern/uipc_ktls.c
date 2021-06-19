@@ -30,6 +30,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_ratelimit.h"
 #include "opt_rss.h"
 
 #include <sys/param.h>
@@ -1048,8 +1049,10 @@ ktls_enable_rx(struct socket *so, struct tls_enable *en)
 	so->so_rcv.sb_flags |= SB_TLS_RX;
 
 	/* Mark existing data as not ready until it can be decrypted. */
-	sb_mark_notready(&so->so_rcv);
-	ktls_check_rx(&so->so_rcv);
+	if (tls->mode != TCP_TLS_MODE_TOE) {
+		sb_mark_notready(&so->so_rcv);
+		ktls_check_rx(&so->so_rcv);
+	}
 	SOCKBUF_UNLOCK(&so->so_rcv);
 
 	counter_u64_add(ktls_offload_total, 1);
@@ -1399,7 +1402,6 @@ ktls_modify_txrtlmt(struct ktls_session *tls, uint64_t max_pacing_rate)
 	};
 	struct m_snd_tag *mst;
 	struct ifnet *ifp;
-	int error;
 
 	/* Can't get to the inp, but it should be locked. */
 	/* INP_LOCK_ASSERT(inp); */
