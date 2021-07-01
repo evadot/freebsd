@@ -25,6 +25,7 @@ device		sy8106a			# SY8106A Buck Regulator
 device		aw_ccu			# Allwinner clock controller
 
 # Interrupt controllers
+device		aw_r_intc		# Allwinner RINTC support
 device		aw_nmi			# Allwinner NMI support
 
 # Real-time clock support
