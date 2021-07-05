@@ -478,8 +478,6 @@ m_epg_pagelen(const struct mbuf *m, int pidx, int pgoff)
 #define	M_PROTO10	0x00400000 /* protocol-specific */
 #define	M_PROTO11	0x00800000 /* protocol-specific */
 
-#define MB_DTOR_SKIP	0x1	/* don't pollute the cache by touching a freed mbuf */
-
 /*
  * Flags to purge when crossing layers.
  */
@@ -827,6 +825,7 @@ void		 m_extadd(struct mbuf *, char *, u_int, m_ext_free_t,
 u_int		 m_fixhdr(struct mbuf *);
 struct mbuf	*m_fragment(struct mbuf *, int, int);
 void		 m_freem(struct mbuf *);
+void		 m_free_raw(struct mbuf *);
 struct mbuf	*m_get2(int, int, short, int);
 struct mbuf	*m_getjcl(int, short, int, int);
 struct mbuf	*m_getm2(struct mbuf *, int, int, short, int);

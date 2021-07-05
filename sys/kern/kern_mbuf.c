@@ -658,7 +658,8 @@ mb_dtor_mbuf(void *mem, int size, void *arg)
 	flags = (unsigned long)arg;
 
 	KASSERT((m->m_flags & M_NOFREE) == 0, ("%s: M_NOFREE set", __func__));
-	if (!(flags & MB_DTOR_SKIP) && (m->m_flags & M_PKTHDR) && !SLIST_EMPTY(&m->m_pkthdr.tags))
+	KASSERT((flags & 0x1) == 0, ("%s: obsolete MB_DTOR_SKIP passed", __func__));
+	if ((m->m_flags & M_PKTHDR) && !SLIST_EMPTY(&m->m_pkthdr.tags))
 		m_tag_delete_chain(m, NULL);
 }
 
@@ -1523,6 +1524,16 @@ m_freem(struct mbuf *mb)
 	MBUF_PROBE1(m__freem, mb);
 	while (mb != NULL)
 		mb = m_free(mb);
+}
+
+/*
+ * Temporary primitive to allow freeing without going through m_free.
+ */
+void
+m_free_raw(struct mbuf *mb)
+{
+
+	uma_zfree(zone_mbuf, mb);
 }
 
 int
