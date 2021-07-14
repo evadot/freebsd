@@ -13,7 +13,7 @@ device		rk_pinctrl		# RockChip Pinmux Controller
 
 # I2C
 device		rk_i2c			# RockChip I2C controller
-device		syr827			# Silergy SYR827 PMIC
+device		fan53555		# Fairchild Semi FAN53555/SYR82x Regulator
 
 # Power management controllers
 device		rk805			# RockChip RK805 PMIC
