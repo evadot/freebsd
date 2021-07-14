@@ -597,6 +597,7 @@ static int
 sdiob_attach(device_t dev)
 {
 	struct sdiob_softc *sc;
+	struct ccb_trans_settings_mmc *cts;
 	int error, i;
 
 	sc = device_get_softc(dev);
@@ -613,6 +614,58 @@ sdiob_attach(device_t dev)
 	}
 	sc->cardinfo.f[0].dev = sc->child[0];
 	device_set_ivars(sc->child[0], &sc->cardinfo.f[0]);
+
+	/* Set clock to 25Mhz and bus width to 4 */
+	if (sc->cardinfo.low_speed_card == false) {
+		cam_periph_lock(sc->periph);
+		uint8_t val;
+
+		if (sc->cardinfo.high_speed_supported) {
+			/* Set high speed on the card */
+			device_printf(sc->dev, "Set high speed on the card\n");
+			error = sdiob_rw_direct_sc(sc, 0, SD_IO_CCCR_SPEED, false, &val);
+			val |= CCCR_SPEED_EHS;
+			sdiob_rw_direct_sc(sc, 0, SD_IO_CCCR_SPEED, true, &val);
+
+			/* Change freq */
+			device_printf(sc->dev, "Set freq to 50mhz\n");
+			xpt_setup_ccb(&sc->ccb->ccb_h, sc->periph->path, CAM_PRIORITY_NONE);
+			cts = &sc->ccb->cts.proto_specific.mmc;
+
+			cts->ios_valid = MMC_CLK;
+			cts->ios.clock = 50000000;
+			sc->ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
+			sc->ccb->ccb_h.flags = CAM_DIR_NONE;
+			sc->ccb->ccb_h.retry_count = 0;
+			sc->ccb->ccb_h.timeout = 100;
+			sc->ccb->ccb_h.cbfcnp = NULL;
+			xpt_action(sc->ccb);
+
+			device_printf(sc->dev, "Set bus width on the card\n");
+			error = sdiob_rw_direct_sc(sc, 0, SD_IO_CCCR_BUS_WIDTH, false, &val);
+			val |= CCCR_BUS_WIDTH_4;
+			sdiob_rw_direct_sc(sc, 0, SD_IO_CCCR_BUS_WIDTH, true, &val);
+
+			/* Change bus width */
+			device_printf(sc->dev, "Set bus width on controller\n");
+			xpt_setup_ccb(&sc->ccb->ccb_h, sc->periph->path, CAM_PRIORITY_NONE);
+			cts->ios_valid = MMC_BW;
+			cts->ios.bus_width = bus_width_4;
+
+			cts = &sc->ccb->cts.proto_specific.mmc;
+			sc->ccb->ccb_h.func_code = XPT_SET_TRAN_SETTINGS;
+			sc->ccb->ccb_h.flags = CAM_DIR_NONE;
+			sc->ccb->ccb_h.retry_count = 0;
+			sc->ccb->ccb_h.timeout = 100;
+			sc->ccb->ccb_h.cbfcnp = NULL;
+			xpt_action(sc->ccb);
+
+		} else {
+			/* TODO */
+		}
+
+		cam_periph_unlock(sc->periph);
+	}
 
 	/*
 	 * No one will ever attach to F0; we do the above to have a "device"
@@ -925,11 +978,23 @@ sdiob_get_card_info(struct sdiob_softc *sc)
 	if (error != 0)
 		return (error);
 	sc->cardinfo.support_multiblk = (val & CCCR_CC_SMB) ? true : false;
+	sc->cardinfo.low_speed_card = (val & CCCR_CC_LSC) ? true : false;
+
+	/* Read CCCR Card Speed. */
+	error = sdio_read_direct_sc(sc, 0, SD_IO_CCCR_SPEED, &val);
+	if (error != 0)
+		return (error);
+	sc->cardinfo.high_speed_supported = (val & CCCR_SPEED_SHS) ? true : false;
+
 	DPRINTF("%s: F%d: Vendor %#04x product %#04x max block size %d bytes "
-	    "support_multiblk %s\n",
+	    "support_multiblk %s "
+	    "low_speed_card %s "
+	    "high_speed_supported %s\n",
 	    __func__, fn, sc->cardinfo.f[fn].vendor, sc->cardinfo.f[fn].device,
 	    sc->cardinfo.f[fn].max_blksize,
-	    sc->cardinfo.support_multiblk ? "yes" : "no");
+	    sc->cardinfo.support_multiblk ? "yes" : "no",
+	    sc->cardinfo.low_speed_card ? "yes" : "no",
+	    sc->cardinfo.high_speed_supported ? "yes" : "no");
 
 	/* mmcp->sdio_func_count contains the number of functions w/o F0. */
 	mmcp = &sc->ccb->ccb_h.path->device->mmc_ident_data;
