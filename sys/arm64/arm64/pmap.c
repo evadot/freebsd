@@ -3223,9 +3223,11 @@ pmap_protect_l2(pmap_t pmap, pt_entry_t *l2, vm_offset_t sva, pt_entry_t mask,
 	 * Return if the L2 entry already has the desired access restrictions
 	 * in place.
 	 */
-retry:
 	if ((old_l2 & mask) == nbits)
 		return;
+
+	while (!atomic_fcmpset_64(l2, &old_l2, (old_l2 & ~mask) | nbits))
+		cpu_spinwait();
 
 	/*
 	 * When a dirty read/write superpage mapping is write protected,
@@ -3239,9 +3241,6 @@ retry:
 		for (mt = m; mt < &m[L2_SIZE / PAGE_SIZE]; mt++)
 			vm_page_dirty(mt);
 	}
-
-	if (!atomic_fcmpset_64(l2, &old_l2, (old_l2 & ~mask) | nbits))
-		goto retry;
 
 	/*
 	 * Since a promotion must break the 4KB page mappings before making
@@ -3334,7 +3333,7 @@ pmap_protect(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, vm_prot_t prot)
 		for (l3p = pmap_l2_to_l3(l2, sva); sva != va_next; l3p++,
 		    sva += L3_SIZE) {
 			l3 = pmap_load(l3p);
-retry:
+
 			/*
 			 * Go to the next L3 entry if the current one is
 			 * invalid or already has the desired access
@@ -3351,6 +3350,10 @@ retry:
 				continue;
 			}
 
+			while (!atomic_fcmpset_64(l3p, &l3, (l3 & ~mask) |
+			    nbits))
+				cpu_spinwait();
+
 			/*
 			 * When a dirty read/write mapping is write protected,
 			 * update the page's dirty field.
@@ -3360,8 +3363,6 @@ retry:
 			    pmap_pte_dirty(pmap, l3))
 				vm_page_dirty(PHYS_TO_VM_PAGE(l3 & ~ATTR_MASK));
 
-			if (!atomic_fcmpset_64(l3p, &l3, (l3 & ~mask) | nbits))
-				goto retry;
 			if (va == va_next)
 				va = sva;
 		}
@@ -3501,7 +3502,6 @@ pmap_promote_l2(pmap_t pmap, pd_entry_t *l2, vm_offset_t va,
 	firstl3 = pmap_l2_to_l3(l2, sva);
 	newl2 = pmap_load(firstl3);
 
-setl2:
 	if (((newl2 & (~ATTR_MASK | ATTR_AF)) & L2_OFFSET) != ATTR_AF) {
 		atomic_add_long(&pmap_l2_p_failures, 1);
 		CTR2(KTR_PMAP, "pmap_promote_l2: failure for va %#lx"
@@ -3509,6 +3509,7 @@ setl2:
 		return;
 	}
 
+setl2:
 	if ((newl2 & (ATTR_S1_AP_RW_BIT | ATTR_SW_DBM)) ==
 	    (ATTR_S1_AP(ATTR_S1_AP_RO) | ATTR_SW_DBM)) {
 		/*
@@ -4556,6 +4557,9 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
 		if (srcptepaddr == 0)
 			continue;
 		if ((srcptepaddr & ATTR_DESCR_MASK) == L2_BLOCK) {
+			/*
+			 * We can only virtual copy whole superpages.
+			 */
 			if ((addr & L2_OFFSET) != 0 ||
 			    addr + L2_SIZE > end_addr)
 				continue;
@@ -4566,8 +4570,19 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
 			    ((srcptepaddr & ATTR_SW_MANAGED) == 0 ||
 			    pmap_pv_insert_l2(dst_pmap, addr, srcptepaddr,
 			    PMAP_ENTER_NORECLAIM, &lock))) {
-				mask = ATTR_SW_WIRED;
-				pmap_store(l2, srcptepaddr & ~mask);
+				/*
+				 * We leave the dirty bit unchanged because
+				 * managed read/write superpage mappings are
+				 * required to be dirty.  However, managed
+				 * superpage mappings are not required to
+				 * have their accessed bit set, so we clear
+				 * it because we don't know if this mapping
+				 * will be used.
+				 */
+				srcptepaddr &= ~ATTR_SW_WIRED;
+				if ((srcptepaddr & ATTR_SW_MANAGED) != 0)
+					srcptepaddr &= ~ATTR_AF;
+				pmap_store(l2, srcptepaddr);
 				pmap_resident_count_inc(dst_pmap, L2_SIZE /
 				    PAGE_SIZE);
 				atomic_add_long(&pmap_l2_mappings, 1);
@@ -4950,6 +4965,16 @@ pmap_remove_pages(pmap_t pmap)
 					continue;
 				}
 
+				/* Mark free */
+				pc->pc_map[field] |= bitmask;
+
+				/*
+				 * Because this pmap is not active on other
+				 * processors, the dirty bit cannot have
+				 * changed state since we last loaded pte.
+				 */
+				pmap_clear(pte);
+
 				pa = tpte & ~ATTR_MASK;
 
 				m = PHYS_TO_VM_PAGE(pa);
@@ -4962,13 +4987,6 @@ pmap_remove_pages(pmap_t pmap)
 				    m < &vm_page_array[vm_page_array_size],
 				    ("pmap_remove_pages: bad pte %#jx",
 				    (uintmax_t)tpte));
-
-				/*
-				 * Because this pmap is not active on other
-				 * processors, the dirty bit cannot have
-				 * changed state since we last loaded pte.
-				 */
-				pmap_clear(pte);
 
 				/*
 				 * Update the vm_page_t clean/reference bits.
@@ -4987,8 +5005,6 @@ pmap_remove_pages(pmap_t pmap)
 
 				CHANGE_PV_LIST_LOCK_TO_VM_PAGE(&lock, m);
 
-				/* Mark free */
-				pc->pc_map[field] |= bitmask;
 				switch (lvl) {
 				case 1:
 					pmap_resident_count_dec(pmap,

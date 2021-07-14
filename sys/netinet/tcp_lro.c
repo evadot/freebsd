@@ -101,11 +101,17 @@ counter_u64_t tcp_extra_mbuf;
 counter_u64_t tcp_would_have_but;
 counter_u64_t tcp_comp_total;
 counter_u64_t tcp_uncomp_total;
+counter_u64_t tcp_bad_csums;
 
 static unsigned	tcp_lro_entries = TCP_LRO_ENTRIES;
 SYSCTL_UINT(_net_inet_tcp_lro, OID_AUTO, entries,
     CTLFLAG_RDTUN | CTLFLAG_MPSAFE, &tcp_lro_entries, 0,
     "default number of LRO entries");
+
+static uint32_t tcp_lro_cpu_set_thresh = TCP_LRO_CPU_DECLARATION_THRESH;
+SYSCTL_UINT(_net_inet_tcp_lro, OID_AUTO, lro_cpu_threshold,
+    CTLFLAG_RDTUN | CTLFLAG_MPSAFE, &tcp_lro_cpu_set_thresh, 0,
+    "Number of interrups in a row on the same CPU that will make us declare an 'affinity' cpu?");
 
 SYSCTL_COUNTER_U64(_net_inet_tcp_lro, OID_AUTO, fullqueue, CTLFLAG_RD,
     &tcp_inp_lro_direct_queue, "Number of lro's fully queued to transport");
@@ -123,6 +129,8 @@ SYSCTL_COUNTER_U64(_net_inet_tcp_lro, OID_AUTO, with_m_ackcmp, CTLFLAG_RD,
     &tcp_comp_total, "Number of mbufs queued with M_ACKCMP flags set");
 SYSCTL_COUNTER_U64(_net_inet_tcp_lro, OID_AUTO, without_m_ackcmp, CTLFLAG_RD,
     &tcp_uncomp_total, "Number of mbufs queued without M_ACKCMP");
+SYSCTL_COUNTER_U64(_net_inet_tcp_lro, OID_AUTO, lro_badcsum, CTLFLAG_RD,
+    &tcp_bad_csums, "Number of packets that the common code saw with bad csums");
 
 void
 tcp_lro_reg_mbufq(void)
@@ -631,12 +639,13 @@ tcp_lro_log(struct tcpcb *tp, const struct lro_ctrl *lc,
 			log.u_bbr.rttProp = le->m_head->m_pkthdr.rcv_tstmp;
 		}
 		log.u_bbr.inflight = th_seq;
+		log.u_bbr.delivered = th_ack;
 		log.u_bbr.timeStamp = cts;
 		log.u_bbr.epoch = le->next_seq;
-		log.u_bbr.delivered = th_ack;
 		log.u_bbr.lt_epoch = le->ack_seq;
 		log.u_bbr.pacing_gain = th_win;
 		log.u_bbr.cwnd_gain = le->window;
+		log.u_bbr.lost = curcpu;
 		log.u_bbr.cur_del_rate = (uintptr_t)m;
 		log.u_bbr.bw_inuse = (uintptr_t)le->m_head;
 		bintime2timeval(&lc->lro_last_queue_time, &btv);
@@ -1273,7 +1282,10 @@ tcp_lro_flush_tcphpts(struct lro_ctrl *lc, struct lro_entry *le)
 		INP_WUNLOCK(inp);
 		return (TCP_LRO_CANNOT);
 	}
-
+	if ((inp->inp_irq_cpu_set == 0)  && (lc->lro_cpu_is_set == 1)) {
+		inp->inp_irq_cpu = lc->lro_last_cpu;
+		inp->inp_irq_cpu_set = 1;
+	}
 	/* Check if the transport doesn't support the needed optimizations. */
 	if ((inp->inp_flags2 & (INP_SUPPORTS_MBUFQ | INP_MBUF_ACKCMP)) == 0) {
 		INP_WUNLOCK(inp);
@@ -1445,7 +1457,17 @@ tcp_lro_flush_all(struct lro_ctrl *lc)
 	/* check if no mbufs to flush */
 	if (lc->lro_mbuf_count == 0)
 		goto done;
-
+	if (lc->lro_cpu_is_set == 0) {
+		if (lc->lro_last_cpu == curcpu) {
+			lc->lro_cnt_of_same_cpu++;
+			/* Have we reached the threshold to declare a cpu? */
+			if (lc->lro_cnt_of_same_cpu > tcp_lro_cpu_set_thresh)
+				lc->lro_cpu_is_set = 1;
+		} else {
+			lc->lro_last_cpu = curcpu;
+			lc->lro_cnt_of_same_cpu = 0;
+		}
+	}
 	CURVNET_SET(lc->ifp->if_vnet);
 
 	/* get current time */
@@ -1486,6 +1508,9 @@ done:
 	/* flush active streams */
 	tcp_lro_rx_done(lc);
 
+#ifdef TCPHPTS
+	tcp_run_hpts();
+#endif
 	lc->lro_mbuf_count = 0;
 }
 
@@ -1718,7 +1743,17 @@ tcp_lro_rx_common(struct lro_ctrl *lc, struct mbuf *m, uint32_t csum, bool use_h
 	if (__predict_false(V_ip6_forwarding != 0))
 		return (TCP_LRO_CANNOT);
 #endif
-
+	if (((m->m_pkthdr.csum_flags & (CSUM_DATA_VALID | CSUM_PSEUDO_HDR)) !=
+	     ((CSUM_DATA_VALID | CSUM_PSEUDO_HDR))) || 
+	    (m->m_pkthdr.csum_data != 0xffff)) {
+		/* 
+		 * The checksum either did not have hardware offload
+		 * or it was a bad checksum. We can't LRO such
+		 * a packet.
+		 */
+		counter_u64_add(tcp_bad_csums, 1);
+		return (TCP_LRO_CANNOT);
+	}
 	/* We expect a contiguous header [eh, ip, tcp]. */
 	pa = tcp_lro_parser(m, &po, &pi, true);
 	if (__predict_false(pa == NULL))
@@ -1836,9 +1871,19 @@ tcp_lro_rx(struct lro_ctrl *lc, struct mbuf *m, uint32_t csum)
 {
 	int error;
 
+	if (((m->m_pkthdr.csum_flags & (CSUM_DATA_VALID | CSUM_PSEUDO_HDR)) !=
+	     ((CSUM_DATA_VALID | CSUM_PSEUDO_HDR))) || 
+	    (m->m_pkthdr.csum_data != 0xffff)) {
+		/* 
+		 * The checksum either did not have hardware offload
+		 * or it was a bad checksum. We can't LRO such
+		 * a packet.
+		 */
+		counter_u64_add(tcp_bad_csums, 1);
+		return (TCP_LRO_CANNOT);
+	}
 	/* get current time */
 	binuptime(&lc->lro_last_queue_time);
-
 	CURVNET_SET(lc->ifp->if_vnet);
 	error = tcp_lro_rx_common(lc, m, csum, true);
 	CURVNET_RESTORE();
@@ -1858,8 +1903,7 @@ tcp_lro_queue_mbuf(struct lro_ctrl *lc, struct mbuf *mb)
 	}
 
 	/* check if packet is not LRO capable */
-	if (__predict_false(mb->m_pkthdr.csum_flags == 0 ||
-	    (lc->ifp->if_capenable & IFCAP_LRO) == 0)) {
+	if (__predict_false((lc->ifp->if_capenable & IFCAP_LRO) == 0)) {
 		/* input packet to network layer */
 		(*lc->ifp->if_input) (lc->ifp, mb);
 		return;

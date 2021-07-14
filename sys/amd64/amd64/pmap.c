@@ -1554,7 +1554,7 @@ nkpt_init(vm_paddr_t addr)
 #ifdef NKPT
 	pt_pages = NKPT;
 #else
-	pt_pages = howmany(addr, 1 << PDRSHIFT);
+	pt_pages = howmany(addr, NBPDR);
 	pt_pages += NKPDPE(pt_pages);
 
 	/*
@@ -7775,6 +7775,9 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
 			continue;
 			
 		if (srcptepaddr & PG_PS) {
+			/*
+			 * We can only virtual copy whole superpages.
+			 */
 			if ((addr & PDRMASK) != 0 || addr + NBPDR > end_addr)
 				continue;
 			pde = pmap_alloc_pde(dst_pmap, addr, &dst_pdpg, NULL);
@@ -7783,7 +7786,19 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
 			if (*pde == 0 && ((srcptepaddr & PG_MANAGED) == 0 ||
 			    pmap_pv_insert_pde(dst_pmap, addr, srcptepaddr,
 			    PMAP_ENTER_NORECLAIM, &lock))) {
-				*pde = srcptepaddr & ~PG_W;
+				/*
+				 * We leave the dirty bit unchanged because
+				 * managed read/write superpage mappings are
+				 * required to be dirty.  However, managed
+				 * superpage mappings are not required to
+				 * have their accessed bit set, so we clear
+				 * it because we don't know if this mapping
+				 * will be used.
+				 */
+				srcptepaddr &= ~PG_W;
+				if ((srcptepaddr & PG_MANAGED) != 0)
+					srcptepaddr &= ~PG_A;
+				*pde = srcptepaddr;
 				pmap_resident_count_adj(dst_pmap, NBPDR /
 				    PAGE_SIZE);
 				counter_u64_add(pmap_pde_mappings, 1);
@@ -8201,6 +8216,16 @@ pmap_remove_pages(pmap_t pmap)
 					continue;
 				}
 
+				/* Mark free */
+				pc->pc_map[field] |= bitmask;
+
+				/*
+				 * Because this pmap is not active on other
+				 * processors, the dirty bit cannot have
+				 * changed state since we last loaded pte.
+				 */
+				pte_clear(pte);
+
 				if (superpage)
 					pa = tpte & PG_PS_FRAME;
 				else
@@ -8217,8 +8242,6 @@ pmap_remove_pages(pmap_t pmap)
 				    ("pmap_remove_pages: bad tpte %#jx",
 				    (uintmax_t)tpte));
 
-				pte_clear(pte);
-
 				/*
 				 * Update the vm_page_t clean/reference bits.
 				 */
@@ -8232,8 +8255,6 @@ pmap_remove_pages(pmap_t pmap)
 
 				CHANGE_PV_LIST_LOCK_TO_VM_PAGE(&lock, m);
 
-				/* Mark free */
-				pc->pc_map[field] |= bitmask;
 				if (superpage) {
 					pmap_resident_count_adj(pmap, -NBPDR / PAGE_SIZE);
 					pvh = pa_to_pvh(tpte & PG_PS_FRAME);
@@ -8459,7 +8480,7 @@ pmap_remove_write(vm_page_t m)
 	pvh = (m->flags & PG_FICTITIOUS) != 0 ? &pv_dummy :
 	    pa_to_pvh(VM_PAGE_TO_PHYS(m));
 	rw_wlock(lock);
-retry_pv_loop:
+retry:
 	TAILQ_FOREACH_SAFE(pv, &pvh->pv_list, pv_next, next_pv) {
 		pmap = PV_PMAP(pv);
 		if (!PMAP_TRYLOCK(pmap)) {
@@ -8469,7 +8490,7 @@ retry_pv_loop:
 			rw_wlock(lock);
 			if (pvh_gen != pvh->pv_gen) {
 				PMAP_UNLOCK(pmap);
-				goto retry_pv_loop;
+				goto retry;
 			}
 		}
 		PG_RW = pmap_rw_bit(pmap);
@@ -8493,7 +8514,7 @@ retry_pv_loop:
 			if (pvh_gen != pvh->pv_gen ||
 			    md_gen != m->md.pv_gen) {
 				PMAP_UNLOCK(pmap);
-				goto retry_pv_loop;
+				goto retry;
 			}
 		}
 		PG_M = pmap_modified_bit(pmap);
@@ -8503,12 +8524,11 @@ retry_pv_loop:
 		    ("pmap_remove_write: found a 2mpage in page %p's pv list",
 		    m));
 		pte = pmap_pde_to_pte(pde, pv->pv_va);
-retry:
 		oldpte = *pte;
 		if (oldpte & PG_RW) {
-			if (!atomic_cmpset_long(pte, oldpte, oldpte &
+			while (!atomic_fcmpset_long(pte, &oldpte, oldpte &
 			    ~(PG_RW | PG_M)))
-				goto retry;
+				cpu_spinwait();
 			if ((oldpte & PG_M) != 0)
 				vm_page_dirty(m);
 			pmap_invalidate_page(pmap, pv->pv_va);
