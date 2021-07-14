@@ -99,6 +99,8 @@
 
 #include "sdio_if.h"
 
+#define	DEBUG
+
 #ifdef DEBUG
 #define	DPRINTF(...)		printf(__VA_ARGS__)
 #define	DPRINTFDEV(_dev, ...)	device_printf((_dev), __VA_ARGS__)
@@ -238,23 +240,17 @@ sdiob_write_direct(device_t dev, uint8_t fn, uint32_t addr, uint8_t val)
  * CMD53: IO_RW_EXTENDED, read and write multiple I/O registers.
  * Increment false gets FIFO mode (single register address).
  */
-/*
- * A b_count of 0 means byte mode, b_count > 0 gets block mode.
- * A b_count of >= 512 would mean infinitive block transfer, which would become
- * b_count = 0, is not yet supported.
- * For b_count == 0, blksz is the len of bytes, otherwise it is the amount of
- * full sized blocks (you must not round the blocks up and leave the last one
- * partial!)
- * For byte mode, the maximum of blksz is the functions cur_blksize.
- * This function should ever only be called by sdio_rw_extended_sc()! 
- */
 static int
 sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
-    bool wr, uint8_t *buffer, bool incaddr, uint32_t b_count, uint16_t blksz)
+    bool wr, uint8_t *buffer, bool block, bool incaddr, uint32_t count)
 {
 	struct mmc_data mmcd;
-	uint32_t arg, cam_flags, flags, len;
+	uint32_t arg, cam_flags, flags;
 	int error;
+	uint32_t nblocks;
+
+	device_printf(sc->dev, "%s wr=%d, fn=%d, block=%d, opcode=%d, addr=%x, count=%u, buffer=%p\n",
+	  __func__, wr, fn, block, incaddr, addr, count, buffer);
 
 	if (sc->ccb == NULL)
 		sc->ccb = xpt_alloc_ccb();
@@ -262,36 +258,18 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 		memset(sc->ccb, 0, sizeof(*sc->ccb));
 	xpt_setup_ccb(&sc->ccb->ccb_h, sc->periph->path, CAM_PRIORITY_NONE);
 	CAM_DEBUG(sc->ccb->ccb_h.path, CAM_DEBUG_TRACE,
-	    ("%s(fn=%d addr=%#0x wr=%d b_count=%u blksz=%u buf=%p incr=%d)\n",
-	    __func__, fn, addr, wr, b_count, blksz, buffer, incaddr));
+	    ("%s(fn=%d addr=%#0x wr=%d count=%u buf=%p incr=%d)\n",
+	    __func__, fn, addr, wr, count, buffer, incaddr));
 
-	KASSERT((b_count <= 511), ("%s: infinitive block transfer not yet "
-	    "supported: b_count %u blksz %u, sc %p, fn %u, addr %#10x, %s, "
-	    "buffer %p, %s\n", __func__, b_count, blksz, sc, fn, addr,
-	    wr ? "wr" : "rd", buffer, incaddr ? "incaddr" : "fifo"));
-	/* Blksz needs to be within bounds for both byte and block mode! */
-	KASSERT((blksz <= sc->cardinfo.f[fn].cur_blksize), ("%s: blksz "
-	    "%u > bur_blksize %u, sc %p, fn %u, addr %#10x, %s, "
-	    "buffer %p, %s, b_count %u\n", __func__, blksz,
-	    sc->cardinfo.f[fn].cur_blksize, sc, fn, addr,
-	    wr ? "wr" : "rd", buffer, incaddr ? "incaddr" : "fifo",
-	    b_count));
-	if (b_count == 0) {
-		/* Byte mode */
-		len = blksz;
-		if (blksz == 512)
-			blksz = 0;
-		arg = SD_IOE_RW_LEN(blksz);
+	arg = 0;
+	if (block == false) {
+		if (count != 512)	/* a count value of 0 indicate 512 */
+			arg |= SD_IOE_RW_LEN(count);
 	} else {
-		/* Block mode. */
-#ifdef __notyet__
-		if (b_count > 511) {
-			/* Infinitive block transfer. */
-			b_count = 0;
-		}
-#endif
-		len = b_count * blksz;
-		arg = SD_IOE_RW_BLK | SD_IOE_RW_LEN(b_count);
+		arg |= SD_IOE_RW_BLK;
+		nblocks = count / sc->cardinfo.f[fn].cur_blksize;
+		if (nblocks < 512)
+			arg |= SD_IOE_RW_LEN(nblocks);
 	}
 
 	flags = MMC_RSP_R5 | MMC_CMD_ADTC;
@@ -301,11 +279,10 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 
 	memset(&mmcd, 0, sizeof(mmcd));
 	mmcd.data = buffer;
-	mmcd.len = len;
+	mmcd.len = count;
 	if (arg & SD_IOE_RW_BLK) {
-		/* XXX both should be known from elsewhere, aren't they? */
-		mmcd.block_size = blksz;
-		mmcd.block_count = b_count;
+		mmcd.block_size = sc->cardinfo.f[fn].cur_blksize;
+		mmcd.block_count = count / sc->cardinfo.f[fn].cur_blksize;
 	}
 
 	if (wr) {
@@ -316,12 +293,7 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 		cam_flags = CAM_DIR_IN;
 		mmcd.flags = MMC_DATA_READ;
 	}
-#ifdef __notyet__
-	if (b_count == 0) {
-		/* XXX-BZ TODO FIXME.  Cancel I/O: CCCR -> ASx */
-		/* Stop cmd. */
-	}
-#endif
+
 	cam_fill_mmcio(&sc->ccb->mmcio,
 		/*retries*/ 0,
 		/*cbfcnp*/ NULL,
@@ -333,7 +305,7 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 		/*timeout*/ sc->cardinfo.f[fn].timeout);
 	if (arg & SD_IOE_RW_BLK) {
 		mmcd.flags |= MMC_DATA_BLOCK_SIZE;
-		if (b_count != 1)
+		if (count != 1)
 			sc->ccb->mmcio.cmd.data->flags |= MMC_DATA_MULTI;
 	}
 
@@ -342,18 +314,18 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 	if (error != 0) {
 		if (sc->dev != NULL)
 			device_printf(sc->dev,
-			    "%s: Failed to %s address %#10x buffer %p size %u "
-			    "%s b_count %u blksz %u error=%d\n",
+			    "%s: Failed to %s address %#10x buffer %p "
+			    "%s count %u blksz %u error=%d\n",
 			    __func__, (wr) ? "write to" : "read from", addr,
-			    buffer, len, (incaddr) ? "incr" : "fifo",
-			    b_count, blksz, error);
+			    buffer, (incaddr) ? "incr" : "fifo",
+			    count, sc->cardinfo.f[fn].cur_blksize, error);
 		else
 			CAM_DEBUG(sc->ccb->ccb_h.path, CAM_DEBUG_INFO,
-			    ("%s: Failed to %s address %#10x buffer %p size %u "
-			    "%s b_count %u blksz %u error=%d\n",
+			    ("%s: Failed to %s address %#10x buffer %p "
+			    "%s count %u blksz %u error=%d\n",
 			    __func__, (wr) ? "write to" : "read from", addr,
-			    buffer, len, (incaddr) ? "incr" : "fifo",
-			    b_count, blksz, error));
+			    buffer, (incaddr) ? "incr" : "fifo",
+			    count, sc->cardinfo.f[fn].cur_blksize, error));
 		return (error);
 	}
 
@@ -363,105 +335,93 @@ sdiob_rw_extended_cam(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
 	if (error != 0) {
 		if (sc->dev != NULL)
 			device_printf(sc->dev,
-			    "%s: Failed to %s address %#10x buffer %p size %u "
-			    "%s b_count %u blksz %u mmcio resp error=%d\n",
+			    "%s: Failed to %s address %#10x buffer %p "
+			    "%s count %u blksz %u mmcio resp error=%d\n",
 			    __func__, (wr) ? "write to" : "read from", addr,
-			    buffer, len, (incaddr) ? "incr" : "fifo",
-			    b_count, blksz, error);
+			    buffer, (incaddr) ? "incr" : "fifo",
+			    count, sc->cardinfo.f[fn].cur_blksize, error);
 		else
 			CAM_DEBUG(sc->ccb->ccb_h.path, CAM_DEBUG_INFO,
-			    ("%s: Failed to %s address %#10x buffer %p size %u "
-			    "%s b_count %u blksz %u mmcio resp error=%d\n",
+			    ("%s: Failed to %s address %#10x buffer %p "
+			    "%s count %u blksz %u mmcio resp error=%d\n",
 			    __func__, (wr) ? "write to" : "read from", addr,
-			    buffer, len, (incaddr) ? "incr" : "fifo",
-			    b_count, blksz, error));
+			    buffer, (incaddr) ? "incr" : "fifo",
+			    count, sc->cardinfo.f[fn].cur_blksize, error));
 	}
+
+	/* If we've set an infinite block number, abort the IO transfer */
+	if (nblocks >= 512)
+		sdiob_rw_direct_sc(sc, 0, SD_IO_CCCR_CTL, true, &fn);
+
 	return (error);
 }
 
 static int
-sdiob_rw_extended_sc(struct sdiob_softc *sc, uint8_t fn, uint32_t addr,
-    bool wr, uint32_t size, uint8_t *buffer, bool incaddr)
-{
-	int error;
-	uint32_t len;
-	uint32_t b_count;
-
-	/*
-	 * If block mode is supported and we have at least 4 bytes to write and
-	 * the size is at least one block, then start doing blk transfers.
-	 */
-	while (sc->cardinfo.support_multiblk &&
-	    size > 4 && size >= sc->cardinfo.f[fn].cur_blksize) {
-		b_count = size / sc->cardinfo.f[fn].cur_blksize;
-		KASSERT(b_count >= 1, ("%s: block count too small %u size %u "
-		    "cur_blksize %u\n", __func__, b_count, size,
-		    sc->cardinfo.f[fn].cur_blksize));
-
-#ifdef __notyet__
-		/* XXX support inifinite transfer with b_count = 0. */
-#else
-		if (b_count > 511)
-			b_count = 511;
-#endif
-		len = b_count * sc->cardinfo.f[fn].cur_blksize;
-		error = sdiob_rw_extended_cam(sc, fn, addr, wr, buffer, incaddr,
-		    b_count, sc->cardinfo.f[fn].cur_blksize);
-		if (error != 0)
-			return (error);
-
-		size -= len;
-		buffer += len;
-		if (incaddr)
-			addr += len;
-	}
-
-	while (size > 0) {
-		len = MIN(size, sc->cardinfo.f[fn].cur_blksize);
-
-		error = sdiob_rw_extended_cam(sc, fn, addr, wr, buffer, incaddr,
-		    0, len);
-		if (error != 0)
-			return (error);
-
-		/* Prepare for next iteration. */
-		size -= len;
-		buffer += len;
-		if (incaddr)
-			addr += len;
-	}
-
-	return (0);
-}
-
-static int
-sdiob_rw_extended(device_t dev, uint8_t fn, uint32_t addr, bool wr,
-    uint32_t size, uint8_t *buffer, bool incaddr)
+sdiob_read_extended_byte(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
+    uint8_t *buffer, bool incaddr)
 {
 	struct sdiob_softc *sc;
 	int error;
 
 	sc = device_get_softc(dev);
+	if (size > 512 || size > sc->cardinfo.f[fn].max_blksize)
+		return (EFBIG);
 	cam_periph_lock(sc->periph);
-	error = sdiob_rw_extended_sc(sc, fn, addr, wr, size, buffer, incaddr);
+	error = sdiob_rw_extended_cam(sc, fn, addr, false, buffer, false, incaddr, size);
 	cam_periph_unlock(sc->periph);
+
 	return (error);
 }
 
 static int
-sdiob_read_extended(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
+sdiob_write_extended_byte(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
     uint8_t *buffer, bool incaddr)
 {
+	struct sdiob_softc *sc;
+	int error;
 
-	return (sdiob_rw_extended(dev, fn, addr, false, size, buffer, incaddr));
+	sc = device_get_softc(dev);
+	if (size > 512 || size > sc->cardinfo.f[fn].max_blksize)
+		return (EFBIG);
+	cam_periph_lock(sc->periph);
+	error = sdiob_rw_extended_cam(sc, fn, addr, true, buffer, false, incaddr, size);
+	cam_periph_unlock(sc->periph);
+
+	return (error);
 }
 
 static int
-sdiob_write_extended(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
+sdiob_read_extended_block(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
     uint8_t *buffer, bool incaddr)
 {
+	struct sdiob_softc *sc;
+	int error;
 
-	return (sdiob_rw_extended(dev, fn, addr, true, size, buffer, incaddr));
+	sc = device_get_softc(dev);
+	if (size % sc->cardinfo.f[fn].max_blksize)
+		return (ENXIO);
+	cam_periph_lock(sc->periph);
+	error = sdiob_rw_extended_cam(sc, fn, addr, false, buffer, true, incaddr, size);
+	cam_periph_unlock(sc->periph);
+
+	return (error);
+}
+
+static int
+sdiob_write_extended_block(device_t dev, uint8_t fn, uint32_t addr, uint32_t size,
+    uint8_t *buffer, bool incaddr)
+{
+	struct sdiob_softc *sc;
+	int error;
+
+	sc = device_get_softc(dev);
+	if (size % sc->cardinfo.f[fn].max_blksize)
+		return (ENXIO);
+	cam_periph_lock(sc->periph);
+	error = sdiob_rw_extended_cam(sc, fn, addr, true, buffer, true, incaddr, size);
+	cam_periph_unlock(sc->periph);
+
+	return (error);
 }
 
 static int
@@ -759,11 +719,13 @@ static device_method_t sdiob_methods[] = {
 	DEVMETHOD(bus_write_ivar,	sdiob_write_ivar),
 
 	/* SDIO interface. */
-	DEVMETHOD(sdio_read_direct,	sdiob_read_direct),
-	DEVMETHOD(sdio_write_direct,	sdiob_write_direct),
-	DEVMETHOD(sdio_read_extended,	sdiob_read_extended),
-	DEVMETHOD(sdio_write_extended,	sdiob_write_extended),
-	DEVMETHOD(sdio_claim_function,	sdiob_claim_function),
+	DEVMETHOD(sdio_read_direct,		sdiob_read_direct),
+	DEVMETHOD(sdio_write_direct,		sdiob_write_direct),
+	DEVMETHOD(sdio_read_extended_byte,	sdiob_read_extended_byte),
+	DEVMETHOD(sdio_write_extended_byte,	sdiob_write_extended_byte),
+	DEVMETHOD(sdio_read_extended_block,	sdiob_read_extended_block),
+	DEVMETHOD(sdio_write_extended_block,	sdiob_write_extended_block),
+	DEVMETHOD(sdio_claim_function,		sdiob_claim_function),
 	DEVMETHOD(sdio_get_function_num,	sdiob_get_function_num),
 	DEVMETHOD(sdio_get_nfunc,		sdiob_get_nfunc),
 

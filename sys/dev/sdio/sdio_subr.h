@@ -86,6 +86,8 @@ struct card_info {
 	uint8_t		num_funcs;
 
 	bool		support_multiblk; /* Support Multiple Block Transfer */
+	bool		low_speed_card;		/* Low speed card stays at 400khz */
+	bool		high_speed_supported;	/* 50Mhz is suported */
 };
 
 #ifdef _KERNEL

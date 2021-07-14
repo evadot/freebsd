@@ -56,9 +56,9 @@ METHOD int write_direct {
 };
 
 #
-# READ EXTENDED
+# READ EXTENDED (byte mode)
 #
-METHOD int read_extended {
+METHOD int read_extended_byte {
 	device_t dev;
 	uint8_t fn;
 	uint32_t addr;
@@ -68,9 +68,33 @@ METHOD int read_extended {
 };
 
 #
-# WRITE EXTENDED
+# WRITE EXTENDED (byte mode)
 #
-METHOD int write_extended {
+METHOD int write_extended_byte {
+	device_t dev;
+	uint8_t fn;
+	uint32_t addr;
+	uint32_t size;
+	uint8_t *buffer;
+	bool incaddr;
+};
+
+#
+# READ EXTENDED (block mode)
+#
+METHOD int read_extended_block {
+	device_t dev;
+	uint8_t fn;
+	uint32_t addr;
+	uint32_t size;
+	uint8_t *buffer;
+	bool incaddr;
+};
+
+#
+# WRITE EXTENDED (block mode)
+#
+METHOD int write_extended_block {
 	device_t dev;
 	uint8_t fn;
 	uint32_t addr;

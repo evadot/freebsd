@@ -148,9 +148,11 @@ sdio_set_block_size(struct sdio_func *f, uint16_t bs)
 	if (bs > f->max_blksize)
 		return (EOPNOTSUPP);
 
+	device_printf(f->dev, "calling sdio_get_support_multiblk\n");
 	if (!sdio_get_support_multiblk(f->dev))
 		return (EOPNOTSUPP);
 
+	device_printf(f->dev, "calling sdio_get_support_multiblk done\n");
 	pdev = device_get_parent(f->dev);
 	addr = SD_IO_FBR_START * f->fn + SD_IO_FBR_IOBLKSZ;
 	v = htole16(bs);
@@ -199,7 +201,7 @@ sdio_read_4(struct sdio_func *f, uint32_t addr, int *err)
 	int error;
 	uint32_t v;
 
-	error = SDIO_READ_EXTENDED(device_get_parent(f->dev), f->fn, addr,
+	error = SDIO_READ_EXTENDED_BYTE(device_get_parent(f->dev), f->fn, addr,
 	    sizeof(v), (uint8_t *)&v, true);
 	if (error) {
 		if (err != NULL)
@@ -217,7 +219,7 @@ sdio_write_4(struct sdio_func *f, uint32_t addr, uint32_t val, int *err)
 {
 	int error;
 
-	error = SDIO_WRITE_EXTENDED(device_get_parent(f->dev), f->fn, addr,
+	error = SDIO_WRITE_EXTENDED_BYTE(device_get_parent(f->dev), f->fn, addr,
 	    sizeof(val), (uint8_t *)&val, true);
 	if (err != NULL)
 		*err = error;
