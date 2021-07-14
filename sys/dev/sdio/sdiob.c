@@ -62,6 +62,10 @@
  * messages from MMCCAM to newbus and back.
  */
 
+#include <sys/cdefs.h>
+#include "opt_cam.h"
+#include "opt_platform.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/types.h>
@@ -86,6 +90,12 @@
 
 #include <dev/sdio/sdiob.h>
 #include <dev/sdio/sdio_subr.h>
+
+#ifdef FDT
+#include <dev/ofw/openfirm.h>
+#include <dev/ofw/ofw_bus.h>
+#include <dev/ofw/ofw_bus_subr.h>
+#endif
 
 #include "sdio_if.h"
 
@@ -650,6 +660,31 @@ sdiob_detach(device_t dev)
 	return (EOPNOTSUPP);
 }
 
+#ifdef FDT
+static phandle_t
+sdiob_get_node(device_t bus, device_t dev)
+{
+	phandle_t node;
+	phandle_t child;
+	uint32_t reg;
+	uint8_t funcnum;
+
+	funcnum = sdio_get_funcnum(dev);
+
+	/* Get the node of our parent, i.e. the mmc controller */
+	node = ofw_bus_get_node(device_get_parent(bus));
+
+	for (child = OF_child(node); child; child = OF_peer(child)) {
+		if (OF_hasprop(child, "reg")) {
+			OF_getencprop(child, "reg", &reg, sizeof(reg));
+			if (reg == funcnum)
+				return (child);
+		}
+	}
+	return (0);
+}
+#endif
+
 /* -------------------------------------------------------------------------- */
 /*
  * driver(9) and device(9) "control plane".
@@ -678,6 +713,10 @@ static device_method_t sdiob_methods[] = {
 	DEVMETHOD(sdio_claim_function,	sdiob_claim_function),
 	DEVMETHOD(sdio_get_function_num,	sdiob_get_function_num),
 	DEVMETHOD(sdio_get_nfunc,		sdiob_get_nfunc),
+
+#ifdef FDT
+	DEVMETHOD(ofw_bus_get_node,	sdiob_get_node),
+#endif
 
 	DEVMETHOD_END
 };
