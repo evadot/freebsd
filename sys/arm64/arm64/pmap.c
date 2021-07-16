@@ -1870,6 +1870,8 @@ _pmap_alloc_l3(pmap_t pmap, vm_pindex_t ptepindex, struct rwlock **lockp)
 
 		l0index = ptepindex - (NUL2E + NUL1E);
 		l0 = &pmap->pm_l0[l0index];
+		KASSERT((pmap_load(l0) & ATTR_DESCR_VALID) == 0,
+		    ("%s: L0 entry %#lx is valid", __func__, pmap_load(l0)));
 		pmap_store(l0, VM_PAGE_TO_PHYS(m) | L0_TABLE);
 	} else if (ptepindex >= NUL2E) {
 		vm_pindex_t l0index, l1index;
@@ -1896,6 +1898,8 @@ _pmap_alloc_l3(pmap_t pmap, vm_pindex_t ptepindex, struct rwlock **lockp)
 
 		l1 = (pd_entry_t *)PHYS_TO_DMAP(pmap_load(l0) & ~ATTR_MASK);
 		l1 = &l1[ptepindex & Ln_ADDR_MASK];
+		KASSERT((pmap_load(l1) & ATTR_DESCR_VALID) == 0,
+		    ("%s: L1 entry %#lx is valid", __func__, pmap_load(l1)));
 		pmap_store(l1, VM_PAGE_TO_PHYS(m) | L1_TABLE);
 	} else {
 		vm_pindex_t l0index, l1index;
@@ -1938,6 +1942,8 @@ _pmap_alloc_l3(pmap_t pmap, vm_pindex_t ptepindex, struct rwlock **lockp)
 
 		l2 = (pd_entry_t *)PHYS_TO_DMAP(pmap_load(l1) & ~ATTR_MASK);
 		l2 = &l2[ptepindex & Ln_ADDR_MASK];
+		KASSERT((pmap_load(l2) & ATTR_DESCR_VALID) == 0,
+		    ("%s: L2 entry %#lx is valid", __func__, pmap_load(l2)));
 		pmap_store(l2, VM_PAGE_TO_PHYS(m) | L2_TABLE);
 	}
 
@@ -4035,7 +4041,7 @@ pmap_enter_2mpage(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot,
 	if (pmap != kernel_pmap)
 		new_l2 |= ATTR_S1_nG;
 	return (pmap_enter_l2(pmap, va, new_l2, PMAP_ENTER_NOSLEEP |
-	    PMAP_ENTER_NOREPLACE | PMAP_ENTER_NORECLAIM, NULL, lockp) ==
+	    PMAP_ENTER_NOREPLACE | PMAP_ENTER_NORECLAIM, m, lockp) ==
 	    KERN_SUCCESS);
 }
 
@@ -4065,8 +4071,6 @@ pmap_every_pte_zero(vm_paddr_t pa)
  * KERN_RESOURCE_SHORTAGE if PMAP_ENTER_NOSLEEP was specified and a page table
  * page allocation failed.  Returns KERN_RESOURCE_SHORTAGE if
  * PMAP_ENTER_NORECLAIM was specified and a PV entry allocation failed.
- *
- * The parameter "m" is only used when creating a managed, writeable mapping.
  */
 static int
 pmap_enter_l2(pmap_t pmap, vm_offset_t va, pd_entry_t new_l2, u_int flags,
@@ -4152,6 +4156,16 @@ pmap_enter_l2(pmap_t pmap, vm_offset_t va, pd_entry_t new_l2, u_int flags,
 	if ((new_l2 & ATTR_SW_WIRED) != 0)
 		pmap->pm_stats.wired_count += L2_SIZE / PAGE_SIZE;
 	pmap->pm_stats.resident_count += L2_SIZE / PAGE_SIZE;
+
+	/*
+	 * Conditionally sync the icache.  See pmap_enter() for details.
+	 */
+	if ((new_l2 & ATTR_S1_XN) == 0 && ((new_l2 & ~ATTR_MASK) !=
+	    (old_l2 & ~ATTR_MASK) || (old_l2 & ATTR_S1_XN) != 0) &&
+	    pmap != kernel_pmap && m->md.pv_memattr == VM_MEMATTR_WRITE_BACK) {
+		cpu_icache_sync_range(PHYS_TO_DMAP(new_l2 & ~ATTR_MASK),
+		    L2_SIZE);
+	}
 
 	/*
 	 * Map the superpage.
