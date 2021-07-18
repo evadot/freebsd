@@ -58,10 +58,10 @@ device		dwc3			# Synopsys DWC controller
 device		aw_dwc3			# Allwinner DWC3 controller
 
 # Sound support
-device		a10_codec
-device		a33_codec
-device		a64_codec
-device		aw_i2s
+device		a10_codec               # Allwinner A10 codec
+device		aw_i2s                  # Allwinner I2S
+device		a33_codec               # Allwinner A33 codec
+device		a64_codec               # Allwinner A64 Analog codec
 
 # MMC/SD/SDIO Card slot support
 device		aw_mmc			# Allwinner SD/MMC controller
