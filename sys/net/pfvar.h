@@ -99,22 +99,32 @@ struct pfi_dynaddr {
 #define	PF_HASHROW_LOCK(h)	mtx_lock(&(h)->lock)
 #define	PF_HASHROW_UNLOCK(h)	mtx_unlock(&(h)->lock)
 
+#ifdef INVARIANTS
 #define	PF_STATE_LOCK(s)						\
 	do {								\
-		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH(s)];	\
-		PF_HASHROW_LOCK(_ih);					\
+		struct pf_kstate *_s = (s);				\
+		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH(_s)];	\
+		MPASS(_s->lock == &_ih->lock);				\
+		mtx_lock(_s->lock);					\
 	} while (0)
-
 #define	PF_STATE_UNLOCK(s)						\
 	do {								\
-		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH((s))];	\
-		PF_HASHROW_UNLOCK(_ih);					\
+		struct pf_kstate *_s = (s);				\
+		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH(_s)];	\
+		MPASS(_s->lock == &_ih->lock);				\
+		mtx_unlock(_s->lock);					\
 	} while (0)
+#else
+#define	PF_STATE_LOCK(s)	mtx_lock(s->lock)
+#define	PF_STATE_UNLOCK(s)	mtx_unlock(s->lock)
+#endif
 
 #ifdef INVARIANTS
 #define	PF_STATE_LOCK_ASSERT(s)						\
 	do {								\
-		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH(s)];	\
+		struct pf_kstate *_s = (s);				\
+		struct pf_idhash *_ih = &V_pf_idhash[PF_IDHASH(_s)];	\
+		MPASS(_s->lock == &_ih->lock);				\
 		PF_HASHROW_ASSERT(_ih);					\
 	} while (0)
 #else /* !INVARIANTS */
@@ -586,12 +596,23 @@ _Static_assert(sizeof(struct pf_state_export) == 384, "size incorrect");
 
 #ifdef _KERNEL
 struct pf_kstate {
+	/*
+	 * Area shared with pf_state_cmp
+	 */
 	u_int64_t		 id;
 	u_int32_t		 creatorid;
 	u_int8_t		 direction;
 	u_int8_t		 pad[3];
+	/*
+	 * end of the area
+	 */
 
+	u_int8_t		 state_flags;
+	u_int8_t		 timeout;
+	u_int8_t		 sync_state; /* PFSYNC_S_x */
+	u_int8_t		 sync_updates; /* XXX */
 	u_int			 refs;
+	struct mtx		*lock;
 	TAILQ_ENTRY(pf_kstate)	 sync_list;
 	TAILQ_ENTRY(pf_kstate)	 key_list[2];
 	LIST_ENTRY(pf_kstate)	 entry;
@@ -616,13 +637,6 @@ struct pf_kstate {
 	u_int32_t                pqid;
 	u_int16_t		 tag;
 	u_int8_t		 log;
-	u_int8_t		 state_flags;
-	u_int8_t		 timeout;
-	u_int8_t		 sync_state; /* PFSYNC_S_x */
-
-	/* XXX */
-	u_int8_t		 sync_updates;
-	u_int8_t		_tail[3];
 };
 
 /*
@@ -1129,6 +1143,12 @@ struct pf_pdesc {
 			counter_u64_add(V_pf_status.counters[x], 1); \
 	} while (0)
 
+enum pf_syncookies_mode {
+	PF_SYNCOOKIES_NEVER = 0,
+	PF_SYNCOOKIES_ALWAYS = 1,
+	PF_SYNCOOKIES_MODE_MAX = PF_SYNCOOKIES_ALWAYS
+};
+
 struct pf_kstatus {
 	counter_u64_t	counters[PFRES_MAX]; /* reason for passing/dropping */
 	counter_u64_t	lcounters[LCNT_MAX]; /* limit counters */
@@ -1143,6 +1163,8 @@ struct pf_kstatus {
 	char		ifname[IFNAMSIZ];
 	uint8_t		pf_chksum[PF_MD5_DIGEST_LENGTH];
 	bool		keep_counters;
+	enum pf_syncookies_mode	syncookies_mode;
+	bool		syncookies_active;
 };
 
 struct pf_divert {
@@ -1483,6 +1505,8 @@ struct pfioc_iface {
 #define	DIOCKILLSRCNODES	_IOWR('D', 91, struct pfioc_src_node_kill)
 #define	DIOCKEEPCOUNTERS	_IOWR('D', 92, struct pfioc_nv)
 #define DIOCGETSTATESV2	_IOWR('D', 93, struct pfioc_states_v2)
+#define	DIOCGETSYNCOOKIES	_IOWR('D', 94, struct pfioc_nv)
+#define	DIOCSETSYNCOOKIES	_IOWR('D', 95, struct pfioc_nv)
 
 struct pf_ifspeed_v0 {
 	char			ifname[IFNAMSIZ];
@@ -1559,6 +1583,7 @@ struct pf_idhash {
 	struct mtx			lock;
 };
 
+extern u_long		pf_ioctl_maxcount;
 extern u_long		pf_hashmask;
 extern u_long		pf_srchashmask;
 #define	PF_HASHSIZ	(131072)
@@ -1812,6 +1837,30 @@ int		 pf_tag_packet(struct mbuf *, struct pf_pdesc *, int);
 int		 pf_addr_cmp(struct pf_addr *, struct pf_addr *,
 		    sa_family_t);
 void		 pf_qid2qname(u_int32_t, char *);
+
+u_int16_t	 pf_get_mss(struct mbuf *, int, u_int16_t, sa_family_t);
+u_int8_t	 pf_get_wscale(struct mbuf *, int, u_int16_t, sa_family_t);
+struct mbuf 	*pf_build_tcp(const struct pf_krule *, sa_family_t,
+		    const struct pf_addr *, const struct pf_addr *,
+		    u_int16_t, u_int16_t, u_int32_t, u_int32_t,
+		    u_int8_t, u_int16_t, u_int16_t, u_int8_t, int,
+		    u_int16_t);
+void		 pf_send_tcp(const struct pf_krule *, sa_family_t,
+			    const struct pf_addr *, const struct pf_addr *,
+			    u_int16_t, u_int16_t, u_int32_t, u_int32_t,
+			    u_int8_t, u_int16_t, u_int16_t, u_int8_t, int,
+			    u_int16_t);
+
+void			 pf_syncookies_init(void);
+void			 pf_syncookies_cleanup(void);
+int			 pf_get_syncookies(struct pfioc_nv *);
+int			 pf_set_syncookies(struct pfioc_nv *);
+int			 pf_synflood_check(struct pf_pdesc *);
+void			 pf_syncookie_send(struct mbuf *m, int off,
+			    struct pf_pdesc *);
+u_int8_t		 pf_syncookie_validate(struct pf_pdesc *);
+struct mbuf *		 pf_syncookie_recreate_syn(uint8_t, int,
+			    struct pf_pdesc *);
 
 VNET_DECLARE(struct pf_kstatus, pf_status);
 #define	V_pf_status	VNET(pf_status)
