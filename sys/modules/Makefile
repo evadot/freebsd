@@ -111,6 +111,8 @@ SUBDIR=	\
 	${_efirt} \
 	${_em} \
 	${_ena} \
+	${_enetc} \
+	${_enetc_mdio} \
 	esp \
 	${_et} \
 	evdev \
@@ -118,6 +120,7 @@ SUBDIR=	\
 	ext2fs \
 	fdc \
 	fdescfs \
+	${_felix} \
 	${_ffec} \
 	${_fib_dxr} \
 	filemon \
@@ -611,6 +614,9 @@ _allwinner=	allwinner
 _armv8crypto=	armv8crypto
 _dwwdt=		dwwdt
 _em=		em
+_enetc=		enetc
+_enetc_mdio=	enetc_mdio
+_felix=		felix
 _rockchip=	rockchip
 .endif
 

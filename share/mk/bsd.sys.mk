@@ -239,16 +239,15 @@ CFLAGS.clang+=	 -Qunused-arguments
 # but not yet.
 CXXFLAGS.clang+=	 -Wno-c++11-extensions
 
-.if ${MK_SSP} != "no" && \
-    ${MACHINE_CPUARCH} != "arm" && ${MACHINE_CPUARCH} != "mips"
+.if ${MK_SSP} != "no"
 # Don't use -Wstack-protector as it breaks world with -Werror.
 SSP_CFLAGS?=	-fstack-protector-strong
 CFLAGS+=	${SSP_CFLAGS}
-.endif # SSP && !ARM && !MIPS
+.endif # SSP
 
 # Additional flags passed in CFLAGS and CXXFLAGS when MK_DEBUG_FILES is
 # enabled.
-DEBUG_FILES_CFLAGS?= -g
+DEBUG_FILES_CFLAGS?= -g -gz=zlib
 
 # Allow user-specified additional warning flags, plus compiler and file
 # specific flag overrides, unless we've overridden this...

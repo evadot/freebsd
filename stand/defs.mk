@@ -24,6 +24,12 @@ INTERNALLIB=
 # enough to make that hassle worth chasing.
 _CPUCFLAGS=
 
+.if ${LDFLAGS:M-nostdlib}
+# Sanitizers won't work unless we link against libc (e.g. in userboot/test).
+MK_ASAN:=	no
+MK_UBSAN:=	no
+.endif
+
 .include <src.opts.mk>
 .include <bsd.linker.mk>
 
@@ -128,8 +134,6 @@ CFLAGS+=	-m32
 LD_FLAGS+=	-m elf_i386_fbsd
 AFLAGS+=	--32
 .endif
-
-SSP_CFLAGS=
 
 # Add in the no float / no SIMD stuff and announce we're freestanding
 # aarch64 and riscv don't have -msoft-float, but all others do.
