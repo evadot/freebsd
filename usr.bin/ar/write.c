@@ -587,8 +587,8 @@ write_objs(struct bsdar *bsdar)
 	uint32_t		 nr32;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
-		bsdar_errc(bsdar, 0,
-		    "ELF library initialization failed: %s", elf_errmsg(-1));
+		bsdar_errc(bsdar, 0, "ELF library initialization failed: %s",
+		    elf_errmsg(-1));
 
 	bsdar->rela_off = 0;
 
