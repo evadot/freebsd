@@ -261,6 +261,7 @@ struct mount {
 	TAILQ_HEAD(, mount_upper_node) mnt_notify; /* (i) upper mounts for notification */
 	STAILQ_ENTRY(mount) mnt_taskqueue_link;	/* (d) our place in deferred unmount list */
 	uint64_t	mnt_taskqueue_flags;	/* (d) unmount flags passed from taskqueue */
+	unsigned int	mnt_unmount_retries;	/* (d) # of failed deferred unmount attempts */
 };
 #endif	/* _WANT_MOUNT || _KERNEL */
 
@@ -398,9 +399,7 @@ struct mntoptnames {
 #define	MNT_EXTLSCERTUSER 0x0000010000000000ULL /* require TLS with user cert */
 
 /*
- * Flags set by internal operations,
- * but visible to the user.
- * XXX some of these are not quite right.. (I've never seen the root flag set)
+ * Flags set by internal operations, but visible to the user.
  */
 #define	MNT_LOCAL	0x0000000000001000ULL /* filesystem is stored locally */
 #define	MNT_QUOTA	0x0000000000002000ULL /* quotas are enabled on fs */

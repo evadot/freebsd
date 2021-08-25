@@ -1117,7 +1117,8 @@ uftdi_attach(device_t dev)
 	}
 	/* clear stall at first run */
 	mtx_lock(&sc->sc_mtx);
-	usbd_xfer_set_zlp(sc->sc_xfer[UFTDI_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[UFTDI_BULK_DT_WR]);
+	usbd_xfer_set_stall(sc->sc_xfer[UFTDI_BULK_DT_RD]);
 	mtx_unlock(&sc->sc_mtx);
 
 	/* set a valid "lcr" value */
@@ -1212,17 +1213,9 @@ uftdi_write_callback(struct usb_xfer *xfer, usb_error_t error)
 	DPRINTFN(3, "\n");
 
 	switch (USB_GET_STATE(xfer)) {
-	default:			/* Error */
-		if (error != USB_ERR_CANCELLED) {
-			/* try to clear stall first */
-			usbd_xfer_set_stall(xfer);
-		}
-		/* FALLTHROUGH */
 	case USB_ST_SETUP:
 	case USB_ST_TRANSFERRED:
-		if (usbd_xfer_get_and_clr_zlp(xfer))
-			break;
-
+tr_setup:
 		/*
 		 * If output packets don't require headers (the common case) we
 		 * can just load the buffer up with payload bytes all at once.
@@ -1255,6 +1248,13 @@ uftdi_write_callback(struct usb_xfer *xfer, usb_error_t error)
 		if (buflen != 0) {
 			usbd_xfer_set_frame_len(xfer, 0, buflen);
 			usbd_transfer_submit(xfer);
+		}
+		break;
+	default:			/* Error */
+		if (error != USB_ERR_CANCELLED) {
+			/* try to clear stall first */
+			usbd_xfer_set_stall(xfer);
+			goto tr_setup;
 		}
 		break;
 	}

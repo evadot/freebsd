@@ -97,8 +97,8 @@ static struct cxgbei_worker_thread_softc *cwt_softc;
 static struct proc *cxgbei_proc;
 
 static void
-read_pdu_limits(struct adapter *sc, uint32_t *max_tx_pdu_len,
-    uint32_t *max_rx_pdu_len)
+read_pdu_limits(struct adapter *sc, uint32_t *max_tx_data_len,
+    uint32_t *max_rx_data_len, struct ppod_region *pr)
 {
 	uint32_t tx_len, rx_len, r, v;
 
@@ -114,8 +114,30 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_pdu_len,
 	rx_len = min(rx_len, v);
 	tx_len = min(tx_len, v);
 
-	*max_tx_pdu_len = rounddown2(tx_len, 512);
-	*max_rx_pdu_len = rounddown2(rx_len, 512);
+	/*
+	 * AHS is not supported by the kernel so we'll not account for
+	 * it either in our PDU len -> data segment len conversions.
+	 */
+	rx_len -= ISCSI_BHS_SIZE + ISCSI_HEADER_DIGEST_SIZE +
+	    ISCSI_DATA_DIGEST_SIZE;
+	tx_len -= ISCSI_BHS_SIZE + ISCSI_HEADER_DIGEST_SIZE +
+	    ISCSI_DATA_DIGEST_SIZE;
+
+	/*
+	 * DDP can place only 4 pages for a single PDU.  A single
+	 * request might use larger pages than the smallest page size,
+	 * but that cannot be guaranteed.  Assume the smallest DDP
+	 * page size for this limit.
+	 */
+	rx_len = min(rx_len, 4 * (1U << pr->pr_page_shift[0]));
+
+	if (chip_id(sc) == CHELSIO_T5) {
+		rx_len = rounddown2(rx_len, 512);
+		tx_len = rounddown2(tx_len, 512);
+	}
+
+	*max_tx_data_len = tx_len;
+	*max_rx_data_len = rx_len;
 }
 
 /*
@@ -134,8 +156,6 @@ cxgbei_init(struct adapter *sc, struct cxgbei_data *ci)
 
 	MPASS(sc->vres.iscsi.size > 0);
 	MPASS(ci != NULL);
-
-	read_pdu_limits(sc, &ci->max_tx_pdu_len, &ci->max_rx_pdu_len);
 
 	pr = &ci->pr;
 	r = t4_read_reg(sc, A_ULP_RX_ISCSI_PSZ);
@@ -161,6 +181,8 @@ cxgbei_init(struct adapter *sc, struct cxgbei_data *ci)
 		t4_set_reg_field(sc, A_ULP_RX_ISCSI_TAGMASK,
 		    V_ISCSITAGMASK(M_ISCSITAGMASK), pr->pr_tag_mask);
 	}
+
+	read_pdu_limits(sc, &ci->max_tx_data_len, &ci->max_rx_data_len, pr);
 
 	sysctl_ctx_init(&ci->ctx);
 	oid = device_get_sysctl_tree(sc->dev);	/* dev.t5nex.X */
@@ -561,10 +583,12 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 		    cmp->next_buffer_offset;
 
 		if (prev_seg_len != 0) {
+			uint32_t orig_datasn;
+
 			/*
-			 * Since cfiscsi doesn't know about previous
-			 * headers, pretend that the entire r2t data
-			 * length was received in this single segment.
+			 * Return a "large" PDU representing the burst
+			 * of PDUs.  Adjust the offset and length of
+			 * this PDU to represent the entire burst.
 			 */
 			ip->ip_data_len += prev_seg_len;
 			bhsdo->bhsdo_data_segment_len[2] = ip->ip_data_len;
@@ -573,17 +597,19 @@ do_rx_iscsi_cmp(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 			bhsdo->bhsdo_buffer_offset =
 			    htobe32(cmp->next_buffer_offset);
 
-			npdus = htobe32(bhsdo->bhsdo_datasn) - cmp->last_datasn;
+			orig_datasn = htobe32(bhsdo->bhsdo_datasn);
+			npdus = orig_datasn - cmp->last_datasn;
+			bhsdo->bhsdo_datasn = htobe32(cmp->last_datasn + 1);
+			cmp->last_datasn = orig_datasn;
+			ip->ip_additional_pdus = npdus - 1;
 		} else {
 			MPASS(htobe32(bhsdo->bhsdo_datasn) ==
 			    cmp->last_datasn + 1);
 			npdus = 1;
+			cmp->last_datasn = htobe32(bhsdo->bhsdo_datasn);
 		}
 
 		cmp->next_buffer_offset += ip->ip_data_len;
-		cmp->last_datasn = htobe32(bhsdo->bhsdo_datasn);
-		bhsdo->bhsdo_datasn = htobe32(cmp->next_datasn);
-		cmp->next_datasn++;
 		toep->ofld_rxq->rx_iscsi_ddp_pdus += npdus;
 		toep->ofld_rxq->rx_iscsi_ddp_octets += ip->ip_data_len;
 	} else {

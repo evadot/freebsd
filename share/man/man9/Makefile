@@ -161,6 +161,7 @@ MAN=	accept_filter.9 \
 	g_provider_by_name.9 \
 	groupmember.9 \
 	g_wither_geom.9 \
+	gone_in.9 \
 	hardclock.9 \
 	hash.9 \
 	hashinit.9 \
@@ -1011,6 +1012,7 @@ MLINKS+=dnv.9 dnvlist.9 \
 	dnv.9 dnvlist_take_string.9
 MLINKS+=domain.9 DOMAIN_SET.9 \
 	domain.9 domain_add.9 \
+	domain.9 domain_init.9 \
 	domain.9 pfctlinput.9 \
 	domain.9 pffinddomain.9 \
 	domain.9 pffindproto.9 \
@@ -1118,6 +1120,7 @@ MLINKS+=g_geom.9 g_destroy_geom.9 \
 MLINKS+=g_provider.9 g_destroy_provider.9 \
 	g_provider.9 g_error_provider.9 \
 	g_provider.9 g_new_providerf.9
+MLINKS+=gone_in.9 gone_in_dev.9
 MLINKS+=hash.9 hash32.9 \
 	hash.9 hash32_buf.9 \
 	hash.9 hash32_str.9 \
