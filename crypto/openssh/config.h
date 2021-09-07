@@ -211,6 +211,12 @@
 /* Define to 1 if you have the `aug_get_machine' function. */
 /* #undef HAVE_AUG_GET_MACHINE */
 
+/* Define to 1 if you have the `auth_hostok' function. */
+#define HAVE_AUTH_HOSTOK 1
+
+/* Define to 1 if you have the `auth_timeok' function. */
+#define HAVE_AUTH_TIMEOK 1
+
 /* Define to 1 if you have the `b64_ntop' function. */
 /* #undef HAVE_B64_NTOP */
 
@@ -788,7 +794,7 @@
 /* #undef HAVE_LIBCRYPT */
 
 /* Define to 1 if you have the `dl' library (-ldl). */
-/* #undef HAVE_LIBDL */
+#define HAVE_LIBDL 1
 
 /* Define to 1 if you have the <libgen.h> header file. */
 #define HAVE_LIBGEN_H 1
@@ -1352,7 +1358,7 @@
 #define HAVE_SYS_CDEFS_H 1
 
 /* Define to 1 if you have the <sys/dir.h> header file. */
-#define HAVE_SYS_DIR_H 1
+/* #undef HAVE_SYS_DIR_H */
 
 /* Define if your system defines sys_errlist[] */
 #define HAVE_SYS_ERRLIST 1

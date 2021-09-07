@@ -132,6 +132,8 @@ read_pdu_limits(struct adapter *sc, uint32_t *max_tx_data_len,
 	rx_len = min(rx_len, 4 * (1U << pr->pr_page_shift[0]));
 
 	if (chip_id(sc) == CHELSIO_T5) {
+		tx_len = min(tx_len, 15360);
+
 		rx_len = rounddown2(rx_len, 512);
 		tx_len = rounddown2(tx_len, 512);
 	}
@@ -195,6 +197,13 @@ cxgbei_init(struct adapter *sc, struct cxgbei_data *ci)
 	ci->ddp_threshold = 2048;
 	SYSCTL_ADD_UINT(&ci->ctx, children, OID_AUTO, "ddp_threshold",
 	    CTLFLAG_RW, &ci->ddp_threshold, 0, "Rx zero copy threshold");
+
+	SYSCTL_ADD_UINT(&ci->ctx, children, OID_AUTO, "max_rx_data_len",
+	    CTLFLAG_RD, &ci->max_rx_data_len, 0,
+	    "Maximum receive data segment length");
+	SYSCTL_ADD_UINT(&ci->ctx, children, OID_AUTO, "max_tx_data_len",
+	    CTLFLAG_RD, &ci->max_tx_data_len, 0,
+	    "Maximum transmit data segment length");
 
 	return (0);
 }

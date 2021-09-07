@@ -358,6 +358,7 @@ SUBDIR=	\
 	stge \
 	${_sume} \
 	${_superio} \
+	${_p2sb} \
 	${_sym} \
 	${_syscons} \
 	sysvipc \
@@ -662,6 +663,7 @@ _safe=		safe
 _speaker=	speaker
 _splash=	splash
 _sppp=		sppp
+_p2sb=		p2sb
 _wbwd=		wbwd
 
 _aac=		aac
@@ -728,6 +730,7 @@ _tpm=		tpm
 _twa=		twa
 _vesa=		vesa
 _viawd=		viawd
+_vmd=		vmd
 _wpi=		wpi
 .if ${MK_SOURCELESS_UCODE} != "no"
 _wpifw=		wpifw
@@ -746,7 +749,6 @@ _pms=		pms
 _qlxge=		qlxge
 _qlxgb=		qlxgb
 _sume=		sume
-_vmd=		vmd
 .if ${MK_SOURCELESS_UCODE} != "no"
 _qlxgbe=	qlxgbe
 _qlnx=		qlnx
@@ -755,6 +757,7 @@ _sfxge=		sfxge
 _sgx=		sgx
 _sgx_linux=	sgx_linux
 _smartpqi=	smartpqi
+_p2sb=		p2sb
 
 .if ${MK_BHYVE} != "no" || defined(ALL_MODULES)
 .if ${KERN_OPTS:MSMP}

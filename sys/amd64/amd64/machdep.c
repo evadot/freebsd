@@ -83,6 +83,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/pcpu.h>
 #include <sys/ptrace.h>
 #include <sys/reboot.h>
+#include <sys/reg.h>
 #include <sys/rwlock.h>
 #include <sys/sched.h>
 #include <sys/signalvar.h>
@@ -129,7 +130,6 @@ __FBSDID("$FreeBSD$");
 #include <machine/pc/bios.h>
 #include <machine/pcb.h>
 #include <machine/proc.h>
-#include <machine/reg.h>
 #include <machine/sigframe.h>
 #include <machine/specialreg.h>
 #include <machine/trap.h>
@@ -1642,7 +1642,7 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 		atomic_store_short((u_short *)0x472, 0x1234);
 	}
 
-	physfree += ucode_load_bsp(physfree + KERNBASE);
+	physfree += ucode_load_bsp(physfree - kernphys + KERNSTART);
 	physfree = roundup2(physfree, PAGE_SIZE);
 
 	identify_cpu1();

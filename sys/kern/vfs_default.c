@@ -93,7 +93,6 @@ static int vop_stdgetpages_async(struct vop_getpages_async_args *ap);
 static int vop_stdread_pgcache(struct vop_read_pgcache_args *ap);
 static int vop_stdstat(struct vop_stat_args *ap);
 static int vop_stdvput_pair(struct vop_vput_pair_args *ap);
-static int vop_stddeallocate(struct vop_deallocate_args *ap);
 
 /*
  * This vnode table stores what we want to do if the filesystem doesn't
@@ -1126,7 +1125,7 @@ vp_zerofill(struct vnode *vp, struct vattr *vap, off_t *offsetp, off_t *lenp,
 	return (error);
 }
 
-static int
+int
 vop_stddeallocate(struct vop_deallocate_args *ap)
 {
 	struct vnode *vp;
@@ -1156,6 +1155,7 @@ vop_stddeallocate(struct vop_deallocate_args *ap)
 			/*
 			 * No more data region to be filled
 			 */
+			offset += len;
 			len = 0;
 			error = 0;
 			break;
@@ -1185,10 +1185,8 @@ vop_stddeallocate(struct vop_deallocate_args *ap)
 			break;
 	}
 	/* Handle the case when offset is beyond EOF */
-	if (len < 0) {
-		offset += len;
+	if (len < 0)
 		len = 0;
-	}
 out:
 	*ap->a_offset = offset;
 	*ap->a_len = len;
