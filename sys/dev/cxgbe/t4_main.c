@@ -253,11 +253,6 @@ static void cxgbe_qflush(struct ifnet *);
 #if defined(KERN_TLS) || defined(RATELIMIT)
 static int cxgbe_snd_tag_alloc(struct ifnet *, union if_snd_tag_alloc_params *,
     struct m_snd_tag **);
-static int cxgbe_snd_tag_modify(struct m_snd_tag *,
-    union if_snd_tag_modify_params *);
-static int cxgbe_snd_tag_query(struct m_snd_tag *,
-    union if_snd_tag_query_params *);
-static void cxgbe_snd_tag_free(struct m_snd_tag *);
 #endif
 
 MALLOC_DEFINE(M_CXGBE, "cxgbe", "Chelsio T4/T5 Ethernet driver and services");
@@ -2453,9 +2448,6 @@ cxgbe_vi_attach(device_t dev, struct vi_info *vi)
 		ifp->if_get_counter = cxgbe_get_counter;
 #if defined(KERN_TLS) || defined(RATELIMIT)
 	ifp->if_snd_tag_alloc = cxgbe_snd_tag_alloc;
-	ifp->if_snd_tag_modify = cxgbe_snd_tag_modify;
-	ifp->if_snd_tag_query = cxgbe_snd_tag_query;
-	ifp->if_snd_tag_free = cxgbe_snd_tag_free;
 #endif
 #ifdef RATELIMIT
 	ifp->if_ratelimit_query = cxgbe_ratelimit_query;
@@ -2926,7 +2918,7 @@ cxgbe_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 #ifdef RATELIMIT
 	if (m->m_pkthdr.csum_flags & CSUM_SND_TAG) {
-		if (m->m_pkthdr.snd_tag->type == IF_SND_TAG_TYPE_RATE_LIMIT)
+		if (m->m_pkthdr.snd_tag->sw->type == IF_SND_TAG_TYPE_RATE_LIMIT)
 			return (ethofld_transmit(ifp, m));
 	}
 #endif
@@ -3108,56 +3100,6 @@ cxgbe_snd_tag_alloc(struct ifnet *ifp, union if_snd_tag_alloc_params *params,
 		error = EOPNOTSUPP;
 	}
 	return (error);
-}
-
-static int
-cxgbe_snd_tag_modify(struct m_snd_tag *mst,
-    union if_snd_tag_modify_params *params)
-{
-
-	switch (mst->type) {
-#ifdef RATELIMIT
-	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		return (cxgbe_rate_tag_modify(mst, params));
-#endif
-	default:
-		return (EOPNOTSUPP);
-	}
-}
-
-static int
-cxgbe_snd_tag_query(struct m_snd_tag *mst,
-    union if_snd_tag_query_params *params)
-{
-
-	switch (mst->type) {
-#ifdef RATELIMIT
-	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		return (cxgbe_rate_tag_query(mst, params));
-#endif
-	default:
-		return (EOPNOTSUPP);
-	}
-}
-
-static void
-cxgbe_snd_tag_free(struct m_snd_tag *mst)
-{
-
-	switch (mst->type) {
-#ifdef RATELIMIT
-	case IF_SND_TAG_TYPE_RATE_LIMIT:
-		cxgbe_rate_tag_free(mst);
-		return;
-#endif
-#ifdef KERN_TLS
-	case IF_SND_TAG_TYPE_TLS:
-		cxgbe_tls_tag_free(mst);
-		return;
-#endif
-	default:
-		panic("shouldn't get here");
-	}
 }
 #endif
 
@@ -9600,7 +9542,9 @@ sysctl_meminfo(SYSCTL_HANDLER_ARGS)
 	struct sbuf *sb;
 	int rc, i, n;
 	uint32_t lo, hi, used, alloc;
-	static const char *memory[] = {"EDC0:", "EDC1:", "MC:", "MC0:", "MC1:"};
+	static const char *memory[] = {
+		"EDC0:", "EDC1:", "MC:", "MC0:", "MC1:", "HMA:"
+	};
 	static const char *region[] = {
 		"DBQ contexts:", "IMSG contexts:", "FLM cache:", "TCBs:",
 		"Pstructs:", "Timers:", "Rx FL:", "Tx FL:", "Pstruct FL:",
@@ -9653,19 +9597,25 @@ sysctl_meminfo(SYSCTL_HANDLER_ARGS)
 	if (lo & F_EXT_MEM_ENABLE) {
 		hi = t4_read_reg(sc, A_MA_EXT_MEMORY_BAR);
 		avail[i].base = G_EXT_MEM_BASE(hi) << 20;
-		avail[i].limit = avail[i].base +
-		    (G_EXT_MEM_SIZE(hi) << 20);
+		avail[i].limit = avail[i].base + (G_EXT_MEM_SIZE(hi) << 20);
 		avail[i].idx = is_t5(sc) ? 3 : 2;	/* Call it MC0 for T5 */
 		i++;
 	}
 	if (is_t5(sc) && lo & F_EXT_MEM1_ENABLE) {
 		hi = t4_read_reg(sc, A_MA_EXT_MEMORY1_BAR);
 		avail[i].base = G_EXT_MEM1_BASE(hi) << 20;
-		avail[i].limit = avail[i].base +
-		    (G_EXT_MEM1_SIZE(hi) << 20);
+		avail[i].limit = avail[i].base + (G_EXT_MEM1_SIZE(hi) << 20);
 		avail[i].idx = 4;
 		i++;
 	}
+	if (is_t6(sc) && lo & F_HMA_MUX) {
+		hi = t4_read_reg(sc, A_MA_EXT_MEMORY1_BAR);
+		avail[i].base = G_EXT_MEM1_BASE(hi) << 20;
+		avail[i].limit = avail[i].base + (G_EXT_MEM1_SIZE(hi) << 20);
+		avail[i].idx = 5;
+		i++;
+	}
+	MPASS(i <= nitems(avail));
 	if (!i)                                    /* no memory available */
 		goto done;
 	qsort(avail, i, sizeof(struct mem_desc), mem_desc_cmp);
@@ -9720,23 +9670,24 @@ sysctl_meminfo(SYSCTL_HANDLER_ARGS)
 #undef ulp_region
 
 	md->base = 0;
-	md->idx = nitems(region);
-	if (!is_t4(sc)) {
+	if (is_t4(sc))
+		md->idx = nitems(region);
+	else {
 		uint32_t size = 0;
 		uint32_t sge_ctrl = t4_read_reg(sc, A_SGE_CONTROL2);
 		uint32_t fifo_size = t4_read_reg(sc, A_SGE_DBVFIFO_SIZE);
 
 		if (is_t5(sc)) {
 			if (sge_ctrl & F_VFIFO_ENABLE)
-				size = G_DBVFIFO_SIZE(fifo_size);
+				size = fifo_size << 2;
 		} else
-			size = G_T6_DBVFIFO_SIZE(fifo_size);
+			size = G_T6_DBVFIFO_SIZE(fifo_size) << 6;
 
 		if (size) {
-			md->base = G_BASEADDR(t4_read_reg(sc,
-			    A_SGE_DBVFIFO_BADDR));
-			md->limit = md->base + (size << 2) - 1;
-		}
+			md->base = t4_read_reg(sc, A_SGE_DBVFIFO_BADDR);
+			md->limit = md->base + size - 1;
+		} else
+			md->idx = nitems(region);
 	}
 	md++;
 

@@ -1374,6 +1374,16 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	if (toep->flags & TPF_ABORT_SHUTDOWN)
 		goto done;
 
+	so = inp->inp_socket;
+	socantrcvmore(so);
+	if (ulp_mode(toep) == ULP_MODE_TCPDDP) {
+		DDP_LOCK(toep);
+		if (__predict_false(toep->ddp.flags &
+		    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
+			handle_ddp_close(toep, tp, cpl->rcv_nxt);
+		DDP_UNLOCK(toep);
+	}
+
 	if (ulp_mode(toep) == ULP_MODE_RDMA ||
 	    (ulp_mode(toep) == ULP_MODE_ISCSI && chip_id(sc) >= CHELSIO_T6)) {
 		/*
@@ -1389,16 +1399,6 @@ do_peer_close(struct sge_iq *iq, const struct rss_header *rss, struct mbuf *m)
 	}
 
 	tp->rcv_nxt = be32toh(cpl->rcv_nxt);
-
-	so = inp->inp_socket;
-	socantrcvmore(so);
-	if (ulp_mode(toep) == ULP_MODE_TCPDDP) {
-		DDP_LOCK(toep);
-		if (__predict_false(toep->ddp.flags &
-		    (DDP_BUF0_ACTIVE | DDP_BUF1_ACTIVE)))
-			handle_ddp_close(toep, tp, cpl->rcv_nxt);
-		DDP_UNLOCK(toep);
-	}
 
 	switch (tp->t_state) {
 	case TCPS_SYN_RECEIVED:
@@ -2203,14 +2203,14 @@ t4_aiotx_process_job(struct toepcb *toep, struct socket *so, struct kaiocb *job)
 
 	/* Inline sosend_generic(). */
 
-	error = sblock(sb, SBL_WAIT);
+	error = SOCK_IO_SEND_LOCK(so, SBL_WAIT);
 	MPASS(error == 0);
 
 sendanother:
 	SOCKBUF_LOCK(sb);
 	if (so->so_snd.sb_state & SBS_CANTSENDMORE) {
 		SOCKBUF_UNLOCK(sb);
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		if ((so->so_options & SO_NOSIGPIPE) == 0) {
 			PROC_LOCK(job->userproc);
 			kern_psignal(job->userproc, SIGPIPE);
@@ -2223,12 +2223,12 @@ sendanother:
 		error = so->so_error;
 		so->so_error = 0;
 		SOCKBUF_UNLOCK(sb);
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		goto out;
 	}
 	if ((so->so_state & SS_ISCONNECTED) == 0) {
 		SOCKBUF_UNLOCK(sb);
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		error = ENOTCONN;
 		goto out;
 	}
@@ -2241,13 +2241,13 @@ sendanother:
 		 */
 		if (!aio_set_cancel_function(job, t4_aiotx_cancel)) {
 			SOCKBUF_UNLOCK(sb);
-			sbunlock(sb);
+			SOCK_IO_SEND_UNLOCK(so);
 			error = ECANCELED;
 			goto out;
 		}
 		TAILQ_INSERT_HEAD(&toep->aiotx_jobq, job, list);
 		SOCKBUF_UNLOCK(sb);
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		goto out;
 	}
 
@@ -2274,7 +2274,7 @@ sendanother:
 
 	m = alloc_aiotx_mbuf(job, len);
 	if (m == NULL) {
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		error = EFAULT;
 		goto out;
 	}
@@ -2285,7 +2285,7 @@ sendanother:
 	INP_WLOCK(inp);
 	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
 		INP_WUNLOCK(inp);
-		sbunlock(sb);
+		SOCK_IO_SEND_UNLOCK(so);
 		error = ECONNRESET;
 		goto out;
 	}
@@ -2307,7 +2307,7 @@ sendanother:
 	INP_WUNLOCK(inp);
 	if (sendmore)
 		goto sendanother;
-	sbunlock(sb);
+	SOCK_IO_SEND_UNLOCK(so);
 
 	if (error)
 		goto out;
@@ -2353,9 +2353,11 @@ t4_aiotx_task(void *context, int pending)
 	struct toepcb *toep = context;
 	struct socket *so;
 	struct kaiocb *job;
+	struct epoch_tracker et;
 
 	so = toep->aiotx_so;
 	CURVNET_SET(toep->vnet);
+	NET_EPOCH_ENTER(et);
 	SOCKBUF_LOCK(&so->so_snd);
 	while (!TAILQ_EMPTY(&toep->aiotx_jobq) && sowriteable(so)) {
 		job = TAILQ_FIRST(&toep->aiotx_jobq);
@@ -2367,11 +2369,12 @@ t4_aiotx_task(void *context, int pending)
 	}
 	toep->aiotx_so = NULL;
 	SOCKBUF_UNLOCK(&so->so_snd);
-	CURVNET_RESTORE();
+	NET_EPOCH_EXIT(et);
 
 	free_toepcb(toep);
 	SOCK_LOCK(so);
 	sorele(so);
+	CURVNET_RESTORE();
 }
 
 static void

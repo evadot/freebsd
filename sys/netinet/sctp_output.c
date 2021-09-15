@@ -5817,7 +5817,9 @@ do_a_abort:
 			atomic_add_int(&asoc->refcnt, 1);
 			SCTP_TCB_UNLOCK(stcb);
 	new_tag:
+			SCTP_INP_INFO_RLOCK();
 			vtag = sctp_select_a_tag(inp, inp->sctp_lport, sh->src_port, 1);
+			SCTP_INP_INFO_RUNLOCK();
 			if ((asoc->peer_supports_nat) && (vtag == asoc->my_vtag)) {
 				/*
 				 * Got a duplicate vtag on some guy behind a
@@ -5834,7 +5836,9 @@ do_a_abort:
 		} else {
 			SCTP_INP_INCR_REF(inp);
 			SCTP_INP_RUNLOCK(inp);
+			SCTP_INP_INFO_RLOCK();
 			vtag = sctp_select_a_tag(inp, inp->sctp_lport, sh->src_port, 1);
+			SCTP_INP_INFO_RUNLOCK();
 			initack->init.initiate_tag = htonl(vtag);
 			/* get a TSN to use too */
 			initack->init.initial_tsn = htonl(sctp_select_initial_TSN(&inp->sctp_ep));
@@ -6770,7 +6774,9 @@ sctp_sendall_completes(void *ptr, uint32_t val SCTP_UNUSED)
 	/* now free everything */
 	if (ca->inp) {
 		/* Lets clear the flag to allow others to run. */
+		SCTP_INP_WLOCK(ca->inp);
 		ca->inp->sctp_flags &= ~SCTP_PCB_FLAGS_SND_ITERATOR_UP;
+		SCTP_INP_WUNLOCK(ca->inp);
 	}
 	sctp_m_freem(ca->m);
 	SCTP_FREE(ca, SCTP_M_COPYAL);
@@ -6825,10 +6831,6 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 	int ret;
 	struct sctp_copy_all *ca;
 
-	if (inp->sctp_flags & SCTP_PCB_FLAGS_SND_ITERATOR_UP) {
-		/* There is another. */
-		return (EBUSY);
-	}
 	if (uio->uio_resid > (ssize_t)SCTP_BASE_SYSCTL(sctp_sendall_limit)) {
 		/* You must not be larger than the limit! */
 		return (EMSGSIZE);
@@ -6846,6 +6848,18 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 	if (srcv) {
 		memcpy(&ca->sndrcv, srcv, sizeof(struct sctp_nonpad_sndrcvinfo));
 	}
+
+	/* Serialize. */
+	SCTP_INP_WLOCK(inp);
+	if ((inp->sctp_flags & SCTP_PCB_FLAGS_SND_ITERATOR_UP) != 0) {
+		SCTP_INP_WUNLOCK(inp);
+		sctp_m_freem(m);
+		SCTP_FREE(ca, SCTP_M_COPYAL);
+		return (EBUSY);
+	}
+	inp->sctp_flags |= SCTP_PCB_FLAGS_SND_ITERATOR_UP;
+	SCTP_INP_WUNLOCK(inp);
+
 	/*
 	 * take off the sendall flag, it would be bad if we failed to do
 	 * this :-0
@@ -6857,6 +6871,10 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 		ca->m = sctp_copy_out_all(uio, ca->sndlen);
 		if (ca->m == NULL) {
 			SCTP_FREE(ca, SCTP_M_COPYAL);
+			sctp_m_freem(m);
+			SCTP_INP_WLOCK(inp);
+			inp->sctp_flags &= ~SCTP_PCB_FLAGS_SND_ITERATOR_UP;
+			SCTP_INP_WUNLOCK(inp);
 			SCTP_LTRACE_ERR_RET(inp, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, ENOMEM);
 			return (ENOMEM);
 		}
@@ -6869,14 +6887,15 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 			ca->sndlen += SCTP_BUF_LEN(mat);
 		}
 	}
-	inp->sctp_flags |= SCTP_PCB_FLAGS_SND_ITERATOR_UP;
 	ret = sctp_initiate_iterator(NULL, sctp_sendall_iterator, NULL,
 	    SCTP_PCB_ANY_FLAGS, SCTP_PCB_ANY_FEATURES,
 	    SCTP_ASOC_ANY_STATE,
 	    (void *)ca, 0,
 	    sctp_sendall_completes, inp, 1);
 	if (ret) {
+		SCTP_INP_WLOCK(inp);
 		inp->sctp_flags &= ~SCTP_PCB_FLAGS_SND_ITERATOR_UP;
+		SCTP_INP_WUNLOCK(inp);
 		SCTP_FREE(ca, SCTP_M_COPYAL);
 		SCTP_LTRACE_ERR_RET_PKT(m, inp, NULL, NULL, SCTP_FROM_SCTP_OUTPUT, EFAULT);
 		return (EFAULT);
@@ -11313,7 +11332,7 @@ sctp_send_hb(struct sctp_tcb *stcb, struct sctp_nets *net, int so_locked)
 	/* Fill out hb parameter */
 	hb->heartbeat.hb_info.ph.param_type = htons(SCTP_HEARTBEAT_INFO);
 	hb->heartbeat.hb_info.ph.param_length = htons(sizeof(struct sctp_heartbeat_info_param));
-	hb->heartbeat.hb_info.time_value_1 = now.tv_sec;
+	hb->heartbeat.hb_info.time_value_1 = (uint32_t)now.tv_sec;
 	hb->heartbeat.hb_info.time_value_2 = now.tv_usec;
 	/* Did our user request this one, put it in */
 	hb->heartbeat.hb_info.addr_family = (uint8_t)net->ro._l_addr.sa.sa_family;
@@ -12707,7 +12726,7 @@ sctp_lower_sosend(struct socket *so,
 				panic("Error, should hold create lock and I don't?");
 			}
 #endif
-			stcb = sctp_aloc_assoc(inp, addr, &error, 0, 0, vrf_id,
+			stcb = sctp_aloc_assoc_connected(inp, addr, &error, 0, 0, vrf_id,
 			    inp->sctp_ep.pre_open_stream_count,
 			    inp->sctp_ep.port,
 			    p,
@@ -12715,14 +12734,6 @@ sctp_lower_sosend(struct socket *so,
 			if (stcb == NULL) {
 				/* Error is setup for us in the call */
 				goto out_unlocked;
-			}
-			if (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) {
-				stcb->sctp_ep->sctp_flags |= SCTP_PCB_FLAGS_CONNECTED;
-				/*
-				 * Set the connected flag so we can queue
-				 * data
-				 */
-				soisconnecting(so);
 			}
 			hold_tcblock = 1;
 			if (create_lock_applied) {
@@ -12742,7 +12753,7 @@ sctp_lower_sosend(struct socket *so,
 
 			if (control) {
 				if (sctp_process_cmsgs_for_init(stcb, control, &error)) {
-					sctp_free_assoc(inp, stcb, SCTP_PCBFREE_FORCE,
+					sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 					    SCTP_FROM_SCTP_OUTPUT + SCTP_LOC_6);
 					hold_tcblock = 0;
 					stcb = NULL;
@@ -12832,7 +12843,7 @@ sctp_lower_sosend(struct socket *so,
 		SCTP_TCB_UNLOCK(stcb);
 		hold_tcblock = 0;
 	} else {
-		atomic_add_int(&stcb->asoc.sb_send_resv, sndlen);
+		atomic_add_int(&stcb->asoc.sb_send_resv, (int)sndlen);
 	}
 	local_soresv = sndlen;
 	if (stcb->asoc.state & SCTP_STATE_ABOUT_TO_BE_FREED) {
@@ -13669,7 +13680,7 @@ out:
 out_unlocked:
 
 	if (local_soresv && stcb) {
-		atomic_subtract_int(&stcb->asoc.sb_send_resv, sndlen);
+		atomic_subtract_int(&stcb->asoc.sb_send_resv, (int)sndlen);
 	}
 	if (create_lock_applied) {
 		SCTP_ASOC_CREATE_UNLOCK(inp);

@@ -65,7 +65,6 @@ extern int nfsd_debuglevel;
 extern u_long sb_max_adj;
 extern int nfsrv_pnfsatime;
 extern int nfsrv_maxpnfsmirror;
-extern int nfs_maxcopyrange;
 extern uint32_t nfs_srvmaxio;
 
 static int	nfs_async = 0;
@@ -83,6 +82,15 @@ static bool	nfsrv_openaccess = true;
 SYSCTL_BOOL(_vfs_nfsd, OID_AUTO, v4openaccess, CTLFLAG_RW,
     &nfsrv_openaccess, 0,
     "Enable Linux style NFSv4 Open access check");
+static char nfsrv_scope[NFSV4_OPAQUELIMIT];
+SYSCTL_STRING(_vfs_nfsd, OID_AUTO, scope, CTLFLAG_RWTUN,
+    &nfsrv_scope, NFSV4_OPAQUELIMIT, "Server scope");
+static char nfsrv_owner_major[NFSV4_OPAQUELIMIT];
+SYSCTL_STRING(_vfs_nfsd, OID_AUTO, owner_major, CTLFLAG_RWTUN,
+    &nfsrv_owner_major, NFSV4_OPAQUELIMIT, "Server owner major");
+static uint64_t nfsrv_owner_minor;
+SYSCTL_U64(_vfs_nfsd, OID_AUTO, owner_minor, CTLFLAG_RWTUN,
+    &nfsrv_owner_minor, 0, "Server owner minor");
 
 /*
  * This list defines the GSS mechanisms supported.
@@ -4254,7 +4262,6 @@ nfsrvd_exchangeid(struct nfsrv_descript *nd, __unused int isdgram,
 	nfsquad_t clientid, confirm;
 	uint8_t *verf;
 	uint32_t sp4type, v41flags;
-	uint64_t owner_minor;
 	struct timespec verstime;
 #ifdef INET
 	struct sockaddr_in *sin, *rin;
@@ -4263,6 +4270,7 @@ nfsrvd_exchangeid(struct nfsrv_descript *nd, __unused int isdgram,
 	struct sockaddr_in6 *sin6, *rin6;
 #endif
 	struct thread *p = curthread;
+	char *s;
 
 	if ((nd->nd_repstat = nfsd_checkrootexp(nd)) != 0)
 		goto nfsmout;
@@ -4377,12 +4385,17 @@ nfsrvd_exchangeid(struct nfsrv_descript *nd, __unused int isdgram,
 		*tl++ = txdr_unsigned(confirm.lval[0]);		/* SequenceID */
 		*tl++ = txdr_unsigned(v41flags);		/* Exch flags */
 		*tl++ = txdr_unsigned(NFSV4EXCH_SP4NONE);	/* No SSV */
-		owner_minor = 0;				/* Owner */
-		txdr_hyper(owner_minor, tl);			/* Minor */
-		(void)nfsm_strtom(nd, nd->nd_cred->cr_prison->pr_hostuuid,
-		    strlen(nd->nd_cred->cr_prison->pr_hostuuid)); /* Major */
-		(void)nfsm_strtom(nd, nd->nd_cred->cr_prison->pr_hostuuid,
-		    strlen(nd->nd_cred->cr_prison->pr_hostuuid)); /* Scope */
+		txdr_hyper(nfsrv_owner_minor, tl);	/* Owner Minor */
+		if (nfsrv_owner_major[0] != 0)
+			s = nfsrv_owner_major;
+		else
+			s = nd->nd_cred->cr_prison->pr_hostuuid;
+		nfsm_strtom(nd, s, strlen(s));		/* Owner Major */
+		if (nfsrv_scope[0] != 0)
+			s = nfsrv_scope;
+		else
+			s = nd->nd_cred->cr_prison->pr_hostuuid;
+		nfsm_strtom(nd, s, strlen(s)	);		/* Scope */
 		NFSM_BUILD(tl, uint32_t *, NFSX_UNSIGNED);
 		*tl = txdr_unsigned(1);
 		(void)nfsm_strtom(nd, "freebsd.org", strlen("freebsd.org"));
@@ -5681,18 +5694,11 @@ nfsrvd_copy_file_range(struct nfsrv_descript *nd, __unused int isdgram,
 			nd->nd_repstat = error;
 	}
 
-	/*
-	 * Do the actual copy to an upper limit of vfs.nfs.maxcopyrange.
-	 * This limit is applied to ensure that the RPC replies in a
-	 * reasonable time.
-	 */
-	if (len > nfs_maxcopyrange)
-		xfer = nfs_maxcopyrange;
-	else
-		xfer = len;
+	xfer = len;
 	if (nd->nd_repstat == 0) {
 		nd->nd_repstat = vn_copy_file_range(vp, &inoff, tovp, &outoff,
-		    &xfer, 0, nd->nd_cred, nd->nd_cred, NULL);
+		    &xfer, COPY_FILE_RANGE_TIMEO1SEC, nd->nd_cred, nd->nd_cred,
+		    NULL);
 		if (nd->nd_repstat == 0)
 			len = xfer;
 	}
