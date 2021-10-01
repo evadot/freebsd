@@ -20,6 +20,7 @@ arm/arm/generic_timer.c				standard
 arm/arm/gic.c					standard
 arm/arm/gic_acpi.c				optional acpi
 arm/arm/gic_fdt.c				optional fdt
+arm/arm/gic_if.m				standard
 arm/arm/pmu.c					standard
 arm/arm/pmu_fdt.c				optional fdt
 arm64/acpica/acpi_iort.c			optional acpi
@@ -274,7 +275,9 @@ dev/psci/smccc.c				standard
 
 dev/safexcel/safexcel.c				optional safexcel fdt
 
-dev/sdhci/sdhci_xenon.c				optional sdhci_xenon sdhci fdt
+dev/sdhci/sdhci_xenon.c				optional sdhci_xenon sdhci
+dev/sdhci/sdhci_xenon_acpi.c			optional sdhci_xenon sdhci acpi
+dev/sdhci/sdhci_xenon_fdt.c			optional sdhci_xenon sdhci fdt
 
 dev/uart/uart_cpu_arm64.c			optional uart
 dev/uart/uart_dev_mu.c				optional uart uart_mu

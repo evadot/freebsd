@@ -297,6 +297,7 @@ MAN=	aac.4 \
 	mem.4 \
 	meteor.4 \
 	mfi.4 \
+	${_mgb.4} \
 	miibus.4 \
 	mld.4 \
 	mlx.4 \
@@ -352,7 +353,6 @@ MAN=	aac.4 \
 	ng_frame_relay.4 \
 	ng_gif.4 \
 	ng_gif_demux.4 \
-	ng_h4.4 \
 	ng_hci.4 \
 	ng_hole.4 \
 	ng_hub.4 \
@@ -816,6 +816,7 @@ _igc.4=		igc.4
 _imcsmb.4=	imcsmb.4
 _io.4=		io.4
 _itwd.4=	itwd.4
+_mgb.4=		mgb.4
 _nda.4=		nda.4
 _nfe.4=		nfe.4
 _nfsmb.4=	nfsmb.4
