@@ -33,6 +33,9 @@ nodevice		twa			# 3ware 9000 series PATA/SATA RAID
 nodevice		smartpqi		# Microsemi smartpqi driver
 nodevice		tws			# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
 
+nodevice		vga			# VGA video card driver
+nooptions 		VESA			# Add support for VESA BIOS Extensions (VBE)
+
 # syscons is the default console driver, resembling an SCO console
 nodevice		sc
 nooptions 	SC_PIXEL_MODE		# add support for the raster text mode
