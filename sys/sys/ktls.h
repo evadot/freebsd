@@ -167,6 +167,7 @@ struct tls_session_params {
 #define	KTLS_RX		2
 
 struct iovec;
+struct ktls_ocf_session;
 struct ktls_ocf_encrypt_state;
 struct ktls_session;
 struct m_snd_tag;
@@ -183,10 +184,8 @@ struct ktls_session {
 		    const struct tls_record_layer *hdr, struct mbuf *m,
 		    uint64_t seqno, int *trailer_len);
 	};
-	union {
-		void *cipher;
-		struct m_snd_tag *snd_tag;
-	};
+	struct ktls_ocf_session *ocf_session;
+	struct m_snd_tag *snd_tag;
 	struct tls_session_params params;
 	u_int	wq_index;
 	volatile u_int refcount;
@@ -198,6 +197,11 @@ struct ktls_session {
 	bool reset_pending;
 	bool disable_ifnet_pending;
 	bool sync_dispatch;
+	bool sequential_records;
+
+	/* Only used for TLS 1.0. */
+	uint64_t next_seqno;
+	STAILQ_HEAD(, mbuf) pending_records;
 } __aligned(CACHE_LINE_SIZE);
 
 extern unsigned int ktls_ifnet_max_rexmit_pct;
@@ -219,6 +223,7 @@ int ktls_output_eagain(struct inpcb *inp, struct ktls_session *tls);
 #ifdef RATELIMIT
 int ktls_modify_txrtlmt(struct ktls_session *tls, uint64_t max_pacing_rate);
 #endif
+bool ktls_pending_rx_info(struct sockbuf *sb, uint64_t *seqnop, size_t *residp);
 
 static inline struct ktls_session *
 ktls_hold(struct ktls_session *tls)
