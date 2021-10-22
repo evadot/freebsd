@@ -1,0 +1,4 @@
+include WIPBSD
+include "../../conf/std.nodebug"
+
+ident   WIPBSD-NODEBUG

@@ -1,0 +1,131 @@
+include "GENERIC"
+ident WIPBSD
+
+# Floppy drives
+nodevice fdc
+
+# ATA controllers
+nodevice		mvs			# Marvell 88SX50XX/88SX60XX/88SX70XX/SoC SATA
+nodevice		siis			# SiliconImage SiI3124/SiI3132/SiI3531 SATA
+
+# SCSI Controllers
+nodevice		ahc			# AHA2940 and onboard AIC7xxx devices
+nodevice		ahd			# AHA39320/29320 and onboard AIC79xx devices
+nodevice		esp			# AMD Am53C974 (Tekram DC-390(T))
+nodevice		hptiop			# Highpoint RocketRaid 3xxx series
+nodevice		isp			# Qlogic family
+nodevice		mpt			# LSI-Logic MPT-Fusion
+nodevice		mps			# LSI-Logic MPT-Fusion 2
+nodevice		mpr			# LSI-Logic MPT-Fusion 3
+nodevice		sym			# NCR/Symbios Logic
+nodevice		isci			# Intel C600 SAS controller
+nodevice		ocs_fc			# Emulex FC adapters
+nodevice		pvscsi			# VMware PVSCSI
+
+# RAID controllers interfaced to the SCSI subsystem
+nodevice		amr			# AMI MegaRAID
+nodevice		arcmsr			# Areca SATA II RAID
+nodevice		ciss			# Compaq Smart RAID 5*
+nodevice		iir			# Intel Integrated RAID
+nodevice		ips			# IBM (Adaptec) ServeRAID
+nodevice		mly			# Mylex AcceleRAID/eXtremeRAID
+nodevice		twa			# 3ware 9000 series PATA/SATA RAID
+nodevice		smartpqi		# Microsemi smartpqi driver
+nodevice		tws			# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
+
+# syscons is the default console driver, resembling an SCO console
+nodevice		sc
+nooptions 	SC_PIXEL_MODE		# add support for the raster text mode
+
+# PCCARD (PCMCIA) support
+# PCMCIA and cardbus bridge support
+nodevice		cbb			# cardbus (yenta) bridge
+nodevice		cardbus			# CardBus (32-bit) bus
+
+# Parallel port
+nodevice		ppc
+nodevice		ppbus			# Parallel port bus (required)
+nodevice		lpt			# Printer
+nodevice		ppi			# Parallel port interface device
+
+nodevice		puc			# Multi I/O cards and multi-channel UARTs
+
+# PCI/PCI-X/PCIe Ethernet NICs that use iflib infrastructure
+nodevice		igc			# Intel I225 2.5G Ethernet
+nodevice		ix			# Intel PRO/10GbE PCIE PF Ethernet
+nodevice		ixv			# Intel PRO/10GbE PCIE VF Ethernet
+nodevice		ixl			# Intel 700 Series Physical Function
+nodevice		iavf			# Intel Adaptive Virtual Function
+nodevice		ice			# Intel 800 Series Physical Function
+nodevice		vmx			# VMware VMXNET3 Ethernet
+nodevice		axp			# AMD EPYC integrated NIC (requires miibus)
+
+# PCI Ethernet NICs.
+nodevice		bxe			# Broadcom NetXtreme II BCM5771X/BCM578XX 10GbE
+nodevice		le			# AMD Am7900 LANCE and Am79C9xx PCnet
+nodevice		ti			# Alteon Networks Tigon I/II gigabit Ethernet
+
+# Nvidia/Mellanox Connect-X 4 and later, Ethernet only
+# mlx5ib requires ibcore infra and is not included by default
+nodevice		mlx5			# Base driver
+nodevice		mlxfw			# Firmware update
+nodevice		mlx5en			# Ethernet driver
+
+# PCI Ethernet NICs that use the common MII bus controller code.
+# NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
+nodevice		ae			# Attansic/Atheros L2 FastEthernet
+nodevice		age			# Attansic/Atheros L1 Gigabit Ethernet
+nodevice		alc			# Atheros AR8131/AR8132 Ethernet
+nodevice		ale			# Atheros AR8121/AR8113/AR8114 Ethernet
+nodevice		bce			# Broadcom BCM5706/BCM5708 Gigabit Ethernet
+nodevice		bfe			# Broadcom BCM440x 10/100 Ethernet
+nodevice		bge			# Broadcom BCM570xx Gigabit Ethernet
+nodevice		cas			# Sun Cassini/Cassini+ and NS DP83065 Saturn
+nodevice		dc			# DEC/Intel 21143 and various workalikes
+nodevice		et			# Agere ET1310 10/100/Gigabit Ethernet
+nodevice		fxp			# Intel EtherExpress PRO/100B (82557, 82558)
+nodevice		gem			# Sun GEM/Sun ERI/Apple GMAC
+nodevice		jme			# JMicron JMC250 Gigabit/JMC260 Fast Ethernet
+nodevice		lge			# Level 1 LXT1001 gigabit Ethernet
+nodevice		msk			# Marvell/SysKonnect Yukon II Gigabit Ethernet
+nodevice		nfe			# nVidia nForce MCP on-board Ethernet
+nodevice		nge			# NatSemi DP83820 gigabit Ethernet
+nodevice		re			# RealTek 8139C+/8169/8169S/8110S
+nodevice		rl			# RealTek 8129/8139
+nodevice		sge			# Silicon Integrated Systems SiS190/191
+nodevice		sis			# Silicon Integrated Systems SiS 900/SiS 7016
+nodevice		sk			# SysKonnect SK-984x & SK-982x gigabit Ethernet
+nodevice		ste			# Sundance ST201 (D-Link DFE-550TX)
+nodevice		stge			# Sundance/Tamarack TC9021 gigabit Ethernet
+nodevice		vge			# VIA VT612x gigabit Ethernet
+nodevice		vr			# VIA Rhine, Rhine II
+nodevice		xl			# 3Com 3c90x (``Boomerang'', ``Cyclone'')
+
+# Wireless NIC cards
+nodevice		ipw			# Intel 2100 wireless NICs.
+nodevice		iwi			# Intel 2200BG/2225BG/2915ABG wireless NICs.
+nodevice		malo			# Marvell Libertas wireless NICs.
+nodevice		mwl			# Marvell 88W8363 802.11n wireless NICs.
+nodevice		ral			# Ralink Technology RT2500 wireless NICs.
+nodevice		wpi			# Intel 3945ABG wireless NICs.
+
+# Sound support
+nodevice		snd_cmi			# CMedia CMI8338/CMI8738
+nodevice		snd_csa			# Crystal Semiconductor CS461x/428x
+nodevice		snd_emu10kx		# Creative SoundBlaster Live! and Audigy
+nodevice		snd_es137x		# Ensoniq AudioPCI ES137x
+nodevice		snd_ich			# Intel, NVidia and other ICH AC'97 Audio
+nodevice		snd_via8233		# VIA VT8233x Audio
+
+# Linux KVM paravirtualization support
+nodevice		kvm_clock		# KVM paravirtual clock driver
+
+# HyperV drivers and enhancement support
+nodevice		hyperv			# HyperV drivers 
+
+# Xen HVM Guest Optimizations
+# NOTE: XENHVM depends on xenpci and xentimer.
+# They must be added or removed together.
+nooptions 	XENHVM			# Xen HVM kernel infrastructure
+nodevice		xenpci			# Xen HVM Hypervisor services driver
+nodevice		xentimer		# Xen x86 PV timer device
