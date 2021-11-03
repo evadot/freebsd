@@ -227,6 +227,25 @@ divert_packet(struct mbuf *m, bool incoming)
 		m->m_pkthdr.csum_flags &= ~CSUM_SCTP;
 	}
 #endif
+#ifdef INET6
+	if (m->m_pkthdr.csum_flags & CSUM_DELAY_DATA_IPV6) {
+		m = mb_unmapped_to_ext(m);
+		if (m == NULL)
+			return;
+		in6_delayed_cksum(m, m->m_pkthdr.len -
+		    sizeof(struct ip6_hdr), sizeof(struct ip6_hdr));
+		m->m_pkthdr.csum_flags &= ~CSUM_DELAY_DATA_IPV6;
+	}
+#if defined(SCTP) || defined(SCTP_SUPPORT)
+	if (m->m_pkthdr.csum_flags & CSUM_SCTP_IPV6) {
+		m = mb_unmapped_to_ext(m);
+		if (m == NULL)
+			return;
+		sctp_delayed_cksum(m, sizeof(struct ip6_hdr));
+		m->m_pkthdr.csum_flags &= ~CSUM_SCTP_IPV6;
+	}
+#endif
+#endif /* INET6 */
 	bzero(&divsrc, sizeof(divsrc));
 	divsrc.sin_len = sizeof(divsrc);
 	divsrc.sin_family = AF_INET;
@@ -687,18 +706,6 @@ div_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
 	return div_output(so, m, (struct sockaddr_in *)nam, control);
 }
 
-static void
-div_ctlinput(int cmd, struct sockaddr *sa, void *vip)
-{
-        struct in_addr faddr;
-
-	faddr = ((struct sockaddr_in *)sa)->sin_addr;
-	if (sa->sa_family != AF_INET || faddr.s_addr == INADDR_ANY)
-        	return;
-	if (PRC_IS_REDIRECT(cmd))
-		return;
-}
-
 static int
 div_pcblist(SYSCTL_HANDLER_ARGS)
 {
@@ -791,8 +798,6 @@ struct protosw div_protosw = {
 	.pr_protocol =		IPPROTO_DIVERT,
 	.pr_flags =		PR_ATOMIC|PR_ADDR,
 	.pr_input =		div_input,
-	.pr_ctlinput =		div_ctlinput,
-	.pr_ctloutput =		ip_ctloutput,
 	.pr_init =		div_init,
 	.pr_usrreqs =		&div_usrreqs
 };
