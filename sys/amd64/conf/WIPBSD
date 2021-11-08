@@ -136,6 +136,10 @@ nodevice		snd_es137x		# Ensoniq AudioPCI ES137x
 nodevice		snd_ich			# Intel, NVidia and other ICH AC'97 Audio
 nodevice		snd_via8233		# VIA VT8233x Audio
 
+# MMC/SD
+nodevice		sdhci			# Generic PCI SD Host Controller
+nodevice		rtsx			# Realtek SD card reader
+
 # Linux KVM paravirtualization support
 nodevice		kvm_clock		# KVM paravirtual clock driver
 
