@@ -5,6 +5,17 @@ nooptions		NFSCL			# Network Filesystem Client
 nooptions		NFSD			# Network Filesystem Server
 nooptions		NFSLOCKD		# Network Lock Manager
 nooptions		NFS_ROOT		# NFS usable as /, requires NFSCL
+nooptions		GEOM_RAID		# Soft RAID functionality.
+nooptions		COMPAT_FREEBSD4		# Compatible with FreeBSD4
+nooptions		COMPAT_FREEBSD5		# Compatible with FreeBSD5
+nooptions		COMPAT_FREEBSD6		# Compatible with FreeBSD6
+nooptions		COMPAT_FREEBSD7		# Compatible with FreeBSD7
+nooptions		COMPAT_FREEBSD9		# Compatible with FreeBSD9
+nooptions		COMPAT_FREEBSD10	# Compatible with FreeBSD10
+nooptions		COMPAT_FREEBSD11	# Compatible with FreeBSD11
+
+# Kernel dump features.
+nooptions		EKCD			# Support for encrypted kernel dumps
 
 # Floppy drives
 nodevice fdc
