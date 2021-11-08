@@ -1,6 +1,11 @@
 include "GENERIC"
 ident WIPBSD
 
+nooptions		NFSCL
+nooptions		NFSD
+nooptions		NFSLOCKD
+nooptions		NFS_ROOT
+
 # Floppy drives
 nodevice fdc
 
