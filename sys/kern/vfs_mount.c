@@ -1138,7 +1138,8 @@ vfs_domount_first(
 	/* XXXMAC: pass to vfs_mount_alloc? */
 	mp->mnt_optnew = *optlist;
 	/* Set the mount level flags. */
-	mp->mnt_flag = (fsflags & (MNT_UPDATEMASK | MNT_ROOTFS | MNT_RDONLY));
+	mp->mnt_flag = (fsflags &
+	    (MNT_UPDATEMASK | MNT_ROOTFS | MNT_RDONLY | MNT_FORCE));
 
 	/*
 	 * Mount the filesystem.
@@ -1537,8 +1538,8 @@ vfs_domount(
 	/*
 	 * Get vnode to be covered or mount point's vnode in case of MNT_UPDATE.
 	 */
-	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | AUDITVNODE1,
-	    UIO_SYSSPACE, fspath, td);
+	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | AUDITVNODE1, UIO_SYSSPACE,
+	    fspath);
 	error = namei(&nd);
 	if (error != 0)
 		return (error);
@@ -1632,7 +1633,7 @@ kern_unmount(struct thread *td, const char *path, int flags)
 		 * Try to find global path for path argument.
 		 */
 		NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | AUDITVNODE1,
-		    UIO_SYSSPACE, pathbuf, td);
+		    UIO_SYSSPACE, pathbuf);
 		if (namei(&nd) == 0) {
 			NDFREE(&nd, NDF_ONLY_PNBUF);
 			error = vn_path_to_global_path(td, nd.ni_vp, pathbuf,
@@ -2812,32 +2813,6 @@ kernel_mount(struct mntarg *ma, uint64_t flags)
 	if (!error)
 		error = vfs_donmount(curthread, flags, &auio);
 	free_mntarg(ma);
-	return (error);
-}
-
-/*
- * A printflike function to mount a filesystem.
- */
-int
-kernel_vmount(int flags, ...)
-{
-	struct mntarg *ma = NULL;
-	va_list ap;
-	const char *cp;
-	const void *vp;
-	int error;
-
-	va_start(ap, flags);
-	for (;;) {
-		cp = va_arg(ap, const char *);
-		if (cp == NULL)
-			break;
-		vp = va_arg(ap, const void *);
-		ma = mount_arg(ma, cp, vp, (vp != NULL ? -1 : 0));
-	}
-	va_end(ap);
-
-	error = kernel_mount(ma, flags);
 	return (error);
 }
 

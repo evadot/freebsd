@@ -1561,10 +1561,11 @@ freebsd11_nfstat(struct thread *td, struct freebsd11_nfstat_args *uap)
 	int error;
 
 	error = kern_fstat(td, uap->fd, &ub);
-	if (error == 0) {
-		freebsd11_cvtnstat(&ub, &nub);
+	if (error != 0)
+		return (error);
+	error = freebsd11_cvtnstat(&ub, &nub);
+	if (error != 0)
 		error = copyout(&nub, uap->sb, sizeof(nub));
-	}
 	return (error);
 }
 #endif /* COMPAT_FREEBSD11 */
@@ -3213,8 +3214,9 @@ _fget(struct thread *td, int fd, struct file **fpp, int flags,
 			error = EBADF;
 		break;
 	case FEXEC:
-	    	if ((fp->f_flag & (FREAD | FEXEC)) == 0 ||
-		    ((fp->f_flag & FWRITE) != 0))
+		if (fp->f_ops != &path_fileops &&
+		    ((fp->f_flag & (FREAD | FEXEC)) == 0 ||
+		    (fp->f_flag & FWRITE) != 0))
 			error = EBADF;
 		break;
 	case 0:

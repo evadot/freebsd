@@ -2252,7 +2252,7 @@ proc_get_binpath(struct proc *p, char *binname, char **retbuf,
 	vp = p->p_textvp;
 	if (vp == NULL) {
 		PROC_UNLOCK(p);
-		*retbuf = NULL;
+		*retbuf = "";
 		*freebuf = NULL;
 		return (0);
 	}
@@ -2275,8 +2275,7 @@ proc_get_binpath(struct proc *p, char *binname, char **retbuf,
 			 * might have been renamed or replaced, in
 			 * which case we should not report old name.
 			 */
-			NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE, *retbuf,
-			    req->td);
+			NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE, *retbuf);
 			error = namei(&nd);
 			if (error == 0) {
 				if (nd.ni_vp == vp)

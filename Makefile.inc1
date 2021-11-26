@@ -1188,6 +1188,10 @@ _ncpu_cmd=sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo unknown
 buildworld_prologue: .PHONY
 	@echo "--------------------------------------------------------------"
 	@echo ">>> World build started on `LC_ALL=C date`"
+.if ${TARGET:Mmips}
+	@echo "--------------------------------------------------------------"
+	@echo "WARNING: MIPS architecture is gone in FreeBSD 14.0"
+.endif
 	@echo "--------------------------------------------------------------"
 
 buildworld_epilogue: .PHONY
@@ -1197,6 +1201,10 @@ buildworld_epilogue: .PHONY
 	@seconds=$$(($$(date '+%s') - ${_BUILDWORLD_START})); \
 	  echo -n ">>> World built in $$seconds seconds, "; \
 	  echo "ncpu: $$(${_ncpu_cmd})${.MAKE.JOBS:S/^/, make -j/}"
+.if ${TARGET:Mmips}
+	@echo "--------------------------------------------------------------"
+	@echo "WARNING: MIPS architecture is gone in FreeBSD 14.0"
+.endif
 	@echo "--------------------------------------------------------------"
 
 #
@@ -1520,7 +1528,6 @@ _sysent_dirs=	sys/kern
 _sysent_dirs+=	sys/compat/freebsd32
 _sysent_dirs+=	sys/amd64/linux		\
 		sys/amd64/linux32	\
-		sys/arm/linux		\
 		sys/arm64/linux		\
 		sys/i386/linux
 
@@ -2936,6 +2943,7 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		${_lib_casper} \
 		lib/ncurses/tinfo \
 		lib/ncurses/ncurses \
+		lib/ncurses/form \
 		lib/libopie lib/libpam/libpam lib/libthr \
 		${_lib_libradius} lib/libsbuf lib/libtacplus \
 		lib/libgeom \
@@ -2975,6 +2983,7 @@ _lib_libradius=	lib/libradius
 .endif
 
 lib/ncurses/ncurses__L:	lib/ncurses/tinfo__L
+lib/ncurses/form__L: lib/ncurses/ncurses__L
 
 .if ${MK_OFED} != "no"
 _prebuild_libs+= \
@@ -3028,11 +3037,15 @@ _cddl_lib_libzfs_core= cddl/lib/libzfs_core
 _cddl_lib_libzfs= cddl/lib/libzfs
 _cddl_lib_libzfsbootenv= cddl/lib/libzfsbootenv
 
+cddl/lib/libavl__L: cddl/lib/libspl__L
+
+cddl/lib/libnvpair__L: cddl/lib/libspl__L
+
 cddl/lib/libtpool__L: cddl/lib/libspl__L
 
-cddl/lib/libzutil__L: cddl/lib/libavl__L cddl/lib/libtpool__L
+cddl/lib/libzutil__L: cddl/lib/libavl__L lib/libgeom__L lib/msun__L cddl/lib/libtpool__L
 
-cddl/lib/libzfs_core__L: cddl/lib/libnvpair__L
+cddl/lib/libzfs_core__L: cddl/lib/libnvpair__L cddl/lib/libspl__L cddl/lib/libzutil__L
 
 cddl/lib/libzfs__L: cddl/lib/libzfs_core__L lib/msun__L lib/libutil__L
 cddl/lib/libzfs__L: lib/libthr__L lib/libmd__L lib/libz__L cddl/lib/libumem__L

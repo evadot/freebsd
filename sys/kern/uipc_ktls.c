@@ -551,40 +551,51 @@ ktls_create_session(struct socket *so, struct tls_enable *en,
 		}
 		if (en->auth_key_len != 0)
 			return (EINVAL);
-		if ((en->tls_vminor == TLS_MINOR_VER_TWO &&
-			en->iv_len != TLS_AEAD_GCM_LEN) ||
-		    (en->tls_vminor == TLS_MINOR_VER_THREE &&
-			en->iv_len != TLS_1_3_GCM_IV_LEN))
+		switch (en->tls_vminor) {
+		case TLS_MINOR_VER_TWO:
+			if (en->iv_len != TLS_AEAD_GCM_LEN)
+				return (EINVAL);
+			break;
+		case TLS_MINOR_VER_THREE:
+			if (en->iv_len != TLS_1_3_GCM_IV_LEN)
+				return (EINVAL);
+			break;
+		default:
 			return (EINVAL);
+		}
 		break;
 	case CRYPTO_AES_CBC:
 		switch (en->auth_algorithm) {
 		case CRYPTO_SHA1_HMAC:
-			/*
-			 * TLS 1.0 requires an implicit IV.  TLS 1.1+
-			 * all use explicit IVs.
-			 */
-			if (en->tls_vminor == TLS_MINOR_VER_ZERO) {
-				if (en->iv_len != TLS_CBC_IMPLICIT_IV_LEN)
-					return (EINVAL);
-				break;
-			}
-
-			/* FALLTHROUGH */
+			break;
 		case CRYPTO_SHA2_256_HMAC:
 		case CRYPTO_SHA2_384_HMAC:
-			/* Ignore any supplied IV. */
-			en->iv_len = 0;
+			if (en->tls_vminor != TLS_MINOR_VER_TWO)
+				return (EINVAL);
 			break;
 		default:
 			return (EINVAL);
 		}
 		if (en->auth_key_len == 0)
 			return (EINVAL);
-		if (en->tls_vminor != TLS_MINOR_VER_ZERO &&
-		    en->tls_vminor != TLS_MINOR_VER_ONE &&
-		    en->tls_vminor != TLS_MINOR_VER_TWO)
+
+		/*
+		 * TLS 1.0 requires an implicit IV.  TLS 1.1 and 1.2
+		 * use explicit IVs.
+		 */
+		switch (en->tls_vminor) {
+		case TLS_MINOR_VER_ZERO:
+			if (en->iv_len != TLS_CBC_IMPLICIT_IV_LEN)
+				return (EINVAL);
+			break;
+		case TLS_MINOR_VER_ONE:
+		case TLS_MINOR_VER_TWO:
+			/* Ignore any supplied IV. */
+			en->iv_len = 0;
+			break;
+		default:
 			return (EINVAL);
+		}
 		break;
 	case CRYPTO_CHACHA20_POLY1305:
 		if (en->auth_algorithm != 0 || en->auth_key_len != 0)
@@ -2077,7 +2088,6 @@ deref:
 	SOCKBUF_UNLOCK_ASSERT(sb);
 
 	CURVNET_SET(so->so_vnet);
-	SOCK_LOCK(so);
 	sorele(so);
 	CURVNET_RESTORE();
 }
@@ -2427,7 +2437,6 @@ ktls_encrypt(struct ktls_wq *wq, struct mbuf *top)
 		mb_free_notready(top, total_pages);
 	}
 
-	SOCK_LOCK(so);
 	sorele(so);
 	CURVNET_RESTORE();
 }
@@ -2472,7 +2481,6 @@ ktls_encrypt_cb(struct ktls_ocf_encrypt_state *state, int error)
 		mb_free_notready(m, npages);
 	}
 
-	SOCK_LOCK(so);
 	sorele(so);
 	CURVNET_RESTORE();
 }
@@ -2523,7 +2531,6 @@ ktls_encrypt_async(struct ktls_wq *wq, struct mbuf *top)
 			counter_u64_add(ktls_offload_failed_crypto, 1);
 			free(state, M_KTLS);
 			CURVNET_SET(so->so_vnet);
-			SOCK_LOCK(so);
 			sorele(so);
 			CURVNET_RESTORE();
 			break;
@@ -2539,7 +2546,6 @@ ktls_encrypt_async(struct ktls_wq *wq, struct mbuf *top)
 		mb_free_notready(m, total_pages - npages);
 	}
 
-	SOCK_LOCK(so);
 	sorele(so);
 	CURVNET_RESTORE();
 }
@@ -2732,7 +2738,6 @@ ktls_disable_ifnet_help(void *context, int pending __unused)
 	}
 
 out:
-	SOCK_LOCK(so);
 	sorele(so);
 	if (!in_pcbrele_wlocked(inp))
 		INP_WUNLOCK(inp);

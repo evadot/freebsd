@@ -205,6 +205,7 @@ static int32_t rack_hw_up_only = 1;
 static int32_t rack_stats_gets_ms_rtt = 1;
 static int32_t rack_prr_addbackmax = 2;
 static int32_t rack_do_hystart = 0;
+static int32_t rack_apply_rtt_with_reduced_conf = 0;
 
 static int32_t rack_pkt_delay = 1000;
 static int32_t rack_send_a_lot_in_prr = 1;
@@ -343,6 +344,10 @@ counter_u64_t rack_saw_enetunreach;
 counter_u64_t rack_per_timer_hole;
 counter_u64_t rack_large_ackcmp;
 counter_u64_t rack_small_ackcmp;
+counter_u64_t rack_persists_sends;
+counter_u64_t rack_persists_acks;
+counter_u64_t rack_persists_loss;
+counter_u64_t rack_persists_lost_ends;
 #ifdef INVARIANTS
 counter_u64_t rack_adjust_map_bw;
 #endif
@@ -599,7 +604,6 @@ rack_set_cc_pacing(struct tcp_rack *rack)
 	ptr = ((struct newreno *)tp->ccv->cc_data);
 	if (CC_ALGO(tp)->ctl_output == NULL)  {
 		/* Huh, why does new_reno no longer have a set function? */
-		printf("no ctl_output for algo:%s\n", tp->cc_algo->name);
 		goto out;
 	}
 	if (ptr == NULL) {
@@ -618,7 +622,6 @@ rack_set_cc_pacing(struct tcp_rack *rack)
 	opt.val = rack->r_ctl.rc_saved_beta.beta;
 	error = CC_ALGO(tp)->ctl_output(tp->ccv, &sopt, &opt);
 	if (error)  {
-		printf("Error returned by ctl_output %d\n", error);
 		goto out;
 	}
 	/*
@@ -630,7 +633,6 @@ rack_set_cc_pacing(struct tcp_rack *rack)
 	opt.val = rack->r_ctl.rc_saved_beta.beta_ecn;
 	error = CC_ALGO(tp)->ctl_output(tp->ccv, &sopt, &opt);
 	if (error) {
-		printf("Error returned by ctl_output %d\n", error);
 		goto out;
 	}
 	/* Save off the original values for restoral */
@@ -775,6 +777,10 @@ sysctl_rack_clear(SYSCTL_HANDLER_ARGS)
 		counter_u64_zero(rack_per_timer_hole);
 		counter_u64_zero(rack_large_ackcmp);
 		counter_u64_zero(rack_small_ackcmp);
+		counter_u64_zero(rack_persists_sends);
+		counter_u64_zero(rack_persists_acks);
+		counter_u64_zero(rack_persists_loss);
+		counter_u64_zero(rack_persists_lost_ends);
 #ifdef INVARIANTS
 		counter_u64_zero(rack_adjust_map_bw);
 #endif
@@ -1316,7 +1322,7 @@ rack_init_sysctls(void)
 	    SYSCTL_CHILDREN(rack_timers),
 	    OID_AUTO, "maxrto", CTLFLAG_RW,
 	    &rack_rto_max, 4000000,
-	    "Maxiumum RTO in microseconds -- should be at least as large as min_rto");
+	    "Maximum RTO in microseconds -- should be at least as large as min_rto");
 	SYSCTL_ADD_S32(&rack_sysctl_ctx,
 	    SYSCTL_CHILDREN(rack_timers),
 	    OID_AUTO, "minto", CTLFLAG_RW,
@@ -1415,6 +1421,11 @@ rack_init_sysctls(void)
 	    &rack_tcp_accounting, 0,
 	    "Should we turn on TCP accounting for all rack sessions?");
 #endif
+	SYSCTL_ADD_S32(&rack_sysctl_ctx,
+	    SYSCTL_CHILDREN(rack_misc),
+	    OID_AUTO, "apply_rtt_with_low_conf", CTLFLAG_RW,
+	    &rack_apply_rtt_with_reduced_conf, 0,
+	    "When a persist or keep-alive probe is not answered do we calculate rtt on subsequent answers?");
 	SYSCTL_ADD_S32(&rack_sysctl_ctx,
 	    SYSCTL_CHILDREN(rack_misc),
 	    OID_AUTO, "rack_dsack_ctl", CTLFLAG_RW,
@@ -1777,6 +1788,30 @@ rack_init_sysctls(void)
 	    OID_AUTO, "cmp_large_mbufs", CTLFLAG_RD,
 	    &rack_large_ackcmp,
 	    "Number of TCP connections with large mbuf's for compressed acks");
+	rack_persists_sends = counter_u64_alloc(M_WAITOK);
+	SYSCTL_ADD_COUNTER_U64(&rack_sysctl_ctx,
+	    SYSCTL_CHILDREN(rack_counters),
+	    OID_AUTO, "persist_sends", CTLFLAG_RD,
+	    &rack_persists_sends,
+	    "Number of times we sent a persist probe");
+	rack_persists_acks = counter_u64_alloc(M_WAITOK);
+	SYSCTL_ADD_COUNTER_U64(&rack_sysctl_ctx,
+	    SYSCTL_CHILDREN(rack_counters),
+	    OID_AUTO, "persist_acks", CTLFLAG_RD,
+	    &rack_persists_acks,
+	    "Number of times a persist probe was acked");
+	rack_persists_loss = counter_u64_alloc(M_WAITOK);
+	SYSCTL_ADD_COUNTER_U64(&rack_sysctl_ctx,
+	    SYSCTL_CHILDREN(rack_counters),
+	    OID_AUTO, "persist_loss", CTLFLAG_RD,
+	    &rack_persists_loss,
+	    "Number of times we detected a lost persist probe (no ack)");
+	rack_persists_lost_ends = counter_u64_alloc(M_WAITOK);
+	SYSCTL_ADD_COUNTER_U64(&rack_sysctl_ctx,
+	    SYSCTL_CHILDREN(rack_counters),
+	    OID_AUTO, "persist_loss_ends", CTLFLAG_RD,
+	    &rack_persists_lost_ends,
+	    "Number of lost persist probe (no ack) that the run ended with a PERSIST abort");
 	rack_small_ackcmp = counter_u64_alloc(M_WAITOK);
 	SYSCTL_ADD_COUNTER_U64(&rack_sysctl_ctx,
 	    SYSCTL_CHILDREN(rack_counters),
@@ -2941,6 +2976,10 @@ rack_counter_destroy(void)
 	counter_u64_free(rack_per_timer_hole);
 	counter_u64_free(rack_large_ackcmp);
 	counter_u64_free(rack_small_ackcmp);
+	counter_u64_free(rack_persists_sends);
+	counter_u64_free(rack_persists_acks);
+	counter_u64_free(rack_persists_loss);
+	counter_u64_free(rack_persists_lost_ends);
 #ifdef INVARIANTS
 	counter_u64_free(rack_adjust_map_bw);
 #endif
@@ -5626,6 +5665,9 @@ rack_enter_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		if (rack->r_ctl.rc_went_idle_time == 0)
 			rack->r_ctl.rc_went_idle_time = 1;
 		rack_timer_cancel(tp, rack, cts, __LINE__);
+		rack->r_ctl.persist_lost_ends = 0;
+		rack->probe_not_answered = 0;
+		rack->forced_ack = 0;
 		tp->t_rxtshift = 0;
 		RACK_TCPT_RANGESET(tp->t_rxtcur, RACK_REXMTVAL(tp),
 			      rack_rto_min, rack_rto_max, rack->r_ctl.timer_slop);
@@ -6497,6 +6539,7 @@ rack_timeout_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		tcp_log_end_status(tp, TCP_EI_STATUS_PERSIST_MAX);
 		rack_log_progress_event(rack, tp, tick, PROGRESS_DROP, __LINE__);
 		tcp_set_inp_to_drop(inp, ETIMEDOUT);
+		counter_u64_add(rack_persists_lost_ends, rack->r_ctl.persist_lost_ends);
 		return (1);
 	}
 	KASSERT(inp != NULL, ("%s: tp %p tp->t_inpcb == NULL", __func__, tp));
@@ -6518,6 +6561,7 @@ rack_timeout_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		retval = 1;
 		tcp_log_end_status(tp, TCP_EI_STATUS_PERSIST_MAX);
 		tcp_set_inp_to_drop(rack->rc_inp, ETIMEDOUT);
+		counter_u64_add(rack_persists_lost_ends, rack->r_ctl.persist_lost_ends);
 		goto out;
 	}
 	if ((sbavail(&rack->rc_inp->inp_socket->so_snd) == 0) &&
@@ -6534,6 +6578,7 @@ rack_timeout_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		KMOD_TCPSTAT_INC(tcps_persistdrop);
 		tcp_log_end_status(tp, TCP_EI_STATUS_PERSIST_MAX);
 		tcp_set_inp_to_drop(rack->rc_inp, ETIMEDOUT);
+		counter_u64_add(rack_persists_lost_ends, rack->r_ctl.persist_lost_ends);
 		goto out;
 	}
 	t_template = tcpip_maketemplate(rack->rc_inp);
@@ -6542,7 +6587,12 @@ rack_timeout_persist(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 		if (rack->forced_ack == 0) {
 			rack->forced_ack = 1;
 			rack->r_ctl.forced_ack_ts = tcp_get_usecs(NULL);
+		} else {
+			rack->probe_not_answered = 1;
+			counter_u64_add(rack_persists_loss, 1);
+			rack->r_ctl.persist_lost_ends++;
 		}
+		counter_u64_add(rack_persists_sends, 1);
 		tcp_respond(tp, t_template->tt_ipgen,
 			    &t_template->tt_t, (struct mbuf *)NULL,
 			    tp->rcv_nxt, tp->snd_una - 1, 0);
@@ -6605,6 +6655,8 @@ rack_timeout_keepalive(struct tcpcb *tp, struct tcp_rack *rack, uint32_t cts)
 			if (rack->forced_ack == 0) {
 				rack->forced_ack = 1;
 				rack->r_ctl.forced_ack_ts = tcp_get_usecs(NULL);
+			} else {
+				rack->probe_not_answered = 1;
 			}
 			tcp_respond(tp, t_template->tt_ipgen,
 			    &t_template->tt_t, (struct mbuf *)NULL,
@@ -10304,6 +10356,14 @@ rack_process_ack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	INP_WLOCK_ASSERT(tp->t_inpcb);
 
 	acked = BYTES_THIS_ACK(tp, th);
+	if (acked) {
+		/* 
+		 * Any time we move the cum-ack forward clear
+		 * keep-alive tied probe-not-answered. The
+		 * persists clears its own on entry.
+		 */
+		rack->probe_not_answered = 0;
+	}
 	KMOD_TCPSTAT_ADD(tcps_rcvackpack, nsegs);
 	KMOD_TCPSTAT_ADD(tcps_rcvackbyte, acked);
 	/*
@@ -11504,9 +11564,12 @@ rack_do_syn_recv(struct mbuf *m, struct tcphdr *th, struct socket *so,
 			return (0);
 		}
 	}
+
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC 1323 PAWS: If we have a timestamp reply on this segment and
 	 * it's less than ts_recent, drop it.
@@ -11715,7 +11778,9 @@ rack_do_established(struct mbuf *m, struct tcphdr *th, struct socket *so,
 
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
@@ -11815,7 +11880,9 @@ rack_do_close_wait(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	ctf_calc_rwin(so, tp);
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
 	 * synchronized state.
@@ -11944,7 +12011,9 @@ rack_do_fin_wait_1(struct mbuf *m, struct tcphdr *th, struct socket *so,
 
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
 	 * synchronized state.
@@ -12071,7 +12140,9 @@ rack_do_closing(struct mbuf *m, struct tcphdr *th, struct socket *so,
 
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
 	 * synchronized state.
@@ -12184,7 +12255,9 @@ rack_do_lastack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
 	 * synchronized state.
@@ -12298,7 +12371,9 @@ rack_do_fin_wait_2(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	/* Reset receive buffer auto scaling when not in bulk receive mode. */
 	if ((thflags & TH_RST) ||
 	    (tp->t_fin_is_rst && (thflags & TH_FIN)))
-		return (ctf_process_rst(m, th, so, tp));
+		return (__ctf_process_rst(m, th, so, tp,
+					  &rack->r_ctl.challenge_ack_ts,
+					  &rack->r_ctl.challenge_ack_cnt));
 	/*
 	 * RFC5961 Section 4.2 Send challenge ACK for any SYN in
 	 * synchronized state.
@@ -13377,6 +13452,61 @@ rack_log_input_packet(struct tcpcb *tp, struct tcp_rack *rack, struct tcp_ackent
 
 }
 
+static void
+rack_handle_probe_response(struct tcp_rack *rack, uint32_t tiwin, uint32_t us_cts)
+{
+	uint32_t us_rtt;
+	/*
+	 * A persist or keep-alive was forced out, update our
+	 * min rtt time. Note now worry about lost responses.
+	 * When a subsequent keep-alive or persist times out
+	 * and forced_ack is still on, then the last probe
+	 * was not responded to. In such cases we have a
+	 * sysctl that controls the behavior. Either we apply
+	 * the rtt but with reduced confidence (0). Or we just
+	 * plain don't apply the rtt estimate. Having data flow
+	 * will clear the probe_not_answered flag i.e. cum-ack
+	 * move forward <or> exiting and reentering persists.
+	 */
+
+	rack->forced_ack = 0;
+	rack->rc_tp->t_rxtshift = 0;
+	if ((rack->rc_in_persist &&
+	     (tiwin == rack->rc_tp->snd_wnd)) ||
+	    (rack->rc_in_persist == 0)) {
+		/*
+		 * In persists only apply the RTT update if this is
+		 * a response to our window probe. And that
+		 * means the rwnd sent must match the current
+		 * snd_wnd. If it does not, then we got a
+		 * window update ack instead. For keepalive
+		 * we allow the answer no matter what the window.
+		 *
+		 * Note that if the probe_not_answered is set then
+		 * the forced_ack_ts is the oldest one i.e. the first
+		 * probe sent that might have been lost. This assures
+		 * us that if we do calculate an RTT it is longer not
+		 * some short thing.
+		 */
+		if (rack->rc_in_persist)
+			counter_u64_add(rack_persists_acks, 1);
+		us_rtt = us_cts - rack->r_ctl.forced_ack_ts;
+		if (us_rtt == 0)
+			us_rtt = 1;
+		if (rack->probe_not_answered == 0) {
+			rack_apply_updated_usrtt(rack, us_rtt, us_cts);
+			tcp_rack_xmit_timer(rack, us_rtt, 0, us_rtt, 3, NULL, 1);
+		} else {
+			/* We have a retransmitted probe here too */
+			if (rack_apply_rtt_with_reduced_conf) {
+				rack_apply_updated_usrtt(rack, us_rtt, us_cts);
+				tcp_rack_xmit_timer(rack, us_rtt, 0, us_rtt, 0, NULL, 1);
+			}
+		}
+	}
+}
+
+
 static int
 rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mbuf *m, int nxt_pkt, struct timeval *tv)
 {
@@ -13486,7 +13616,7 @@ rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mb
 		} else if (SEQ_GT(ae->ack, high_seq)) {
 			/* Case A */
 			ae->ack_val_set = ACK_CUMACK;
-		} else if (tiwin == the_win) {
+		} else if ((tiwin == the_win) && (rack->rc_in_persist == 0)){
 			/* Case D */
 			ae->ack_val_set = ACK_DUPACK;
 		} else {
@@ -13599,6 +13729,18 @@ rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mb
 			rack_strike_dupack(rack);
 		} else if (ae->ack_val_set == ACK_RWND) {
 			/* Case C */
+			if ((ae->flags & TSTMP_LRO) || (ae->flags & TSTMP_HDWR)) {
+				ts.tv_sec = ae->timestamp / 1000000000;
+				ts.tv_nsec = ae->timestamp % 1000000000;
+				rack->r_ctl.act_rcv_time.tv_sec = ts.tv_sec;
+				rack->r_ctl.act_rcv_time.tv_usec = ts.tv_nsec/1000;
+			} else {
+				rack->r_ctl.act_rcv_time = *tv;
+			}
+			if (rack->forced_ack) {
+				rack_handle_probe_response(rack, tiwin,
+							   tcp_tv_to_usectick(&rack->r_ctl.act_rcv_time));
+			}
 			win_up_req = 1;
 			win_upd_ack = ae->ack;
 			win_seq = ae->seq;
@@ -13680,6 +13822,11 @@ rack_do_compressed_ack_processing(struct tcpcb *tp, struct socket *so, struct mb
 #endif
 	acked_amount = acked = (high_seq - tp->snd_una);
 	if (acked) {
+		/* 
+		 * Clear the probe not answered flag
+		 * since cum-ack moved forward.
+		 */
+		rack->probe_not_answered = 0;
 		if (rack->sack_attack_disable == 0)
 			rack_do_decay(rack);
 		if (acked >= segsiz) {
@@ -14434,32 +14581,9 @@ rack_do_segment_nounlock(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		rack_check_probe_rtt(rack, us_cts);
 	}
 	rack_clear_rate_sample(rack);
-	if (rack->forced_ack) {
-		uint32_t us_rtt;
-
-		/*
-		 * A persist or keep-alive was forced out, update our
-		 * min rtt time. Note we do not worry about lost
-		 * retransmissions since KEEP-ALIVES and persists
-		 * are usually way long on times of sending (though
-		 * if we were really paranoid or worried we could
-		 * at least use timestamps if available to validate).
-		 */
-		rack->forced_ack = 0;
-		if (tiwin == tp->snd_wnd) {
-			/*
-			 * Only apply the RTT update if this is
-			 * a response to our window probe. And that
-			 * means the rwnd sent must match the current
-			 * snd_wnd. If it does not, then we got a
-			 * window update ack instead.
-			 */
-			us_rtt = us_cts - rack->r_ctl.forced_ack_ts;
-			if (us_rtt == 0)
-				us_rtt = 1;
-			rack_apply_updated_usrtt(rack, us_rtt, us_cts);
-			tcp_rack_xmit_timer(rack, us_rtt, 0, us_rtt, 3, NULL, 1);
-		}
+	if ((rack->forced_ack) &&
+	    ((th->th_flags & TH_RST) == 0)) {
+		rack_handle_probe_response(rack, tiwin, us_cts);
 	}
 	/*
 	 * This is the one exception case where we set the rack state

@@ -278,13 +278,14 @@ m_demote(struct mbuf *m0, int all, int flags)
 {
 	struct mbuf *m;
 
+	flags |= M_DEMOTEFLAGS;
+
 	for (m = all ? m0 : m0->m_next; m != NULL; m = m->m_next) {
 		KASSERT(m->m_nextpkt == NULL, ("%s: m_nextpkt in m %p, m0 %p",
 		    __func__, m, m0));
 		if (m->m_flags & M_PKTHDR)
 			m_demote_pkthdr(m);
-		m->m_flags = m->m_flags & (M_EXT | M_RDONLY | M_NOFREE |
-		    M_EXTPG | flags);
+		m->m_flags &= flags;
 	}
 }
 
@@ -1300,7 +1301,7 @@ m_apply_extpg_one(struct mbuf *m, int off, int len,
 		pglen = m_epg_pagelen(m, i, pgoff);
 		if (off < pglen) {
 			count = min(pglen - off, len);
-			p = (void *)PHYS_TO_DMAP(m->m_epg_pa[i] + pgoff);
+			p = (void *)PHYS_TO_DMAP(m->m_epg_pa[i] + pgoff + off);
 			rval = f(arg, p, count);
 			if (rval)
 				return (rval);

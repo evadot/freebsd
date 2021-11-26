@@ -690,14 +690,17 @@ pci_resource_start(struct pci_dev *pdev, int bar)
 	struct resource_list_entry *rle;
 	rman_res_t newstart;
 	device_t dev;
+	int error;
 
 	if ((rle = linux_pci_get_bar(pdev, bar, true)) == NULL)
 		return (0);
 	dev = pdev->pdrv != NULL && pdev->pdrv->isdrm ?
 	    device_get_parent(pdev->dev.bsddev) : pdev->dev.bsddev;
-	if (BUS_TRANSLATE_RESOURCE(dev, rle->type, rle->start, &newstart)) {
-		device_printf(pdev->dev.bsddev, "translate of %#jx failed\n",
-		    (uintmax_t)rle->start);
+	error = bus_translate_resource(dev, rle->type, rle->start, &newstart);
+	if (error != 0) {
+		device_printf(pdev->dev.bsddev,
+		    "translate of %#jx failed: %d\n",
+		    (uintmax_t)rle->start, error);
 		return (0);
 	}
 	return (newstart);
@@ -1060,11 +1063,9 @@ dma_pool_obj_import(void *arg, void **store, int count, int domain __unused,
     int flags)
 {
 	struct dma_pool *pool = arg;
-	struct linux_dma_priv *priv;
 	struct linux_dma_obj *obj;
 	int error, i;
 
-	priv = pool->pool_device->dma_priv;
 	for (i = 0; i < count; i++) {
 		obj = uma_zalloc(linux_dma_obj_zone, flags);
 		if (obj == NULL)
@@ -1087,11 +1088,9 @@ static void
 dma_pool_obj_release(void *arg, void **store, int count)
 {
 	struct dma_pool *pool = arg;
-	struct linux_dma_priv *priv;
 	struct linux_dma_obj *obj;
 	int i;
 
-	priv = pool->pool_device->dma_priv;
 	for (i = 0; i < count; i++) {
 		obj = store[i];
 		bus_dmamem_free(pool->pool_dmat, obj->vaddr, obj->dmamap);

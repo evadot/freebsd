@@ -66,7 +66,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/protosw.h>
 #include <sys/proc.h>
 #include <sys/jail.h>
-#include <sys/syslog.h>
 #include <sys/stats.h>
 
 #ifdef DDB
@@ -262,26 +261,10 @@ tcp_usr_detach(struct socket *so)
 		 *  In all three cases the tcptw should not be freed here.
 		 */
 		if (inp->inp_flags & INP_DROPPED) {
+			KASSERT(tp == NULL, ("tcp_detach: INP_TIMEWAIT && "
+			    "INP_DROPPED && tp != NULL"));
 			in_pcbdetach(inp);
-			if (__predict_true(tp == NULL)) {
-				in_pcbfree(inp);
-			} else {
-				/*
-				 * This case should not happen as in TIMEWAIT
-				 * state the inp should not be destroyed before
-				 * its tcptw.  If INVARIANTS is defined, panic.
-				 */
-#ifdef INVARIANTS
-				panic("%s: Panic before an inp double-free: "
-				    "INP_TIMEWAIT && INP_DROPPED && tp != NULL"
-				    , __func__);
-#else
-				log(LOG_ERR, "%s: Avoid an inp double-free: "
-				    "INP_TIMEWAIT && INP_DROPPED && tp != NULL"
-				    , __func__);
-#endif
-				INP_WUNLOCK(inp);
-			}
+			in_pcbfree(inp);
 		} else {
 			in_pcbdetach(inp);
 			INP_WUNLOCK(inp);
@@ -2007,6 +1990,120 @@ copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls)
 }
 #endif
 
+extern struct cc_algo newreno_cc_algo;
+
+static int
+tcp_congestion(struct socket *so, struct sockopt *sopt, struct inpcb *inp, struct tcpcb *tp)
+{
+	struct cc_algo *algo;
+	void *ptr = NULL;
+	struct cc_var cc_mem;
+	char	buf[TCP_CA_NAME_MAX];
+	size_t mem_sz;
+	int error;
+
+	INP_WUNLOCK(inp);
+	error = sooptcopyin(sopt, buf, TCP_CA_NAME_MAX - 1, 1);
+	if (error)
+		return(error);
+	buf[sopt->sopt_valsize] = '\0';
+	CC_LIST_RLOCK();
+	STAILQ_FOREACH(algo, &cc_list, entries)
+		if (strncmp(buf, algo->name,
+			    TCP_CA_NAME_MAX) == 0) {
+			if (algo->flags & CC_MODULE_BEING_REMOVED) {
+				/* We can't "see" modules being unloaded */
+				continue;
+			}
+			break;
+		}
+	if (algo == NULL) {
+		CC_LIST_RUNLOCK();
+		return(ESRCH);
+	}
+do_over:
+	if (algo->cb_init != NULL) {
+		/* We can now pre-get the memory for the CC */
+		mem_sz = (*algo->cc_data_sz)();
+		if (mem_sz == 0) {
+			goto no_mem_needed;
+		}
+		CC_LIST_RUNLOCK();
+		ptr = malloc(mem_sz, M_CC_MEM, M_WAITOK);
+		CC_LIST_RLOCK();
+		STAILQ_FOREACH(algo, &cc_list, entries)
+			if (strncmp(buf, algo->name,
+				    TCP_CA_NAME_MAX) == 0)
+				break;
+		if (algo == NULL) {
+			if (ptr)
+				free(ptr, M_CC_MEM);
+			CC_LIST_RUNLOCK();
+			return(ESRCH);
+		}
+	} else {
+no_mem_needed:
+		mem_sz = 0;
+		ptr = NULL;
+	}
+	/*
+	 * Make sure its all clean and zero and also get
+	 * back the inplock.
+	 */
+	memset(&cc_mem, 0, sizeof(cc_mem));
+	if (mem_sz != (*algo->cc_data_sz)()) {
+		if (ptr)
+			free(ptr, M_CC_MEM);
+		goto do_over;
+	}
+	INP_WLOCK(inp);
+	if (inp->inp_flags & (INP_TIMEWAIT | INP_DROPPED)) {
+		INP_WUNLOCK(inp);
+		CC_LIST_RUNLOCK();
+		free(ptr, M_CC_MEM);
+		return (ECONNRESET);
+	}
+	tp = intotcpcb(inp);
+	if (ptr != NULL)
+		memset(ptr, 0, mem_sz);
+	CC_LIST_RUNLOCK();
+	cc_mem.ccvc.tcp = tp;
+	/*
+	 * We once again hold a write lock over the tcb so it's
+	 * safe to do these things without ordering concerns.
+	 * Note here we init into stack memory.
+	 */
+	if (algo->cb_init != NULL)
+		error = algo->cb_init(&cc_mem, ptr);
+	else
+		error = 0;
+	/*
+	 * The CC algorithms, when given their memory
+	 * should not fail we could in theory have a
+	 * KASSERT here.
+	 */
+	if (error == 0) {
+		/*
+		 * Touchdown, lets go ahead and move the
+		 * connection to the new CC module by
+		 * copying in the cc_mem after we call
+		 * the old ones cleanup (if any).
+		 */
+		if (CC_ALGO(tp)->cb_destroy != NULL)
+			CC_ALGO(tp)->cb_destroy(tp->ccv);
+		memcpy(tp->ccv, &cc_mem, sizeof(struct cc_var));
+		tp->cc_algo = algo;
+		/* Ok now are we where we have gotten past any conn_init? */
+		if (TCPS_HAVEESTABLISHED(tp->t_state) && (CC_ALGO(tp)->conn_init != NULL)) {
+			/* Yep run the connection init for the new CC */
+			CC_ALGO(tp)->conn_init(tp->ccv);
+		}
+	} else if (ptr)
+		free(ptr, M_CC_MEM);
+	INP_WUNLOCK(inp);
+	return (error);
+}
+
 int
 tcp_default_ctloutput(struct socket *so, struct sockopt *sopt, struct inpcb *inp, struct tcpcb *tp)
 {
@@ -2016,7 +2113,6 @@ tcp_default_ctloutput(struct socket *so, struct sockopt *sopt, struct inpcb *inp
 #ifdef KERN_TLS
 	struct tls_enable tls;
 #endif
-	struct cc_algo *algo;
 	char	*pbuf, buf[TCP_LOG_ID_LEN];
 #ifdef STATS
 	struct statsblob *sbp;
@@ -2223,46 +2319,7 @@ unlock_and_done:
 			break;
 
 		case TCP_CONGESTION:
-			INP_WUNLOCK(inp);
-			error = sooptcopyin(sopt, buf, TCP_CA_NAME_MAX - 1, 1);
-			if (error)
-				break;
-			buf[sopt->sopt_valsize] = '\0';
-			INP_WLOCK_RECHECK(inp);
-			CC_LIST_RLOCK();
-			STAILQ_FOREACH(algo, &cc_list, entries)
-				if (strncmp(buf, algo->name,
-				    TCP_CA_NAME_MAX) == 0)
-					break;
-			CC_LIST_RUNLOCK();
-			if (algo == NULL) {
-				INP_WUNLOCK(inp);
-				error = EINVAL;
-				break;
-			}
-			/*
-			 * We hold a write lock over the tcb so it's safe to
-			 * do these things without ordering concerns.
-			 */
-			if (CC_ALGO(tp)->cb_destroy != NULL)
-				CC_ALGO(tp)->cb_destroy(tp->ccv);
-			CC_DATA(tp) = NULL;
-			CC_ALGO(tp) = algo;
-			/*
-			 * If something goes pear shaped initialising the new
-			 * algo, fall back to newreno (which does not
-			 * require initialisation).
-			 */
-			if (algo->cb_init != NULL &&
-			    algo->cb_init(tp->ccv) != 0) {
-				CC_ALGO(tp) = &newreno_cc_algo;
-				/*
-				 * The only reason init should fail is
-				 * because of malloc.
-				 */
-				error = ENOMEM;
-			}
-			INP_WUNLOCK(inp);
+			error = tcp_congestion(so, sopt, inp, tp);
 			break;
 
 		case TCP_REUSPORT_LB_NUMA:

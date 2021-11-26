@@ -243,6 +243,9 @@ contrib/openzfs/module/zcommon/zfs_prop.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zcommon/zpool_prop.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zcommon/zprop_common.c		optional zfs compile-with "${ZFS_C}"
 
+# zfs edon-r hash support
+contrib/openzfs/module/icp/algs/edonr/edonr.c		optional zfs compile-with "${ZFS_C}"
+
 #zfs core common code
 contrib/openzfs/module/zfs/abd.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/aggsum.c		optional zfs compile-with "${ZFS_C}"
@@ -283,6 +286,7 @@ contrib/openzfs/module/zfs/dsl_prop.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/dsl_scan.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/dsl_synctask.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/dsl_userhold.c		optional zfs compile-with "${ZFS_C}"
+contrib/openzfs/module/zfs/edonr_zfs.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/fm.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/gzip.c		optional zfs compile-with "${ZFS_C}"
 contrib/openzfs/module/zfs/lzjb.c		optional zfs compile-with "${ZFS_C}"
@@ -375,6 +379,7 @@ cddl/dev/fbt/fbt.c			optional dtrace_fbt      | dtraceall compile-with "${FBT_C}
 cddl/dev/systrace/systrace.c		optional dtrace_systrace | dtraceall compile-with "${CDDL_C}"
 cddl/dev/prototype.c			optional dtrace_prototype | dtraceall compile-with "${CDDL_C}"
 fs/nfsclient/nfs_clkdtrace.c		optional dtnfscl nfscl   | dtraceall nfscl compile-with "${CDDL_C}"
+compat/freebsd32/freebsd32_abort2.c	optional compat_freebsd32
 compat/freebsd32/freebsd32_capability.c	optional compat_freebsd32
 compat/freebsd32/freebsd32_ioctl.c	optional compat_freebsd32
 compat/freebsd32/freebsd32_misc.c	optional compat_freebsd32
@@ -716,6 +721,7 @@ crypto/chacha20/chacha-sw.c	optional crypto | ipsec | ipsec_support
 crypto/des/des_ecb.c		optional netsmb
 crypto/des/des_setkey.c		optional netsmb
 crypto/openssl/ossl.c		optional ossl
+crypto/openssl/ossl_aes.c	optional ossl
 crypto/openssl/ossl_chacha20.c	optional ossl
 crypto/openssl/ossl_poly1305.c	optional ossl
 crypto/openssl/ossl_sha1.c	optional ossl
@@ -884,10 +890,6 @@ dev/altera/pio/pio.c		optional altera_pio
 dev/altera/pio/pio_if.m		optional altera_pio
 dev/amdpm/amdpm.c		optional amdpm pci | nfpm pci
 dev/amdsmb/amdsmb.c		optional amdsmb pci
-dev/amr/amr.c			optional amr
-dev/amr/amr_cam.c		optional amrp amr
-dev/amr/amr_disk.c		optional amr
-dev/amr/amr_pci.c		optional amr pci
 #
 dev/ata/ata_if.m		optional ata | atacore
 dev/ata/ata-all.c		optional ata | atacore
@@ -1678,8 +1680,6 @@ dev/ena/ena_sysctl.c 		optional ena \
 	compile-with "${NORMAL_C} -I$S/contrib"
 contrib/ena-com/ena_com.c	optional ena
 contrib/ena-com/ena_eth_com.c	optional ena
-dev/esp/esp_pci.c		optional esp pci
-dev/esp/ncr53c9x.c		optional esp
 dev/etherswitch/arswitch/arswitch.c		optional arswitch
 dev/etherswitch/arswitch/arswitch_reg.c		optional arswitch
 dev/etherswitch/arswitch/arswitch_phy.c		optional arswitch
@@ -1848,23 +1848,26 @@ dev/iicbus/iicoc_fdt.c		optional iicoc ext_resources fdt
 dev/iicbus/iicoc_pci.c		optional iicoc pci
 dev/iicbus/isl12xx.c		optional isl12xx
 dev/iicbus/lm75.c		optional lm75
+dev/iicbus/max44009.c		optional max44009
 dev/iicbus/mux/pca9547.c	optional pca9547 iicmux fdt
 dev/iicbus/mux/iicmux.c		optional iicmux
 dev/iicbus/mux/iicmux_if.m	optional iicmux
 dev/iicbus/mux/iic_gpiomux.c	optional iic_gpiomux fdt
 dev/iicbus/mux/ltc430x.c	optional ltc430x
+dev/iicbus/mux/pca954x.c	optional pca954x
 dev/iicbus/nxprtc.c		optional nxprtc | pcf8563
 dev/iicbus/ofw_iicbus.c		optional fdt iicbus
+dev/iicbus/pcf8574.c		optional pcf8574
+dev/iicbus/pcf8591.c		optional pcf8591
 dev/iicbus/rtc8583.c		optional rtc8583
+dev/iicbus/rtc/pcf85063.c	optional pcf85063 iicbus fdt
 dev/iicbus/rtc/rx8803.c		optional rx8803 iicbus fdt
 dev/iicbus/s35390a.c		optional s35390a
 dev/iicbus/sy8106a.c		optional sy8106a ext_resources fdt
 dev/iicbus/syr827.c		optional syr827 ext_resources fdt
+dev/iicbus/gpio/tca6408.c	optional tca6408 fdt gpio
 dev/iicbus/gpio/tca6416.c	optional tca6416 fdt
 dev/iicbus/pmic/fan53555.c	optional fan53555 ext_resources fdt
-dev/iir/iir.c			optional iir
-dev/iir/iir_ctrl.c		optional iir
-dev/iir/iir_pci.c		optional iir pci
 dev/igc/if_igc.c		optional igc iflib pci
 dev/igc/igc_api.c		optional igc iflib pci
 dev/igc/igc_base.c		optional igc iflib pci
@@ -2407,6 +2410,8 @@ dev/mii/axphy.c			optional miibus | axphy
 dev/mii/bmtphy.c		optional miibus | bmtphy
 dev/mii/brgphy.c		optional miibus | brgphy
 dev/mii/ciphy.c			optional miibus | ciphy
+dev/mii/dp83822phy.c		optional miibus | dp83822phy
+dev/mii/dp83867phy.c		optional miibus | dp83867phy
 dev/mii/e1000phy.c		optional miibus | e1000phy
 dev/mii/gentbi.c		optional miibus | gentbi
 dev/mii/icsphy.c		optional miibus | icsphy
@@ -2445,7 +2450,6 @@ dev/mlxfw/mlxfw_mfa2_tlv_multi.c	optional mlxfw \
 dev/mlx/mlx.c			optional mlx
 dev/mlx/mlx_disk.c		optional mlx
 dev/mlx/mlx_pci.c		optional mlx pci
-dev/mly/mly.c			optional mly
 dev/mmc/mmc_subr.c		optional mmc | mmcsd !mmccam
 dev/mmc/mmc.c			optional mmc !mmccam
 dev/mmc/mmcbr_if.m		standard
@@ -3201,18 +3205,6 @@ dev/syscons/warp/warp_saver.c	optional warp_saver
 dev/tcp_log/tcp_log_dev.c	optional tcp_blackbox inet | tcp_blackbox inet6
 dev/tdfx/tdfx_pci.c		optional tdfx pci
 dev/ti/if_ti.c			optional ti pci
-dev/twa/tw_cl_init.c		optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
-dev/twa/tw_cl_intr.c		optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
-dev/twa/tw_cl_io.c		optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
-dev/twa/tw_cl_misc.c		optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
-dev/twa/tw_osl_cam.c		optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
-dev/twa/tw_osl_freebsd.c	optional twa \
-	compile-with "${NORMAL_C} -I$S/dev/twa"
 dev/twe/twe.c			optional twe
 dev/twe/twe_freebsd.c		optional twe
 dev/tws/tws.c			optional tws
@@ -4134,7 +4126,6 @@ net/if.c			standard
 net/if_bridge.c			optional bridge inet | if_bridge inet
 net/if_clone.c			standard
 net/if_dead.c			standard
-net/if_debug.c			optional ddb
 net/if_disc.c			optional disc
 net/if_edsc.c			optional edsc
 net/if_enc.c			optional enc inet | enc inet6
@@ -4320,6 +4311,7 @@ netinet/accf_http.c		optional accept_filter_http inet
 netinet/if_ether.c		optional inet ether
 netinet/igmp.c			optional inet
 netinet/in.c			optional inet
+netinet/in_cksum.c		optional inet | inet6
 netinet/in_debug.c		optional inet ddb
 netinet/in_kdtrace.c		optional inet | inet6
 netinet/ip_carp.c		optional inet carp | inet6 carp
@@ -4347,8 +4339,20 @@ netinet/ip_options.c		optional inet
 netinet/ip_output.c		optional inet
 netinet/ip_reass.c		optional inet
 netinet/raw_ip.c		optional inet | inet6
-netinet/cc/cc.c			optional inet | inet6
-netinet/cc/cc_newreno.c		optional inet | inet6
+netinet/cc/cc.c			optional cc_newreno inet | cc_vegas inet | \
+	cc_htcp inet | cc_hd inet | cc_dctcp inet | cc_cubic inet | \
+	cc_chd inet | cc_cdg inet | cc_newreno inet6 | cc_vegas inet6 | \
+	cc_htcp inet6 | cc_hd inet6 |cc_dctcp inet6 | cc_cubic inet6 | \
+	cc_chd inet6 | cc_cdg inet6
+netinet/cc/cc_cdg.c		optional inet cc_cdg tcp_hhook
+netinet/cc/cc_chd.c		optional inet cc_chd tcp_hhook
+netinet/cc/cc_cubic.c		optional inet cc_cubic | inet6 cc_cubic
+netinet/cc/cc_dctcp.c		optional inet cc_dctcp | inet6 cc_dctcp
+netinet/cc/cc_hd.c		optional inet cc_hd tcp_hhook
+netinet/cc/cc_htcp.c		optional inet cc_htcp | inet6 cc_htcp
+netinet/cc/cc_newreno.c		optional inet cc_newreno | inet6 cc_newreno
+netinet/cc/cc_vegas.c		optional inet cc_vegas tcp_hhook
+netinet/khelp/h_ertt.c		optional inet tcp_hhook
 netinet/sctp_asconf.c		optional inet sctp | inet6 sctp
 netinet/sctp_auth.c		optional inet sctp | inet6 sctp
 netinet/sctp_bsd_addr.c		optional inet sctp | inet6 sctp

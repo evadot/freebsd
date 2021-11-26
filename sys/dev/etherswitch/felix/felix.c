@@ -96,7 +96,6 @@ static void felix_set_port_cfg(felix_softc_t, etherswitch_port_t *);
 
 static bool felix_is_phyport(felix_softc_t, int);
 static struct mii_data *felix_miiforport(felix_softc_t, unsigned int);
-static int felix_phyforport(felix_softc_t, int);
 
 static struct felix_pci_id felix_pci_ids[] = {
 	{PCI_VENDOR_FREESCALE, FELIX_DEV_ID, FELIX_DEV_NAME},
@@ -111,6 +110,13 @@ static device_method_t felix_methods[] = {
 
 	/* bus interface */
 	DEVMETHOD(bus_add_child,		device_add_child_ordered),
+	DEVMETHOD(bus_setup_intr,		bus_generic_setup_intr),
+	DEVMETHOD(bus_teardown_intr,		bus_generic_teardown_intr),
+	DEVMETHOD(bus_release_resource,		bus_generic_release_resource),
+	DEVMETHOD(bus_activate_resource,	bus_generic_activate_resource),
+	DEVMETHOD(bus_deactivate_resource,	bus_generic_deactivate_resource),
+	DEVMETHOD(bus_adjust_resource,		bus_generic_adjust_resource),
+	DEVMETHOD(bus_alloc_resource,		bus_generic_alloc_resource),
 
 	/* etherswitch interface */
 	DEVMETHOD(etherswitch_getinfo,		felix_getinfo),
@@ -140,7 +146,7 @@ DEFINE_CLASS_0(felix, felix_driver, felix_methods,
 
 DRIVER_MODULE_ORDERED(felix, pci, felix_driver, felix_devclass,
     NULL, NULL, SI_ORDER_ANY);
-DRIVER_MODULE(miibus, felix, miibus_driver, miibus_devclass,
+DRIVER_MODULE(miibus, felix, miibus_fdt_driver, miibus_fdt_devclass,
     NULL, NULL);
 DRIVER_MODULE(etherswitch, felix, etherswitch_driver, etherswitch_devclass,
     NULL, NULL);
@@ -997,18 +1003,6 @@ felix_is_phyport(felix_softc_t sc, int port)
 {
 
 	return (!sc->ports[port].fixed_port);
-}
-
-static int
-felix_phyforport(felix_softc_t sc, int phy)
-{
-	int port;
-
-	for (port = 0; port < sc->info.es_nports; port++) {
-		if (sc->ports[port].phyaddr == phy)
-			return (port);
-	}
-	return (-1);
 }
 
 static  struct mii_data*

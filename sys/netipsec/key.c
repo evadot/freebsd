@@ -216,6 +216,13 @@ VNET_DEFINE_STATIC(struct mtx *, spdcache_lock);
 #define	SPDCACHE_LOCK(a)		mtx_lock(&V_spdcache_lock[a]);
 #define	SPDCACHE_UNLOCK(a)		mtx_unlock(&V_spdcache_lock[a]);
 
+static struct sx spi_alloc_lock;
+#define	SPI_ALLOC_LOCK_INIT()		sx_init(&spi_alloc_lock, "spialloc")
+#define	SPI_ALLOC_LOCK_DESTROY()	sx_destroy(&spi_alloc_lock)
+#define	SPI_ALLOC_LOCK()          	sx_xlock(&spi_alloc_lock)
+#define	SPI_ALLOC_UNLOCK()        	sx_unlock(&spi_alloc_lock)
+#define	SPI_ALLOC_LOCK_ASSERT()   	sx_assert(&spi_alloc_lock, SA_XLOCKED)
+
 /* SAD */
 TAILQ_HEAD(secashead_queue, secashead);
 LIST_HEAD(secashead_list, secashead);
@@ -2140,10 +2147,12 @@ key_getnewspid(void)
 {
 	struct secpolicy *sp;
 	uint32_t newid = 0;
-	int count = V_key_spi_trycnt;	/* XXX */
+	int tries, limit;
 
 	SPTREE_WLOCK_ASSERT();
-	while (count--) {
+
+	limit = atomic_load_int(&V_key_spi_trycnt);
+	for (tries = 0; tries < limit; tries++) {
 		if (V_policy_id == ~0) /* overflowed */
 			newid = V_policy_id = 1;
 		else
@@ -2155,7 +2164,7 @@ key_getnewspid(void)
 		if (sp == NULL)
 			break;
 	}
-	if (count == 0 || newid == 0) {
+	if (tries == limit || newid == 0) {
 		ipseclog((LOG_DEBUG, "%s: failed to allocate policy id.\n",
 		    __func__));
 		return (0);
@@ -2952,8 +2961,8 @@ key_newsav(const struct sadb_msghdr *mhp, struct secasindex *saidx,
 		*errp = ENOBUFS;
 		goto done;
 	}
-	sav->lock = malloc(sizeof(struct mtx), M_IPSEC_MISC,
-	    M_NOWAIT | M_ZERO);
+	sav->lock = malloc_aligned(max(sizeof(struct mtx), CACHE_LINE_SIZE),
+	    CACHE_LINE_SIZE, M_IPSEC_MISC, M_NOWAIT | M_ZERO);
 	if (sav->lock == NULL) {
 		*errp = ENOBUFS;
 		goto done;
@@ -4902,6 +4911,7 @@ key_getspi(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 	KEY_SETSECASIDX(proto, mode, reqid, src0 + 1, dst0 + 1, &saidx);
 
 	/* SPI allocation */
+	SPI_ALLOC_LOCK();
 	spi = key_do_getnewspi(
 	    (struct sadb_spirange *)mhp->ext[SADB_EXT_SPIRANGE], &saidx);
 	if (spi == 0) {
@@ -4909,10 +4919,12 @@ key_getspi(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 		 * Requested SPI or SPI range is not available or
 		 * already used.
 		 */
+		SPI_ALLOC_UNLOCK();
 		error = EEXIST;
 		goto fail;
 	}
 	sav = key_newsav(mhp, &saidx, spi, &error);
+	SPI_ALLOC_UNLOCK();
 	if (sav == NULL)
 		goto fail;
 
@@ -5019,7 +5031,9 @@ static uint32_t
 key_do_getnewspi(struct sadb_spirange *spirange, struct secasindex *saidx)
 {
 	uint32_t min, max, newspi, t;
-	int count = V_key_spi_trycnt;
+	int tries, limit;
+
+	SPI_ALLOC_LOCK_ASSERT();
 
 	/* set spi range to allocate */
 	if (spirange != NULL) {
@@ -5047,21 +5061,22 @@ key_do_getnewspi(struct sadb_spirange *spirange, struct secasindex *saidx)
 			return 0;
 		}
 
-		count--; /* taking one cost. */
+		tries = 1;
 		newspi = min;
 	} else {
 		/* init SPI */
 		newspi = 0;
 
+		limit = atomic_load_int(&V_key_spi_trycnt);
 		/* when requesting to allocate spi ranged */
-		while (count--) {
+		for (tries = 0; tries < limit; tries++) {
 			/* generate pseudo-random SPI value ranged. */
 			newspi = min + (key_random() % (max - min + 1));
 			if (!key_checkspidup(htonl(newspi)))
 				break;
 		}
 
-		if (count == 0 || newspi == 0) {
+		if (tries == limit || newspi == 0) {
 			ipseclog((LOG_DEBUG,
 			    "%s: failed to allocate SPI.\n", __func__));
 			return 0;
@@ -5070,7 +5085,7 @@ key_do_getnewspi(struct sadb_spirange *spirange, struct secasindex *saidx)
 
 	/* statistics */
 	keystat.getspi_count =
-	    (keystat.getspi_count + V_key_spi_trycnt - count) / 2;
+	    (keystat.getspi_count + tries) / 2;
 
 	return (htonl(newspi));
 }
@@ -5628,9 +5643,11 @@ key_add(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 	 * secasindex.
 	 * XXXAE: IPComp seems also doesn't use SPI.
 	 */
+	SPI_ALLOC_LOCK();
 	if (proto == IPPROTO_TCP) {
 		sav = key_getsav_tcpmd5(&saidx, &spi);
 		if (sav == NULL && spi == 0) {
+			SPI_ALLOC_UNLOCK();
 			/* Failed to allocate SPI */
 			ipseclog((LOG_DEBUG, "%s: SA already exists.\n",
 			    __func__));
@@ -5642,12 +5659,14 @@ key_add(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 		sav = key_getsavbyspi(spi);
 	}
 	if (sav != NULL) {
+		SPI_ALLOC_UNLOCK();
 		key_freesav(&sav);
 		ipseclog((LOG_DEBUG, "%s: SA already exists.\n", __func__));
 		return key_senderror(so, m, EEXIST);
 	}
 
 	sav = key_newsav(mhp, &saidx, spi, &error);
+	SPI_ALLOC_UNLOCK();
 	if (sav == NULL)
 		return key_senderror(so, m, error);
 	KEYDBG(KEY_STAMP,
@@ -6022,10 +6041,12 @@ key_delete(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 		return (key_senderror(so, m, EINVAL));
 	}
 	sa0 = (struct sadb_sa *)mhp->ext[SADB_EXT_SA];
+	SPI_ALLOC_LOCK();
 	if (proto == IPPROTO_TCP)
 		sav = key_getsav_tcpmd5(&saidx, NULL);
 	else
 		sav = key_getsavbyspi(sa0->sadb_sa_spi);
+	SPI_ALLOC_UNLOCK();
 	if (sav == NULL) {
 		ipseclog((LOG_DEBUG, "%s: no SA found for SPI %u.\n",
 		    __func__, ntohl(sa0->sadb_sa_spi)));
@@ -6234,10 +6255,12 @@ key_get(struct socket *so, struct mbuf *m, const struct sadb_msghdr *mhp)
 	}
 	KEY_SETSECASIDX(proto, IPSEC_MODE_ANY, 0, src0 + 1, dst0 + 1, &saidx);
 
+	SPI_ALLOC_LOCK();
 	if (proto == IPPROTO_TCP)
 		sav = key_getsav_tcpmd5(&saidx, NULL);
 	else
 		sav = key_getsavbyspi(sa0->sadb_sa_spi);
+	SPI_ALLOC_UNLOCK();
 	if (sav == NULL) {
 		ipseclog((LOG_DEBUG, "%s: no SA found.\n", __func__));
 		return key_senderror(so, m, ESRCH);
@@ -8317,6 +8340,7 @@ key_init(void)
 	SAHTREE_LOCK_INIT();
 	ACQ_LOCK_INIT();
 	SPACQ_LOCK_INIT();
+	SPI_ALLOC_LOCK_INIT();
 
 #ifndef IPSEC_DEBUG2
 	callout_init(&key_timer, 1);
@@ -8441,6 +8465,7 @@ key_destroy(void)
 	SAHTREE_LOCK_DESTROY();
 	ACQ_LOCK_DESTROY();
 	SPACQ_LOCK_DESTROY();
+	SPI_ALLOC_LOCK_DESTROY();
 }
 #endif
 

@@ -774,7 +774,7 @@ tcp_over_udp_stop(void)
 {
 	/*
 	 * This function assumes sysctl caller holds inp_rinfo_lock()
-	 * for writting!
+	 * for writing!
 	 */
 #ifdef INET
 	if (V_udp4_tun_socket != NULL) {
@@ -803,7 +803,7 @@ tcp_over_udp_start(void)
 #endif
 	/*
 	 * This function assumes sysctl caller holds inp_info_rlock()
-	 * for writting!
+	 * for writing!
 	 */
 	port = V_tcp_udp_tunneling_port;
 	if (ntohs(port) == 0) {
@@ -1748,14 +1748,16 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 	struct mbuf *optm;
 	struct udphdr *uh = NULL;
 	struct tcphdr *nth;
+	struct tcp_log_buffer *lgb;
 	u_char *optp;
 #ifdef INET6
 	struct ip6_hdr *ip6;
 	int isipv6;
 #endif /* INET6 */
 	int optlen, tlen, win, ulen;
-	bool incl_opts;
+	bool incl_opts, lock_upgraded;
 	uint16_t port;
+	int output_ret;
 
 	KASSERT(tp != NULL || m != NULL, ("tcp_respond: tp and m both NULL"));
 	NET_EPOCH_ASSERT();
@@ -2086,11 +2088,34 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 	TCP_PROBE3(debug__output, tp, th, m);
 	if (flags & TH_RST)
 		TCP_PROBE5(accept__refused, NULL, NULL, m, tp, nth);
+	lock_upgraded = false;
+	lgb = NULL;
+	if ((tp != NULL) && (tp->t_logstate != TCP_LOG_STATE_OFF)) {
+		union tcp_log_stackspecific log;
+		struct timeval tv;
+
+		lock_upgraded = !INP_WLOCKED(inp) && INP_TRY_UPGRADE(inp);
+		/*
+		 *`If we don't already own the write lock and can't upgrade,
+		 * just don't log the event, but still send the response.
+		 */
+		if (INP_WLOCKED(inp)) {
+			memset(&log.u_bbr, 0, sizeof(log.u_bbr));
+			log.u_bbr.inhpts = tp->t_inpcb->inp_in_hpts;
+			log.u_bbr.ininput = tp->t_inpcb->inp_in_input;
+			log.u_bbr.flex8 = 4;
+			log.u_bbr.pkts_out = tp->t_maxseg;
+			log.u_bbr.timeStamp = tcp_get_usecs(&tv);
+			log.u_bbr.delivered = 0;
+			lgb = tcp_log_event_(tp, nth, NULL, NULL, TCP_LOG_OUT, ERRNO_UNK,
+			                     0, &log, false, NULL, NULL, 0, &tv);
+		}
+	}
 
 #ifdef INET6
 	if (isipv6) {
 		TCP_PROBE5(send, NULL, tp, ip6, tp, nth);
-		(void)ip6_output(m, NULL, NULL, 0, NULL, NULL, inp);
+		output_ret = ip6_output(m, NULL, NULL, 0, NULL, NULL, inp);
 	}
 #endif /* INET6 */
 #if defined(INET) && defined(INET6)
@@ -2099,9 +2124,13 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 #ifdef INET
 	{
 		TCP_PROBE5(send, NULL, tp, ip, tp, nth);
-		(void)ip_output(m, NULL, NULL, 0, NULL, inp);
+		output_ret = ip_output(m, NULL, NULL, 0, NULL, inp);
 	}
 #endif
+	if (lgb != NULL)
+		lgb->tlb_errno = output_ret;
+	if (lock_upgraded)
+		INP_DOWNGRADE(inp);
 }
 
 /*
@@ -2137,8 +2166,9 @@ tcp_newtcpcb(struct inpcb *inp)
 	 */
 	CC_LIST_RLOCK();
 	KASSERT(!STAILQ_EMPTY(&cc_list), ("cc_list is empty!"));
-	CC_ALGO(tp) = CC_DEFAULT();
+	CC_ALGO(tp) = CC_DEFAULT_ALGO();
 	CC_LIST_RUNLOCK();
+
 	/*
 	 * The tcpcb will hold a reference on its inpcb until tcp_discardcb()
 	 * is called.
@@ -2147,7 +2177,7 @@ tcp_newtcpcb(struct inpcb *inp)
 	tp->t_inpcb = inp;
 
 	if (CC_ALGO(tp)->cb_init != NULL)
-		if (CC_ALGO(tp)->cb_init(tp->ccv) > 0) {
+		if (CC_ALGO(tp)->cb_init(tp->ccv, NULL) > 0) {
 			if (tp->t_fb->tfb_tcp_fb_fini)
 				(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
 			in_pcbrele_wlocked(inp);
@@ -2240,25 +2270,23 @@ tcp_newtcpcb(struct inpcb *inp)
 }
 
 /*
- * Switch the congestion control algorithm back to NewReno for any active
- * control blocks using an algorithm which is about to go away.
- * This ensures the CC framework can allow the unload to proceed without leaving
- * any dangling pointers which would trigger a panic.
- * Returning non-zero would inform the CC framework that something went wrong
- * and it would be unsafe to allow the unload to proceed. However, there is no
- * way for this to occur with this implementation so we always return zero.
+ * Switch the congestion control algorithm back to Vnet default for any active
+ * control blocks using an algorithm which is about to go away. If the algorithm
+ * has a cb_init function and it fails (no memory) then the operation fails and
+ * the unload will not succeed.
+ *
  */
 int
 tcp_ccalgounload(struct cc_algo *unload_algo)
 {
-	struct cc_algo *tmpalgo;
+	struct cc_algo *oldalgo, *newalgo;
 	struct inpcb *inp;
 	struct tcpcb *tp;
 	VNET_ITERATOR_DECL(vnet_iter);
 
 	/*
 	 * Check all active control blocks across all network stacks and change
-	 * any that are using "unload_algo" back to NewReno. If "unload_algo"
+	 * any that are using "unload_algo" back to its default. If "unload_algo"
 	 * requires cleanup code to be run, call it.
 	 */
 	VNET_LIST_RLOCK();
@@ -2272,6 +2300,7 @@ tcp_ccalgounload(struct cc_algo *unload_algo)
 		 * therefore don't enter the loop below until the connection
 		 * list has stabilised.
 		 */
+		newalgo = CC_DEFAULT_ALGO();
 		CK_LIST_FOREACH(inp, &V_tcb, inp_list) {
 			INP_WLOCK(inp);
 			/* Important to skip tcptw structs. */
@@ -2280,24 +2309,48 @@ tcp_ccalgounload(struct cc_algo *unload_algo)
 				/*
 				 * By holding INP_WLOCK here, we are assured
 				 * that the connection is not currently
-				 * executing inside the CC module's functions
-				 * i.e. it is safe to make the switch back to
-				 * NewReno.
+				 * executing inside the CC module's functions.
+				 * We attempt to switch to the Vnets default,
+				 * if the init fails then we fail the whole
+				 * operation and the module unload will fail.
 				 */
 				if (CC_ALGO(tp) == unload_algo) {
-					tmpalgo = CC_ALGO(tp);
-					if (tmpalgo->cb_destroy != NULL)
-						tmpalgo->cb_destroy(tp->ccv);
-					CC_DATA(tp) = NULL;
-					/*
-					 * NewReno may allocate memory on
-					 * demand for certain stateful
-					 * configuration as needed, but is
-					 * coded to never fail on memory
-					 * allocation failure so it is a safe
-					 * fallback.
-					 */
-					CC_ALGO(tp) = &newreno_cc_algo;
+					struct cc_var cc_mem;
+					int err;
+
+					oldalgo = CC_ALGO(tp);
+					memset(&cc_mem, 0, sizeof(cc_mem));
+					cc_mem.ccvc.tcp = tp;
+					if (newalgo->cb_init == NULL) {
+						/*
+						 * No init we can skip the
+						 * dance around a possible failure.
+						 */
+						CC_DATA(tp) = NULL;
+						goto proceed;
+					}
+					err = (newalgo->cb_init)(&cc_mem, NULL);
+					if (err) {
+						/*
+						 * Presumably no memory the caller will
+						 * need to try again.
+						 */
+						INP_WUNLOCK(inp);
+						INP_INFO_WUNLOCK(&V_tcbinfo);
+						CURVNET_RESTORE();
+						VNET_LIST_RUNLOCK();
+						return (err);
+					}
+proceed:
+					if (oldalgo->cb_destroy != NULL)
+						oldalgo->cb_destroy(tp->ccv);
+					CC_ALGO(tp) = newalgo;
+					memcpy(tp->ccv, &cc_mem, sizeof(struct cc_var));
+					if (TCPS_HAVEESTABLISHED(tp->t_state) &&
+					    (CC_ALGO(tp)->conn_init != NULL)) {
+						/* Yep run the connection init for the new CC */
+						CC_ALGO(tp)->conn_init(tp->ccv);
+					}
 				}
 			}
 			INP_WUNLOCK(inp);
@@ -2306,7 +2359,6 @@ tcp_ccalgounload(struct cc_algo *unload_algo)
 		CURVNET_RESTORE();
 	}
 	VNET_LIST_RUNLOCK();
-
 	return (0);
 }
 
@@ -2340,11 +2392,6 @@ void
 tcp_discardcb(struct tcpcb *tp)
 {
 	struct inpcb *inp = tp->t_inpcb;
-	struct socket *so = inp->inp_socket;
-#ifdef INET6
-	int isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
-#endif /* INET6 */
-	int released __unused;
 
 	INP_WLOCK_ASSERT(inp);
 
@@ -2406,121 +2453,100 @@ tcp_discardcb(struct tcpcb *tp)
 	CC_ALGO(tp) = NULL;
 	inp->inp_ppcb = NULL;
 	if (tp->t_timers->tt_draincnt == 0) {
-		/* We own the last reference on tcpcb, let's free it. */
-#ifdef TCP_BLACKBOX
-		tcp_log_tcpcbfini(tp);
-#endif
-		TCPSTATES_DEC(tp->t_state);
-		if (tp->t_fb->tfb_tcp_fb_fini)
-			(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
+		bool released __diagused;
 
-		/*
-		 * If we got enough samples through the srtt filter,
-		 * save the rtt and rttvar in the routing entry.
-		 * 'Enough' is arbitrarily defined as 4 rtt samples.
-		 * 4 samples is enough for the srtt filter to converge
-		 * to within enough % of the correct value; fewer samples
-		 * and we could save a bogus rtt. The danger is not high
-		 * as tcp quickly recovers from everything.
-		 * XXX: Works very well but needs some more statistics!
-		 *
-		 * XXXRRS: Updating must be after the stack fini() since
-		 * that may be converting some internal representation of
-		 * say srtt etc into the general one used by other stacks.
-		 * Lets also at least protect against the so being NULL
-		 * as RW stated below.
-		 */
-		if ((tp->t_rttupdated >= 4) && (so != NULL)) {
-			struct hc_metrics_lite metrics;
-			uint32_t ssthresh;
-
-			bzero(&metrics, sizeof(metrics));
-			/*
-			 * Update the ssthresh always when the conditions below
-			 * are satisfied. This gives us better new start value
-			 * for the congestion avoidance for new connections.
-			 * ssthresh is only set if packet loss occurred on a session.
-			 *
-			 * XXXRW: 'so' may be NULL here, and/or socket buffer may be
-			 * being torn down.  Ideally this code would not use 'so'.
-			 */
-			ssthresh = tp->snd_ssthresh;
-			if (ssthresh != 0 && ssthresh < so->so_snd.sb_hiwat / 2) {
-				/*
-				 * convert the limit from user data bytes to
-				 * packets then to packet data bytes.
-				 */
-				ssthresh = (ssthresh + tp->t_maxseg / 2) / tp->t_maxseg;
-				if (ssthresh < 2)
-					ssthresh = 2;
-				ssthresh *= (tp->t_maxseg +
-#ifdef INET6
-					     (isipv6 ? sizeof (struct ip6_hdr) +
-					      sizeof (struct tcphdr) :
-#endif
-					      sizeof (struct tcpiphdr)
-#ifdef INET6
-						     )
-#endif
-					);
-			} else
-				ssthresh = 0;
-			metrics.rmx_ssthresh = ssthresh;
-
-			metrics.rmx_rtt = tp->t_srtt;
-			metrics.rmx_rttvar = tp->t_rttvar;
-			metrics.rmx_cwnd = tp->snd_cwnd;
-			metrics.rmx_sendpipe = 0;
-			metrics.rmx_recvpipe = 0;
-
-			tcp_hc_update(&inp->inp_inc, &metrics);
-		}
-		refcount_release(&tp->t_fb->tfb_refcnt);
-		tp->t_inpcb = NULL;
-		uma_zfree(V_tcpcb_zone, tp);
-		released = in_pcbrele_wlocked(inp);
+		released = tcp_freecb(tp);
 		KASSERT(!released, ("%s: inp %p should not have been released "
-			"here", __func__, inp));
+		    "here", __func__, inp));
 	}
 }
 
-void
-tcp_timer_discard(void *ptp)
+bool
+tcp_freecb(struct tcpcb *tp)
 {
-	struct inpcb *inp;
-	struct tcpcb *tp;
-	struct epoch_tracker et;
-
-	tp = (struct tcpcb *)ptp;
-	CURVNET_SET(tp->t_vnet);
-	NET_EPOCH_ENTER(et);
-	inp = tp->t_inpcb;
-	KASSERT(inp != NULL, ("%s: tp %p tp->t_inpcb == NULL",
-		__func__, tp));
-	INP_WLOCK(inp);
-	KASSERT((tp->t_timers->tt_flags & TT_STOPPED) != 0,
-		("%s: tcpcb has to be stopped here", __func__));
-	tp->t_timers->tt_draincnt--;
-	if (tp->t_timers->tt_draincnt == 0) {
-		/* We own the last reference on this tcpcb, let's free it. */
-#ifdef TCP_BLACKBOX
-		tcp_log_tcpcbfini(tp);
+	struct inpcb *inp = tp->t_inpcb;
+	struct socket *so = inp->inp_socket;
+#ifdef INET6
+	bool isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
 #endif
-		TCPSTATES_DEC(tp->t_state);
-		if (tp->t_fb->tfb_tcp_fb_fini)
-			(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
-		refcount_release(&tp->t_fb->tfb_refcnt);
-		tp->t_inpcb = NULL;
-		uma_zfree(V_tcpcb_zone, tp);
-		if (in_pcbrele_wlocked(inp)) {
-			NET_EPOCH_EXIT(et);
-			CURVNET_RESTORE();
-			return;
-		}
+
+	INP_WLOCK_ASSERT(inp);
+	MPASS(tp->t_timers->tt_draincnt == 0);
+
+	/* We own the last reference on tcpcb, let's free it. */
+#ifdef TCP_BLACKBOX
+	tcp_log_tcpcbfini(tp);
+#endif
+	TCPSTATES_DEC(tp->t_state);
+	if (tp->t_fb->tfb_tcp_fb_fini)
+		(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
+
+	/*
+	 * If we got enough samples through the srtt filter,
+	 * save the rtt and rttvar in the routing entry.
+	 * 'Enough' is arbitrarily defined as 4 rtt samples.
+	 * 4 samples is enough for the srtt filter to converge
+	 * to within enough % of the correct value; fewer samples
+	 * and we could save a bogus rtt. The danger is not high
+	 * as tcp quickly recovers from everything.
+	 * XXX: Works very well but needs some more statistics!
+	 *
+	 * XXXRRS: Updating must be after the stack fini() since
+	 * that may be converting some internal representation of
+	 * say srtt etc into the general one used by other stacks.
+	 * Lets also at least protect against the so being NULL
+	 * as RW stated below.
+	 */
+	if ((tp->t_rttupdated >= 4) && (so != NULL)) {
+		struct hc_metrics_lite metrics;
+		uint32_t ssthresh;
+
+		bzero(&metrics, sizeof(metrics));
+		/*
+		 * Update the ssthresh always when the conditions below
+		 * are satisfied. This gives us better new start value
+		 * for the congestion avoidance for new connections.
+		 * ssthresh is only set if packet loss occurred on a session.
+		 *
+		 * XXXRW: 'so' may be NULL here, and/or socket buffer may be
+		 * being torn down.  Ideally this code would not use 'so'.
+		 */
+		ssthresh = tp->snd_ssthresh;
+		if (ssthresh != 0 && ssthresh < so->so_snd.sb_hiwat / 2) {
+			/*
+			 * convert the limit from user data bytes to
+			 * packets then to packet data bytes.
+			 */
+			ssthresh = (ssthresh + tp->t_maxseg / 2) / tp->t_maxseg;
+			if (ssthresh < 2)
+				ssthresh = 2;
+			ssthresh *= (tp->t_maxseg +
+#ifdef INET6
+			    (isipv6 ? sizeof (struct ip6_hdr) +
+			    sizeof (struct tcphdr) :
+#endif
+			    sizeof (struct tcpiphdr)
+#ifdef INET6
+			    )
+#endif
+			    );
+		} else
+			ssthresh = 0;
+		metrics.rmx_ssthresh = ssthresh;
+
+		metrics.rmx_rtt = tp->t_srtt;
+		metrics.rmx_rttvar = tp->t_rttvar;
+		metrics.rmx_cwnd = tp->snd_cwnd;
+		metrics.rmx_sendpipe = 0;
+		metrics.rmx_recvpipe = 0;
+
+		tcp_hc_update(&inp->inp_inc, &metrics);
 	}
-	INP_WUNLOCK(inp);
-	NET_EPOCH_EXIT(et);
-	CURVNET_RESTORE();
+
+	refcount_release(&tp->t_fb->tfb_refcnt);
+	uma_zfree(V_tcpcb_zone, tp);
+
+	return (in_pcbrele_wlocked(inp));
 }
 
 /*
@@ -3911,7 +3937,6 @@ sysctl_switch_tls(SYSCTL_HANDLER_ARGS)
 			error = ktls_set_tx_mode(so,
 			    arg2 == 0 ? TCP_TLS_MODE_SW : TCP_TLS_MODE_IFNET);
 			INP_WUNLOCK(inp);
-			SOCK_LOCK(so);
 			sorele(so);
 		}
 	} else
