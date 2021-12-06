@@ -121,6 +121,7 @@ SUBDIR=	\
 	filemon \
 	firewire \
 	firmware \
+	flash \
 	${_ftwd} \
 	fusefs \
 	${_fxp} \
@@ -221,6 +222,7 @@ SUBDIR=	\
 	mac_ntpd \
 	mac_partition \
 	mac_portacl \
+	mac_priority \
 	mac_seeotheruids \
 	mac_stub \
 	mac_test \

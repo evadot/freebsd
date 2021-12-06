@@ -56,7 +56,7 @@
 /* The casts are bogus but will do for now. */
 struct sysent sysent[] = {
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },		/* 0 = syscall */
-	{ .sy_narg = AS(sys_exit_args), .sy_call = (sy_call_t *)sys_sys_exit, .sy_auevent = AUE_EXIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 1 = exit */
+	{ .sy_narg = AS(exit_args), .sy_call = (sy_call_t *)sys_exit, .sy_auevent = AUE_EXIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 1 = exit */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)sys_fork, .sy_auevent = AUE_FORK, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 2 = fork */
 	{ .sy_narg = AS(read_args), .sy_call = (sy_call_t *)sys_read, .sy_auevent = AUE_READ, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 3 = read */
 	{ .sy_narg = AS(write_args), .sy_call = (sy_call_t *)sys_write, .sy_auevent = AUE_WRITE, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 4 = write */
@@ -180,7 +180,7 @@ struct sysent sysent[] = {
 	{ .sy_narg = AS(settimeofday_args), .sy_call = (sy_call_t *)sys_settimeofday, .sy_auevent = AUE_SETTIMEOFDAY, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },	/* 122 = settimeofday */
 	{ .sy_narg = AS(fchown_args), .sy_call = (sy_call_t *)sys_fchown, .sy_auevent = AUE_FCHOWN, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 123 = fchown */
 	{ .sy_narg = AS(fchmod_args), .sy_call = (sy_call_t *)sys_fchmod, .sy_auevent = AUE_FCHMOD, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 124 = fchmod */
-	{ compat(AS(recvfrom_args),recvfrom), .sy_auevent = AUE_RECVFROM, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 125 = old recvfrom */
+	{ compat(AS(orecvfrom_args),recvfrom), .sy_auevent = AUE_RECVFROM, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 125 = old recvfrom */
 	{ .sy_narg = AS(setreuid_args), .sy_call = (sy_call_t *)sys_setreuid, .sy_auevent = AUE_SETREUID, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 126 = setreuid */
 	{ .sy_narg = AS(setregid_args), .sy_call = (sy_call_t *)sys_setregid, .sy_auevent = AUE_SETREGID, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 127 = setregid */
 	{ .sy_narg = AS(rename_args), .sy_call = (sy_call_t *)sys_rename, .sy_auevent = AUE_RENAME, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },	/* 128 = rename */
@@ -205,7 +205,7 @@ struct sysent sysent[] = {
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)sys_setsid, .sy_auevent = AUE_SETSID, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 147 = setsid */
 	{ .sy_narg = AS(quotactl_args), .sy_call = (sy_call_t *)sys_quotactl, .sy_auevent = AUE_QUOTACTL, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },	/* 148 = quotactl */
 	{ compat(0,quota), .sy_auevent = AUE_O_QUOTA, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },		/* 149 = old quota */
-	{ compat(AS(getsockname_args),getsockname), .sy_auevent = AUE_GETSOCKNAME, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 150 = old getsockname */
+	{ compat(AS(ogetsockname_args),getsockname), .sy_auevent = AUE_GETSOCKNAME, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 150 = old getsockname */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_ABSENT },			/* 151 = reserved for local use */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_ABSENT },			/* 152 = reserved for local use */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_ABSENT },			/* 153 = reserved for local use */
@@ -249,8 +249,8 @@ struct sysent sysent[] = {
 	{ .sy_narg = AS(pathconf_args), .sy_call = (sy_call_t *)sys_pathconf, .sy_auevent = AUE_PATHCONF, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },	/* 191 = pathconf */
 	{ .sy_narg = AS(fpathconf_args), .sy_call = (sy_call_t *)sys_fpathconf, .sy_auevent = AUE_FPATHCONF, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 192 = fpathconf */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_ABSENT },			/* 193 = reserved for local use */
-	{ .sy_narg = AS(__getrlimit_args), .sy_call = (sy_call_t *)sys_getrlimit, .sy_auevent = AUE_GETRLIMIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 194 = getrlimit */
-	{ .sy_narg = AS(__setrlimit_args), .sy_call = (sy_call_t *)sys_setrlimit, .sy_auevent = AUE_SETRLIMIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 195 = setrlimit */
+	{ .sy_narg = AS(getrlimit_args), .sy_call = (sy_call_t *)sys_getrlimit, .sy_auevent = AUE_GETRLIMIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 194 = getrlimit */
+	{ .sy_narg = AS(setrlimit_args), .sy_call = (sy_call_t *)sys_setrlimit, .sy_auevent = AUE_SETRLIMIT, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 195 = setrlimit */
 	{ compat11(AS(freebsd11_getdirentries_args),getdirentries), .sy_auevent = AUE_GETDIRENTRIES, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 196 = freebsd11 getdirentries */
 	{ compat6(AS(freebsd6_mmap_args),mmap), .sy_auevent = AUE_MMAP, .sy_flags = SYF_CAPENABLED, .sy_thrcnt = SY_THR_STATIC },	/* 197 = freebsd6 mmap */
 	{ .sy_narg = 0, .sy_call = (sy_call_t *)nosys, .sy_auevent = AUE_NULL, .sy_flags = 0, .sy_thrcnt = SY_THR_STATIC },		/* 198 = __syscall */

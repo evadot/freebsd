@@ -469,7 +469,8 @@ static bool	swp_pager_swblk_empty(struct swblk *sb, int start, int limit);
 static void	swp_pager_free_empty_swblk(vm_object_t, struct swblk *sb);
 static int	swapongeom(struct vnode *);
 static int	swaponvp(struct thread *, struct vnode *, u_long);
-static int	swapoff_one(struct swdevt *sp, struct ucred *cred);
+static int	swapoff_one(struct swdevt *sp, struct ucred *cred,
+		    u_int flags);
 
 /*
  * Swap bitmap functions
@@ -2339,10 +2340,6 @@ struct swapon_args {
 };
 #endif
 
-/*
- * MPSAFE
- */
-/* ARGSUSED */
 int
 sys_swapon(struct thread *td, struct swapon_args *uap)
 {
@@ -2488,25 +2485,44 @@ struct swapoff_args {
 };
 #endif
 
-/*
- * MPSAFE
- */
-/* ARGSUSED */
 int
 sys_swapoff(struct thread *td, struct swapoff_args *uap)
 {
 	struct vnode *vp;
 	struct nameidata nd;
 	struct swdevt *sp;
-	int error;
+	struct swapoff_new_args sa;
+	int error, probe_byte;
 
 	error = priv_check(td, PRIV_SWAPOFF);
 	if (error)
 		return (error);
 
+	/*
+	 * Detect old vs. new-style swapoff(2) syscall.  The first
+	 * pointer in the memory pointed to by uap->name is NULL for
+	 * the new variant.
+	 */
+	probe_byte = fubyte(uap->name);
+	switch (probe_byte) {
+	case -1:
+		return (EFAULT);
+	case 0:
+		error = copyin(uap->name, &sa, sizeof(sa));
+		if (error != 0)
+			return (error);
+		if ((sa.flags & ~(SWAPOFF_FORCE)) != 0)
+			return (EINVAL);
+		break;
+	default:
+		bzero(&sa, sizeof(sa));
+		sa.name = uap->name;
+		break;
+	}
+
 	sx_xlock(&swdev_syscall_lock);
 
-	NDINIT(&nd, LOOKUP, FOLLOW | AUDITVNODE1, UIO_USERSPACE, uap->name);
+	NDINIT(&nd, LOOKUP, FOLLOW | AUDITVNODE1, UIO_USERSPACE, sa.name);
 	error = namei(&nd);
 	if (error)
 		goto done;
@@ -2523,14 +2539,14 @@ sys_swapoff(struct thread *td, struct swapoff_args *uap)
 		error = EINVAL;
 		goto done;
 	}
-	error = swapoff_one(sp, td->td_ucred);
+	error = swapoff_one(sp, td->td_ucred, sa.flags);
 done:
 	sx_xunlock(&swdev_syscall_lock);
 	return (error);
 }
 
 static int
-swapoff_one(struct swdevt *sp, struct ucred *cred)
+swapoff_one(struct swdevt *sp, struct ucred *cred, u_int flags)
 {
 	u_long nblks;
 #ifdef MAC
@@ -2552,8 +2568,16 @@ swapoff_one(struct swdevt *sp, struct ucred *cred)
 	 * available virtual memory in the system will fit the amount
 	 * of data we will have to page back in, plus an epsilon so
 	 * the system doesn't become critically low on swap space.
+	 * The vm_free_count() part does not account e.g. for clean
+	 * pages that can be immediately reclaimed without paging, so
+	 * this is a very rough estimation.
+	 *
+	 * On the other hand, not turning swap off on swapoff_all()
+	 * means that we can lose swap data when filesystems go away,
+	 * which is arguably worse.
 	 */
-	if (vm_free_count() + swap_pager_avail < nblks + nswap_lowat)
+	if ((flags & SWAPOFF_FORCE) == 0 &&
+	    vm_free_count() + swap_pager_avail < nblks + nswap_lowat)
 		return (ENOMEM);
 
 	/*
@@ -2603,7 +2627,7 @@ swapoff_all(void)
 			devname = devtoname(sp->sw_vp->v_rdev);
 		else
 			devname = "[file]";
-		error = swapoff_one(sp, thread0.td_ucred);
+		error = swapoff_one(sp, thread0.td_ucred, SWAPOFF_FORCE);
 		if (error != 0) {
 			printf("Cannot remove swap device %s (error=%d), "
 			    "skipping.\n", devname, error);

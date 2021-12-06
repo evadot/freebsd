@@ -34,10 +34,7 @@ struct thread;
 #define	PADR_(t)	0
 #endif
 
-struct nosys_args {
-	register_t dummy;
-};
-struct sys_exit_args {
+struct exit_args {
 	char rval_l_[PADL_(int)]; int rval; char rval_r_[PADR_(int)];
 };
 struct fork_args {
@@ -269,7 +266,7 @@ struct munmap_args {
 	char len_l_[PADL_(size_t)]; size_t len; char len_r_[PADR_(size_t)];
 };
 struct mprotect_args {
-	char addr_l_[PADL_(const void *)]; const void * addr; char addr_r_[PADR_(const void *)];
+	char addr_l_[PADL_(void *)]; void * addr; char addr_r_[PADR_(void *)];
 	char len_l_[PADL_(size_t)]; size_t len; char len_r_[PADR_(size_t)];
 	char prot_l_[PADL_(int)]; int prot; char prot_r_[PADR_(int)];
 };
@@ -547,11 +544,11 @@ struct fpathconf_args {
 	char fd_l_[PADL_(int)]; int fd; char fd_r_[PADR_(int)];
 	char name_l_[PADL_(int)]; int name; char name_r_[PADR_(int)];
 };
-struct __getrlimit_args {
+struct getrlimit_args {
 	char which_l_[PADL_(u_int)]; u_int which; char which_r_[PADR_(u_int)];
 	char rlp_l_[PADL_(struct rlimit *)]; struct rlimit * rlp; char rlp_r_[PADR_(struct rlimit *)];
 };
-struct __setrlimit_args {
+struct setrlimit_args {
 	char which_l_[PADL_(u_int)]; u_int which; char which_r_[PADR_(u_int)];
 	char rlp_l_[PADL_(struct rlimit *)]; struct rlimit * rlp; char rlp_r_[PADR_(struct rlimit *)];
 };
@@ -1857,8 +1854,7 @@ struct fspacectl_args {
 struct sched_getcpu_args {
 	register_t dummy;
 };
-int	nosys(struct thread *, struct nosys_args *);
-void	sys_sys_exit(struct thread *, struct sys_exit_args *);
+int	sys_exit(struct thread *, struct exit_args *);
 int	sys_fork(struct thread *, struct fork_args *);
 int	sys_read(struct thread *, struct read_args *);
 int	sys_write(struct thread *, struct write_args *);
@@ -1973,8 +1969,8 @@ int	sys_setegid(struct thread *, struct setegid_args *);
 int	sys_seteuid(struct thread *, struct seteuid_args *);
 int	sys_pathconf(struct thread *, struct pathconf_args *);
 int	sys_fpathconf(struct thread *, struct fpathconf_args *);
-int	sys_getrlimit(struct thread *, struct __getrlimit_args *);
-int	sys_setrlimit(struct thread *, struct __setrlimit_args *);
+int	sys_getrlimit(struct thread *, struct getrlimit_args *);
+int	sys_setrlimit(struct thread *, struct setrlimit_args *);
 int	sys___sysctl(struct thread *, struct __sysctl_args *);
 int	sys_mlock(struct thread *, struct mlock_args *);
 int	sys_munlock(struct thread *, struct munlock_args *);
@@ -2356,6 +2352,14 @@ struct osendmsg_args {
 	char msg_l_[PADL_(const struct omsghdr *)]; const struct omsghdr * msg; char msg_r_[PADR_(const struct omsghdr *)];
 	char flags_l_[PADL_(int)]; int flags; char flags_r_[PADR_(int)];
 };
+struct orecvfrom_args {
+	char s_l_[PADL_(int)]; int s; char s_r_[PADR_(int)];
+	char buf_l_[PADL_(void *)]; void * buf; char buf_r_[PADR_(void *)];
+	char len_l_[PADL_(size_t)]; size_t len; char len_r_[PADR_(size_t)];
+	char flags_l_[PADL_(int)]; int flags; char flags_r_[PADR_(int)];
+	char from_l_[PADL_(struct sockaddr *)]; struct sockaddr * from; char from_r_[PADR_(struct sockaddr *)];
+	char fromlenaddr_l_[PADL_(__socklen_t *)]; __socklen_t * fromlenaddr; char fromlenaddr_r_[PADR_(__socklen_t *)];
+};
 struct otruncate_args {
 	char path_l_[PADL_(const char *)]; const char * path; char path_r_[PADR_(const char *)];
 	char length_l_[PADL_(long)]; long length; char length_r_[PADR_(long)];
@@ -2383,6 +2387,11 @@ struct osetrlimit_args {
 struct okillpg_args {
 	char pgid_l_[PADL_(int)]; int pgid; char pgid_r_[PADR_(int)];
 	char signum_l_[PADL_(int)]; int signum; char signum_r_[PADR_(int)];
+};
+struct ogetsockname_args {
+	char fdes_l_[PADL_(int)]; int fdes; char fdes_r_[PADR_(int)];
+	char asa_l_[PADL_(struct sockaddr *)]; struct sockaddr * asa; char asa_r_[PADR_(struct sockaddr *)];
+	char alen_l_[PADL_(__socklen_t *)]; __socklen_t * alen; char alen_r_[PADR_(__socklen_t *)];
 };
 struct ogetdirentries_args {
 	char fd_l_[PADL_(int)]; int fd; char fd_r_[PADR_(int)];
@@ -2415,7 +2424,7 @@ int	osigsuspend(struct thread *, struct osigsuspend_args *);
 int	osigstack(struct thread *, struct osigstack_args *);
 int	orecvmsg(struct thread *, struct orecvmsg_args *);
 int	osendmsg(struct thread *, struct osendmsg_args *);
-int	orecvfrom(struct thread *, struct recvfrom_args *);
+int	orecvfrom(struct thread *, struct orecvfrom_args *);
 int	otruncate(struct thread *, struct otruncate_args *);
 int	oftruncate(struct thread *, struct oftruncate_args *);
 int	ogetpeername(struct thread *, struct ogetpeername_args *);
@@ -2425,7 +2434,7 @@ int	ogetrlimit(struct thread *, struct ogetrlimit_args *);
 int	osetrlimit(struct thread *, struct osetrlimit_args *);
 int	okillpg(struct thread *, struct okillpg_args *);
 int	oquota(struct thread *, struct oquota_args *);
-int	ogetsockname(struct thread *, struct getsockname_args *);
+int	ogetsockname(struct thread *, struct ogetsockname_args *);
 int	ogetdirentries(struct thread *, struct ogetdirentries_args *);
 
 #endif /* COMPAT_43 */
@@ -2721,7 +2730,6 @@ int	freebsd12_closefrom(struct thread *, struct freebsd12_closefrom_args *);
 
 #endif /* COMPAT_FREEBSD12 */
 
-#define	SYS_AUE_syscall	AUE_NULL
 #define	SYS_AUE_exit	AUE_EXIT
 #define	SYS_AUE_fork	AUE_FORK
 #define	SYS_AUE_read	AUE_READ
