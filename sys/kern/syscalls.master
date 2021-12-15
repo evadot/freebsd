@@ -34,6 +34,7 @@
 ;	COMPAT10 included on COMPAT_FREEBSD10 #ifdef (FreeBSD 10 compat)
 ;	COMPAT11 included on COMPAT_FREEBSD11 #ifdef (FreeBSD 11 compat)
 ;	COMPAT12 included on COMPAT_FREEBSD12 #ifdef (FreeBSD 12 compat)
+;	COMPAT13 included on COMPAT_FREEBSD13 #ifdef (FreeBSD 13 compat)
 ;	OBSOL	obsolete, not included in system, only specifies name
 ;	RESERVED reserved for local or vendor use (not for FreeBSD)
 ;	UNIMPL	not implemented, placeholder only
@@ -2246,7 +2247,7 @@
 		    _In_ _Contains_long_ptr_ const struct __ucontext *ucp
 		);
 	}
-424	AUE_SWAPOFF	STD {
+424	AUE_SWAPOFF	COMPAT13 {
 		int swapoff(
 		    _In_z_ const char *name
 		);
@@ -3297,6 +3298,13 @@
 	}
 581	AUE_NULL	STD|CAPENABLED {
 		int sched_getcpu(void);
+	}
+
+582	AUE_SWAPOFF	STD {
+		int swapoff(
+		    _In_z_ const char *name,
+		    u_int flags,
+		);
 	}
 
 ; Please copy any additions and changes to the following compatability tables:

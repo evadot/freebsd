@@ -259,7 +259,6 @@ __T=${MACHINE_ARCH}
 __LLVM_TARGETS= \
 		aarch64 \
 		arm \
-		mips \
 		powerpc \
 		riscv \
 		x86
@@ -277,7 +276,7 @@ __DEFAULT_DEPENDENT_OPTIONS+=	LLVM_TARGET_${__llt:${__LLVM_TARGET_FILT}:tu}/LLVM
 .endif
 .endfor
 
-__DEFAULT_NO_OPTIONS+=LLVM_TARGET_BPF
+__DEFAULT_NO_OPTIONS+=LLVM_TARGET_BPF LLVM_TARGET_MIPS
 
 .include <bsd.compiler.mk>
 
@@ -315,8 +314,8 @@ BROKEN_OPTIONS+=EFI
 .if ${__T:Mpowerpc*} == ""
 BROKEN_OPTIONS+=LOADER_OFW
 .endif
-# UBOOT is only for arm, mips and powerpc, exclude others
-.if ${__T:Marm*} == "" && ${__T:Mmips*} == "" && ${__T:Mpowerpc*} == ""
+# UBOOT is only for arm, and big-endian powerpc
+.if (${__T:Marm*} == "" && ${__T:Mpowerpc*} == "") || ${__T} == "powerpc64le"
 BROKEN_OPTIONS+=LOADER_UBOOT
 .endif
 # GELI and Lua in loader currently cause boot failures on powerpc.
