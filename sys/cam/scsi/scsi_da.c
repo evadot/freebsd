@@ -2158,7 +2158,7 @@ daasync(void *callback_arg, u_int32_t code,
 		}
 		break;
 	}
-	case AC_UNIT_ATTENTION:
+	case AC_UNIT_ATTENTION:		/* Called for this path: periph locked */
 	{
 		union ccb *ccb;
 		int error_code, sense_key, asc, ascq;
@@ -2168,9 +2168,7 @@ daasync(void *callback_arg, u_int32_t code,
 
 		/*
 		 * Handle all UNIT ATTENTIONs except our own, as they will be
-		 * handled by daerror(). Since this comes from a different periph,
-		 * that periph's lock is held, not ours, so we have to take it ours
-		 * out to touch softc flags.
+		 * handled by daerror().
 		 */
 		if (xpt_path_periph(ccb->ccb_h.path) != periph &&
 		    scsi_extract_sense_ccb(ccb,
@@ -2178,22 +2176,19 @@ daasync(void *callback_arg, u_int32_t code,
 			if (asc == 0x2A && ascq == 0x09) {
 				xpt_print(ccb->ccb_h.path,
 				    "Capacity data has changed\n");
-				cam_periph_lock(periph);
+				cam_periph_assert(periph, MA_OWNED);
 				softc->flags &= ~DA_FLAG_PROBED;
 				dareprobe(periph);
-				cam_periph_unlock(periph);
 			} else if (asc == 0x28 && ascq == 0x00) {
-				cam_periph_lock(periph);
+				cam_periph_assert(periph, MA_OWNED);
 				softc->flags &= ~DA_FLAG_PROBED;
-				cam_periph_unlock(periph);
 				disk_media_changed(softc->disk, M_NOWAIT);
 			} else if (asc == 0x3F && ascq == 0x03) {
 				xpt_print(ccb->ccb_h.path,
 				    "INQUIRY data has changed\n");
-				cam_periph_lock(periph);
+				cam_periph_assert(periph, MA_OWNED);
 				softc->flags &= ~DA_FLAG_PROBED;
 				dareprobe(periph);
-				cam_periph_unlock(periph);
 			}
 		}
 		break;
@@ -2881,9 +2876,9 @@ daregister(struct cam_periph *periph, void *arg)
 	 * ordered tag to a device.
 	 */
 	callout_init_mtx(&softc->sendordered_c, cam_periph_mtx(periph), 0);
-	callout_reset(&softc->sendordered_c,
-	    (da_default_timeout * hz) / DA_ORDEREDTAG_INTERVAL,
-	    dasendorderedtag, periph);
+	callout_reset_sbt(&softc->sendordered_c,
+	    SBT_1S / DA_ORDEREDTAG_INTERVAL * da_default_timeout, 0,
+	    dasendorderedtag, periph, C_PREL(1));
 
 	cam_periph_unlock(periph);
 	/*
@@ -3008,9 +3003,10 @@ daregister(struct cam_periph *periph, void *arg)
 	callout_init_mtx(&softc->mediapoll_c, cam_periph_mtx(periph), 0);
 	if ((softc->flags & DA_FLAG_PACK_REMOVABLE) &&
 	    (cgd->inq_flags & SID_AEN) == 0 &&
-	    da_poll_period != 0)
-		callout_reset(&softc->mediapoll_c, da_poll_period * hz,
-		    damediapoll, periph);
+	    da_poll_period != 0) {
+		callout_reset_sbt(&softc->mediapoll_c, da_poll_period * SBT_1S,
+		    0, damediapoll, periph, C_PREL(1));
+	}
 
 	xpt_schedule(periph, CAM_PRIORITY_DEV);
 
@@ -6006,6 +6002,8 @@ daerror(union ccb *ccb, u_int32_t cam_flags, u_int32_t sense_flags)
 	case CAM_REQ_TERMIO:
 	case CAM_UNREC_HBA_ERROR:
 	case CAM_DATA_RUN_ERR:
+	case CAM_SCSI_STATUS_ERROR:
+	case CAM_ATA_STATUS_ERROR:
 		softc->errors++;
 		break;
 	default:
@@ -6040,9 +6038,12 @@ damediapoll(void *arg)
 			daschedule(periph);
 		}
 	}
+
 	/* Queue us up again */
-	if (da_poll_period != 0)
-		callout_schedule(&softc->mediapoll_c, da_poll_period * hz);
+	if (da_poll_period != 0) {
+		callout_schedule_sbt(&softc->mediapoll_c,
+		    da_poll_period * SBT_1S, 0, C_PREL(1));
+	}
 }
 
 static void
@@ -6229,9 +6230,9 @@ dasendorderedtag(void *arg)
 	}
 
 	/* Queue us up again */
-	callout_reset(&softc->sendordered_c,
-	    (da_default_timeout * hz) / DA_ORDEREDTAG_INTERVAL,
-	    dasendorderedtag, periph);
+	callout_schedule_sbt(&softc->sendordered_c,
+	    SBT_1S / DA_ORDEREDTAG_INTERVAL * da_default_timeout, 0,
+	    C_PREL(1));
 }
 
 /*

@@ -623,7 +623,7 @@ vm_page_startup(vm_offset_t vaddr)
 #else
 	(void)last_pa;
 #endif
-#if defined(__aarch64__) || defined(__amd64__) || defined(__mips__) || \
+#if defined(__aarch64__) || defined(__amd64__) || \
     defined(__riscv) || defined(__powerpc64__)
 	/*
 	 * Include the UMA bootstrap pages, witness pages and vm_page_dump
@@ -728,7 +728,7 @@ vm_page_startup(vm_offset_t vaddr)
 	 */
 	new_end = vm_reserv_startup(&vaddr, new_end);
 #endif
-#if defined(__aarch64__) || defined(__amd64__) || defined(__mips__) || \
+#if defined(__aarch64__) || defined(__amd64__) || \
     defined(__riscv) || defined(__powerpc64__)
 	/*
 	 * Include vm_page_array and vm_reserv_array in a crash dump.
@@ -2656,12 +2656,11 @@ vm_page_scan_contig(u_long npages, vm_page_t m_start, vm_page_t m_end,
 			if (m + npages > m_end)
 				break;
 			pa = VM_PAGE_TO_PHYS(m);
-			if ((pa & (alignment - 1)) != 0) {
+			if (!vm_addr_align_ok(pa, alignment)) {
 				m_inc = atop(roundup2(pa, alignment) - pa);
 				continue;
 			}
-			if (rounddown2(pa ^ (pa + ptoa(npages) - 1),
-			    boundary) != 0) {
+			if (!vm_addr_bound_ok(pa, ptoa(npages), boundary)) {
 				m_inc = atop(roundup2(pa, boundary) - pa);
 				continue;
 			}

@@ -511,6 +511,8 @@ crypto_auth_hash(const struct crypto_session_params *csp)
 		return (&auth_hash_null);
 	case CRYPTO_RIPEMD160_HMAC:
 		return (&auth_hash_hmac_ripemd_160);
+	case CRYPTO_RIPEMD160:
+		return (&auth_hash_ripemd_160);
 	case CRYPTO_SHA1:
 		return (&auth_hash_sha1);
 	case CRYPTO_SHA2_224:
@@ -1623,6 +1625,27 @@ crypto_getreq(crypto_session_t cses, int how)
 	if (crp != NULL)
 		_crypto_initreq(crp, cses);
 	return (crp);
+}
+
+/*
+ * Clone a crypto request, but associate it with the specified session
+ * rather than inheriting the session from the original request.  The
+ * fields describing the request buffers are copied, but not the
+ * opaque field or callback function.
+ */
+struct cryptop *
+crypto_clonereq(struct cryptop *crp, crypto_session_t cses, int how)
+{
+	struct cryptop *new;
+
+	MPASS((crp->crp_flags & CRYPTO_F_DONE) == 0);
+	new = crypto_getreq(cses, how);
+	if (new == NULL)
+		return (NULL);
+
+	memcpy(&new->crp_startcopy, &crp->crp_startcopy,
+	    __rangeof(struct cryptop, crp_startcopy, crp_endcopy));
+	return (new);
 }
 
 /*

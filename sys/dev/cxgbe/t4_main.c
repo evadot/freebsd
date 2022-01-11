@@ -1663,10 +1663,7 @@ notify_siblings(device_t dev, int detaching)
 static int
 t4_detach(device_t dev)
 {
-	struct adapter *sc;
 	int rc;
-
-	sc = device_get_softc(dev);
 
 	rc = notify_siblings(dev, 1);
 	if (rc) {
@@ -2872,7 +2869,7 @@ fail:
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
 	case SIOCGIFXMEDIA:
-		ifmedia_ioctl(ifp, ifr, &pi->media, cmd);
+		rc = ifmedia_ioctl(ifp, ifr, &pi->media, cmd);
 		break;
 
 	case SIOCGI2C: {
@@ -7072,7 +7069,7 @@ cxgbe_refresh_stats(struct vi_info *vi)
 	pi = vi->pi;
 	sc = vi->adapter;
 	tnl_cong_drops = 0;
-	t4_get_port_stats(sc, pi->tx_chan, &pi->stats);
+	t4_get_port_stats(sc, pi->port_id, &pi->stats);
 	chan_map = pi->rx_e_chan_map;
 	while (chan_map) {
 		i = ffs(chan_map) - 1;

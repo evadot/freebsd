@@ -2498,7 +2498,8 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 
 	SCTP_INP_INFO_WLOCK();
 	SCTP_INP_LOCK_INIT(inp);
-	INP_LOCK_INIT(&inp->ip_inp.inp, "inp", "sctpinp");
+	rw_init_flags(&inp->ip_inp.inp.inp_lock, "sctpinp",
+	    RW_RECURSE | RW_DUPOK);
 	SCTP_INP_READ_INIT(inp);
 	SCTP_ASOC_CREATE_LOCK_INIT(inp);
 	/* lock the new ep */
@@ -4025,7 +4026,7 @@ sctp_add_remote_addr(struct sctp_tcb *stcb, struct sockaddr *newaddr,
 		stcb->asoc.smallest_mtu = net->mtu;
 	}
 	if (stcb->asoc.smallest_mtu > net->mtu) {
-		sctp_pathmtu_adjustment(stcb, net->mtu);
+		sctp_pathmtu_adjustment(stcb, net->mtu, true);
 	}
 #ifdef INET6
 	if (newaddr->sa_family == AF_INET6) {

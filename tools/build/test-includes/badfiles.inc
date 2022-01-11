@@ -35,7 +35,6 @@ BADHDRS= \
 	sys/elf64.h \
 	sys/elf_common.h \
 	sys/elf_generic.h \
-	sys/epoch.h \
 	sys/eui64.h \
 	sys/eventhandler.h \
 	sys/eventvar.h \
@@ -158,6 +157,7 @@ BADHDRS= \
 	net/if_llc.h \
 	net/if_media.h \
 	net/if_mib.h \
+	net/if_pfsync.h \
 	net/if_tap.h \
 	net/if_tun.h \
 	net/if_var.h \
@@ -267,7 +267,6 @@ BADHDRS= \
 	netinet/ip_icmp.h \
 	netinet/ip_mroute.h \
 	netinet/ip_options.h \
-	netinet/ip_var.h \
 	netinet/pim_var.h \
 	netinet/sctp_auth.h \
 	netinet/sctp_bsd_addr.h \
@@ -287,8 +286,6 @@ BADHDRS= \
 	netinet/tcp_var.h \
 	netinet/tcpip.h \
 	netinet/toecore.h \
-	netinet/udp.h \
-	netinet/udp_var.h \
 	netinet/udplite.h \
 	netinet6/icmp6.h \
 	netinet6/in6.h \

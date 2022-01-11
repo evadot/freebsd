@@ -158,7 +158,7 @@ TGTS=	all all-man buildenv buildenvvars buildkernel buildworld \
 	makeman sysent \
 	_worldtmp _legacy _bootstrap-tools _cleanobj _obj \
 	_build-tools _build-metadata _cross-tools _includes _libraries \
-	build32 distribute32 install32 buildsoft distributesoft installsoft \
+	build32 distribute32 install32 \
 	builddtb xdev xdev-build xdev-install \
 	xdev-links native-xtools native-xtools-install stageworld stagekernel \
 	stage-packages stage-packages-kernel stage-packages-world \
@@ -187,7 +187,7 @@ TGTS+=	${BITGTS}
 # the interactive tty prompt.  The safest route is to just whitelist
 # the ones that benefit from it.
 META_TGT_WHITELIST+= \
-	_* build32 buildfiles buildincludes buildkernel buildsoft \
+	_* build32 buildfiles buildincludes buildkernel \
 	buildworld everything kernel-toolchain kernel-toolchains kernel \
 	kernels libraries native-xtools showconfig test-includes \
 	test-system-compiler test-system-linker tinderbox toolchain \
@@ -509,13 +509,13 @@ worlds: .PHONY
 #
 .if defined(EXTRA_TARGETS)
 # powerpcspe excluded from main list until clang fixed
-EXTRA_ARCHES_powerpc=	powerpcspe powerpc64le
+EXTRA_ARCHES_powerpc=	powerpcspe
 .endif
 TARGETS?=amd64 arm arm64 i386 powerpc riscv
 _UNIVERSE_TARGETS=	${TARGETS}
 TARGET_ARCHES_arm?=	armv6 armv7
 TARGET_ARCHES_arm64?=	aarch64
-TARGET_ARCHES_powerpc?=	powerpc powerpc64 ${EXTRA_ARCHES_powerpc}
+TARGET_ARCHES_powerpc?=	powerpc powerpc64 powerpc64le ${EXTRA_ARCHES_powerpc}
 TARGET_ARCHES_riscv?=	riscv64 riscv64sf
 .for target in ${TARGETS}
 TARGET_ARCHES_${target}?= ${target}
