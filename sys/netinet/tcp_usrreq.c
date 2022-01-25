@@ -594,8 +594,8 @@ tcp_usr_connect(struct socket *so, struct sockaddr *nam, struct thread *td)
 #endif
 	tcp_timer_activate(tp, TT_KEEP, TP_KEEPINIT(tp));
 	error = tcp_output(tp);
-	KASSERT(error >= 0, ("TCP stack %s requested tcp_drop(%p) at connect()",
-	    tp->t_fb->tfb_tcp_block_name, tp));
+	KASSERT(error >= 0, ("TCP stack %s requested tcp_drop(%p) at connect()"
+	    ", error code %d", tp->t_fb->tfb_tcp_block_name, tp, -error));
 out_in_epoch:
 	NET_EPOCH_EXIT(et);
 out:
@@ -722,8 +722,8 @@ out_in_epoch:
 #endif
 	NET_EPOCH_EXIT(et);
 out:
-	KASSERT(error >= 0, ("TCP stack %s requested tcp_drop(%p) at connect()",
-	    tp->t_fb->tfb_tcp_block_name, tp));
+	KASSERT(error >= 0, ("TCP stack %s requested tcp_drop(%p) at connect()"
+	    ", error code %d", tp->t_fb->tfb_tcp_block_name, tp, -error));
 	/*
 	 * If the implicit bind in the connect call fails, restore
 	 * the flags we modified.
@@ -1935,10 +1935,8 @@ tcp_ctloutput_get(struct inpcb *inp, struct sockopt *sopt)
 int
 tcp_ctloutput(struct socket *so, struct sockopt *sopt)
 {
-	int	error;
 	struct	inpcb *inp;
 
-	error = 0;
 	inp = sotoinpcb(so);
 	KASSERT(inp != NULL, ("tcp_ctloutput: inp == NULL"));
 

@@ -672,9 +672,6 @@ kern_proc_setrlimit(struct thread *td, struct proc *p, u_int which,
 	if (limp->rlim_max < 0)
 		limp->rlim_max = RLIM_INFINITY;
 
-	if (which == RLIMIT_STACK && limp->rlim_cur != RLIM_INFINITY)
-		limp->rlim_cur += p->p_vmspace->vm_stkgap;
-
 	oldssiz.rlim_cur = 0;
 	newlim = lim_alloc();
 	PROC_LOCK(p);
@@ -1018,7 +1015,7 @@ calcru1(struct proc *p, struct rusage_ext *ruxp, struct timeval *up,
 		uu = ruxp->rux_uu;
 		su = ruxp->rux_su;
 		tu = ruxp->rux_tu;
-	} else { /* tu < ruxp->rux_tu */
+	} else if (vm_guest == VM_GUEST_NO) {  /* tu < ruxp->rux_tu */
 		/*
 		 * What happened here was likely that a laptop, which ran at
 		 * a reduced clock frequency at boot, kicked into high gear.

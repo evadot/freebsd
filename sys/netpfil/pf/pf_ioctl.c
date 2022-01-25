@@ -1542,6 +1542,8 @@ pf_krule_free(struct pf_krule *rule)
 	counter_u64_free(rule->states_cur);
 	counter_u64_free(rule->states_tot);
 	counter_u64_free(rule->src_nodes);
+
+	mtx_destroy(&rule->rpool.mtx);
 	free(rule, M_PFRULE);
 }
 
@@ -1860,6 +1862,8 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	int			 rs_num;
 	int			 error = 0;
 
+	mtx_init(&rule->rpool.mtx, "pf_krule_pool", NULL, MTX_DEF);
+
 	if ((rule->return_icmp >> 8) > ICMP_MAXTYPE) {
 		error = EINVAL;
 		goto errout_unlocked;
@@ -1999,6 +2003,7 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	TAILQ_INSERT_TAIL(ruleset->rules[rs_num].inactive.ptr,
 	    rule, entries);
 	ruleset->rules[rs_num].inactive.rcount++;
+
 	PF_RULES_WUNLOCK();
 
 	return (0);
