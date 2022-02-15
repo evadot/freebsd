@@ -116,6 +116,8 @@ main(int argc, char **argv)
 			lflag = true;
 			break;
 		case 'e':
+			if (features != NULL)
+				errx(1, "-e may be specified only once");
 			features = optarg;
 			editfeatures = true;
 			break;
@@ -230,6 +232,10 @@ convert_to_feature_val(char *feature_str, uint32_t *feature_val)
 	input = 0;
 	operation = *feature_str;
 	feature_str++;
+
+	if (operation != '+' && operation != '-' && operation != '=')
+		errx(1, "'%c' not an operator - use '+', '-', '='", operation);
+
 	len = nitems(featurelist);
 	while ((feature = strsep(&feature_str, ",")) != NULL) {
 		for (i = 0; i < len; ++i) {
@@ -278,10 +284,6 @@ convert_to_feature_val(char *feature_str, uint32_t *feature_val)
 		*feature_val = input;
 	} else if (operation == '-') {
 		*feature_val &= ~input;
-	} else {
-		warnx("'%c' not an operator - use '+', '-', '='",
-		    feature_str[0]);
-		return (false);
 	}
 	return (true);
 }

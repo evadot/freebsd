@@ -76,8 +76,8 @@
 #endif
 
 #define KASSERT_UNIONFS_VNODE(vp) \
-	KASSERT(((vp)->v_op == &unionfs_vnodeops), \
-	    ("unionfs: it is not unionfs-vnode"))
+	VNASSERT(((vp)->v_op == &unionfs_vnodeops), vp, \
+	    ("%s: non-unionfs vnode", __func__))
 
 static int
 unionfs_lookup(struct vop_cachedlookup_args *ap)
@@ -1908,8 +1908,6 @@ unionfs_revlock(struct vnode *vp, int flags)
 static int
 unionfs_lock(struct vop_lock1_args *ap)
 {
-	struct mount   *mp;
-	struct unionfs_mount *ump;
 	struct unionfs_node *unp;
 	struct vnode   *vp;
 	struct vnode   *uvp;
@@ -1919,8 +1917,6 @@ unionfs_lock(struct vop_lock1_args *ap)
 	int		revlock;
 	int		interlock;
 	int		uhold;
-
-	KASSERT_UNIONFS_VNODE(ap->a_vp);
 
 	/*
 	 * TODO: rework the unionfs locking scheme.
@@ -1944,30 +1940,27 @@ unionfs_lock(struct vop_lock1_args *ap)
 	if ((flags & LK_INTERLOCK) == 0)
 		VI_LOCK(vp);
 
-	mp = vp->v_mount;
-	if (mp == NULL)
+	unp = VTOUNIONFS(vp);
+	if (unp == NULL)
 		goto unionfs_lock_null_vnode;
 
-	ump = MOUNTTOUNIONFSMOUNT(mp);
-	unp = VTOUNIONFS(vp);
-	if (ump == NULL || unp == NULL)
-		goto unionfs_lock_null_vnode;
+	KASSERT_UNIONFS_VNODE(ap->a_vp);
+
 	lvp = unp->un_lowervp;
 	uvp = unp->un_uppervp;
 
 	if ((revlock = unionfs_get_llt_revlock(vp, flags)) == 0)
 		panic("unknown lock type: 0x%x", flags & LK_TYPE_MASK);
 
-	if ((flags & LK_TYPE_MASK) != LK_DOWNGRADE &&
-	    (vp->v_iflag & VI_OWEINACT) != 0)
-		flags |= LK_NOWAIT;
-
 	/*
-	 * Sometimes, lower or upper is already exclusive locked.
-	 * (ex. vfs_domount: mounted vnode is already locked.)
+	 * During unmount, the root vnode lock may be taken recursively,
+	 * because it may share the same v_vnlock field as the vnode covered by
+	 * the unionfs mount.  The covered vnode is locked across VFS_UNMOUNT(),
+	 * and the same lock may be taken recursively here during vflush()
+	 * issued by unionfs_unmount().
 	 */
 	if ((flags & LK_TYPE_MASK) == LK_EXCLUSIVE &&
-	    vp == ump->um_rootvp)
+	    (vp->v_vflag & VV_ROOT) != 0)
 		flags |= LK_CANRECURSE;
 
 	if (lvp != NULLVP) {

@@ -133,6 +133,44 @@
 #define	DAIF_INTR		(DAIF_I)	/* All exceptions that pass */
 						/* through the intr framework */
 
+/* DBGBCR<n>_EL1 - Debug Breakpoint Control Registers */
+#define	DBGBCR_EN		0x1
+#define	DBGBCR_PMC_SHIFT	1
+#define	DBGBCR_PMC		(0x3 << DBGBCR_PMC_SHIFT)
+#define	 DBGBCR_PMC_EL1		(0x1 << DBGBCR_PMC_SHIFT)
+#define	 DBGBCR_PMC_EL0		(0x2 << DBGBCR_PMC_SHIFT)
+#define	DBGBCR_BAS_SHIFT	5
+#define	DBGBCR_BAS		(0xf << DBGBCR_BAS_SHIFT)
+#define	DBGBCR_HMC_SHIFT	13
+#define	DBGBCR_HMC		(0x1 << DBGBCR_HMC_SHIFT)
+#define	DBGBCR_SSC_SHIFT	14
+#define	DBGBCR_SSC		(0x3 << DBGBCR_SSC_SHIFT)
+#define	DBGBCR_LBN_SHIFT	16
+#define	DBGBCR_LBN		(0xf << DBGBCR_LBN_SHIFT)
+#define	DBGBCR_BT_SHIFT		20
+#define	DBGBCR_BT		(0xf << DBGBCR_BT_SHIFT)
+
+/* DBGWCR<n>_EL1 - Debug Watchpoint Control Registers */
+#define	DBGWCR_EN		0x1
+#define	DBGWCR_PAC_SHIFT	1
+#define	DBGWCR_PAC		(0x3 << DBGWCR_PAC_SHIFT)
+#define	 DBGWCR_PAC_EL1		(0x1 << DBGWCR_PAC_SHIFT)
+#define	 DBGWCR_PAC_EL0		(0x2 << DBGWCR_PAC_SHIFT)
+#define	DBGWCR_LSC_SHIFT	3
+#define	DBGWCR_LSC		(0x3 << DBGWCR_LSC_SHIFT)
+#define	DBGWCR_BAS_SHIFT	5
+#define	DBGWCR_BAS		(0xff << DBGWCR_BAS_SHIFT)
+#define	DBGWCR_HMC_SHIFT	13
+#define	DBGWCR_HMC		(0x1 << DBGWCR_HMC_SHIFT)
+#define	DBGWCR_SSC_SHIFT	14
+#define	DBGWCR_SSC		(0x3 << DBGWCR_SSC_SHIFT)
+#define	DBGWCR_LBN_SHIFT	16
+#define	DBGWCR_LBN		(0xf << DBGWCR_LBN_SHIFT)
+#define	DBGWCR_WT_SHIFT		20
+#define	DBGWCR_WT		(0x1 << DBGWCR_WT_SHIFT)
+#define	DBGWCR_MASK_SHIFT	24
+#define	DBGWCR_MASK		(0x1f << DBGWCR_MASK_SHIFT)
+
 /* DCZID_EL0 - Data Cache Zero ID register */
 #define DCZID_DZP		(1 << 4) /* DC ZVA prohibited if non-0 */
 #define DCZID_BS_SHIFT		0
@@ -1059,6 +1097,14 @@
 #define	 MAIR_NORMAL_WT		0xbb
 #define	 MAIR_NORMAL_WB		0xff
 
+/* MDSCR_EL1 - Monitor Debug System Control Register */
+#define	MDSCR_SS_SHIFT			0
+#define	MDSCR_SS			(UL(0x1) << MDSCR_SS_SHIFT)
+#define	MDSCR_KDE_SHIFT			13
+#define	MDSCR_KDE			(UL(0x1) << MDSCR_KDE_SHIFT)
+#define	MDSCR_MDE_SHIFT			15
+#define	MDSCR_MDE			(UL(0x1) << MDSCR_MDE_SHIFT)
+
 /* MVFR0_EL1 */
 #define	MVFR0_EL1			MRS_REG(MVFR0_EL1)
 #define	MVFR0_EL1_op0			0x3
@@ -1269,6 +1315,9 @@
 #define	PSR_Z		0x40000000
 #define	PSR_N		0x80000000
 #define	PSR_FLAGS	0xf0000000
+/* PSR fields that can be set from 32-bit and 64-bit processes */
+#define	PSR_SETTABLE_32	PSR_FLAGS
+#define	PSR_SETTABLE_64	(PSR_FLAGS | PSR_SS)
 
 /* TCR_EL1 - Translation Control Register */
 /* Bits 63:59 are reserved */
@@ -1381,52 +1430,6 @@
 #define	TTBR_CnP_SHIFT		0
 #define	TTBR_CnP		(1ul << TTBR_CnP_SHIFT)
 
-/* Saved Program Status Register */
-#define	DBG_SPSR_SS	(0x1 << 21)
-
-/* Monitor Debug System Control Register */
-#define	DBG_MDSCR_SS	(0x1 << 0)
-#define	DBG_MDSCR_KDE	(0x1 << 13)
-#define	DBG_MDSCR_MDE	(0x1 << 15)
-
-/* Debug Breakpoint Control Registers */
-#define	DBG_BCR_EN		0x1
-#define	DBG_BCR_PMC_SHIFT	1
-#define	DBG_BCR_PMC		(0x3 << DBG_BCR_PMC_SHIFT)
-#define	 DBG_BCR_PMC_EL1	(0x1 << DBG_BCR_PMC_SHIFT)
-#define	 DBG_BCR_PMC_EL0	(0x2 << DBG_BCR_PMC_SHIFT)
-#define	DBG_BCR_BAS_SHIFT	5
-#define	DBG_BCR_BAS		(0xf << DBG_BCR_BAS_SHIFT)
-#define	DBG_BCR_HMC_SHIFT	13
-#define	DBG_BCR_HMC		(0x1 << DBG_BCR_HMC_SHIFT)
-#define	DBG_BCR_SSC_SHIFT	14
-#define	DBG_BCR_SSC		(0x3 << DBG_BCR_SSC_SHIFT)
-#define	DBG_BCR_LBN_SHIFT	16
-#define	DBG_BCR_LBN		(0xf << DBG_BCR_LBN_SHIFT)
-#define	DBG_BCR_BT_SHIFT	20
-#define	DBG_BCR_BT		(0xf << DBG_BCR_BT_SHIFT)
-
-/* Debug Watchpoint Control Registers */
-#define	DBG_WCR_EN		0x1
-#define	DBG_WCR_PAC_SHIFT	1
-#define	DBG_WCR_PAC		(0x3 << DBG_WCR_PAC_SHIFT)
-#define	 DBG_WCR_PAC_EL1	(0x1 << DBG_WCR_PAC_SHIFT)
-#define	 DBG_WCR_PAC_EL0	(0x2 << DBG_WCR_PAC_SHIFT)
-#define	DBG_WCR_LSC_SHIFT	3
-#define	DBG_WCR_LSC		(0x3 << DBG_WCR_LSC_SHIFT)
-#define	DBG_WCR_BAS_SHIFT	5
-#define	DBG_WCR_BAS		(0xff << DBG_WCR_BAS_SHIFT)
-#define	 DBG_WCR_BAS_MASK	DBG_WCR_BAS
-#define	DBG_WCR_HMC_SHIFT	13
-#define	DBG_WCR_HMC		(0x1 << DBG_WCR_HMC_SHIFT)
-#define	DBG_WCR_SSC_SHIFT	14
-#define	DBG_WCR_SSC		(0x3 << DBG_WCR_SSC_SHIFT)
-#define	DBG_WCR_LBN_SHIFT	16
-#define	DBG_WCR_LBN		(0xf << DBG_WCR_LBN_SHIFT)
-#define	DBG_WCR_WT_SHIFT	20
-#define	DBG_WCR_WT		(0x1 << DBG_WCR_WT_SHIFT)
-#define	DBG_WCR_MASK_SHIFT	24
-#define	DBG_WCR_MASK		(0x1f << DBG_WCR_MASK_SHIFT)
 
 /* Perfomance Monitoring Counters */
 #define	PMCR_E		(1 << 0) /* Enable all counters */

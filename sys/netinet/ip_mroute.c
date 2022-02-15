@@ -300,7 +300,7 @@ VNET_DEFINE_STATIC(struct ifnet *, multicast_register_if);
 static u_long	X_ip_mcast_src(int);
 static int	X_ip_mforward(struct ip *, struct ifnet *, struct mbuf *,
 		    struct ip_moptions *);
-static int	X_ip_mrouter_done(void *);
+static int	X_ip_mrouter_done(void);
 static int	X_ip_mrouter_get(struct socket *, struct sockopt *);
 static int	X_ip_mrouter_set(struct socket *, struct sockopt *);
 static int	X_legal_vif_num(int);
@@ -316,7 +316,7 @@ static void	bw_upcalls_send(void);
 static int	del_bw_upcall(struct bw_upcall *);
 static int	del_mfc(struct mfcctl2 *);
 static int	del_vif(vifi_t);
-static int	del_vif_locked(vifi_t);
+static int	del_vif_locked(vifi_t, struct ifnet **);
 static void	expire_bw_upcalls_send(void *);
 static void	expire_mfc(struct mfc *);
 static void	expire_upcalls(void *);
@@ -431,7 +431,7 @@ X_ip_mrouter_set(struct socket *so, struct sockopt *sopt)
 	break;
 
     case MRT_DONE:
-	error = ip_mrouter_done(NULL);
+	error = ip_mrouter_done();
 	break;
 
     case MRT_ADD_VIF:
@@ -621,7 +621,8 @@ static void
 if_detached_event(void *arg __unused, struct ifnet *ifp)
 {
     vifi_t vifi;
-    u_long i;
+    u_long i, vifi_cnt = 0;
+    struct ifnet *free_ptr;
 
     MRW_WLOCK();
 
@@ -650,10 +651,20 @@ if_detached_event(void *arg __unused, struct ifnet *ifp)
 			}
 		}
 	}
-	del_vif_locked(vifi);
+	del_vif_locked(vifi, &free_ptr);
+	if (free_ptr != NULL)
+		vifi_cnt++;
     }
 
     MRW_WUNLOCK();
+
+    /*
+     * Free IFP. We don't have to use free_ptr here as it is the same
+     * that ifp. Perform free as many times as required in case
+     * refcount is greater than 1.
+     */
+    for (i = 0; i < vifi_cnt; i++)
+	    if_free(ifp);
 }
 
 static void
@@ -734,20 +745,15 @@ ip_mrouter_init(struct socket *so, int version)
  * Disable multicast forwarding.
  */
 static int
-X_ip_mrouter_done(void *locked)
+X_ip_mrouter_done(void)
 {
     struct ifnet *ifp;
     u_long i;
     vifi_t vifi;
     struct bw_upcall *bu;
 
-    if (V_ip_mrouter == NULL) {
-	if (locked) {
-		struct epoch_tracker *mrouter_et = locked;
-		MROUTER_RUNLOCK_PARAM(mrouter_et);
-	}
-	return EINVAL;
-    }
+    if (V_ip_mrouter == NULL)
+	return (EINVAL);
 
     /*
      * Detach/disable hooks to the reset of the system.
@@ -756,12 +762,11 @@ X_ip_mrouter_done(void *locked)
     atomic_subtract_int(&ip_mrouter_cnt, 1);
     V_mrt_api_config = 0;
 
-    if (locked) {
-	struct epoch_tracker *mrouter_et = locked;
-	MROUTER_RUNLOCK_PARAM(mrouter_et);
-    }
-
-    MROUTER_WAIT();
+    /*
+     * Wait for all epoch sections to complete to ensure
+     * V_ip_mrouter = NULL is visible to others.
+     */
+    epoch_wait_preempt(net_epoch_preempt);
 
     /* Stop and drain task queue */
     taskqueue_block(V_task_queue);
@@ -988,9 +993,11 @@ add_vif(struct vifctl *vifcp)
  * Delete a vif from the vif table
  */
 static int
-del_vif_locked(vifi_t vifi)
+del_vif_locked(vifi_t vifi, struct ifnet **ifp_free)
 {
     struct vif *vifp;
+
+    *ifp_free = NULL;
 
     MRW_WLOCK_ASSERT();
 
@@ -1010,7 +1017,7 @@ del_vif_locked(vifi_t vifi)
 	if (vifp->v_ifp) {
 	    if (vifp->v_ifp == V_multicast_register_if)
 	        V_multicast_register_if = NULL;
-	    if_free(vifp->v_ifp);
+	    *ifp_free = vifp->v_ifp;
 	}
     }
 
@@ -1033,10 +1040,14 @@ static int
 del_vif(vifi_t vifi)
 {
     int cc;
+    struct ifnet *free_ptr;
 
     MRW_WLOCK();
-    cc = del_vif_locked(vifi);
+    cc = del_vif_locked(vifi, &free_ptr);
     MRW_WUNLOCK();
+
+    if (free_ptr)
+	    if_free(free_ptr);
 
     return cc;
 }
