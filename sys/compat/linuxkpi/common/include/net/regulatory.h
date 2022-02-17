@@ -1,8 +1,9 @@
 /*-
- * Copyright (c) 2020 The FreeBSD Foundation
+ * Copyright (c) 2020-2021 The FreeBSD Foundation
+ * Copyright (c) 2021-2022 Bjoern A. Zeeb
  *
- * This software was developed by Emmanuel Vadot under sponsorship
- * from the FreeBSD Foundation.
+ * This software was developed by Björn Zeeb under sponsorship from
+ * the FreeBSD Foundation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,7 +17,7 @@
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -28,46 +29,17 @@
  * $FreeBSD$
  */
 
-#ifndef __LINUXKPI_LINUX_WAITBIT_H__
-#define	__LINUXKPI_LINUX_WAITBIT_H__
+#ifndef	_LINUXKPI_NET_REGULATORY_H
+#define	_LINUXKPI_NET_REGULATORY_H
 
-#include <linux/wait.h>
-#include <linux/bitops.h>
-
-extern wait_queue_head_t linux_bit_waitq;
-extern wait_queue_head_t linux_var_waitq;
-
-#define	wait_var_event_killable(var, cond) \
-	wait_event_killable(linux_var_waitq, cond)
-
-#define	wait_var_event_interruptible(var, cond) \
-	wait_event_interruptible(linux_var_waitq, cond)
-
-static inline void
-clear_and_wake_up_bit(int bit, void *word)
-{
-	clear_bit_unlock(bit, word);
-	wake_up_bit(word, bit);
+#define	REG_RULE(_begin, _end, _bw, _mag, _meirp, _flags)		\
+{									\
+	.flags = (_flags),						\
+	.freq_range.start_freq_khz = MHZ_TO_KHZ(_begin),		\
+	.freq_range.end_freq_khz = MHZ_TO_KHZ(_end),			\
+	.freq_range.max_bandwidth_khz = MHZ_TO_KHZ(_bw),		\
+	.power_rule.max_antenna_gain = DBI_TO_MBI(_mag),		\
+	.power_rule.max_eirp = DBI_TO_MBI(_meirp),			\
 }
 
-static inline wait_queue_head_t *
-bit_waitqueue(void *word, int bit)
-{
-
-	return (&linux_bit_waitq);
-}
-
-static inline void
-wake_up_var(void *var)
-{
-
-	wake_up(&linux_var_waitq);
-}
-
-static inline wait_queue_head_t *
-__var_waitqueue(void *p)
-{
-	return (&linux_var_waitq);
-}
-
-#endif	/* __LINUXKPI_LINUX_WAITBIT_H__ */
+#endif	/* _LINUXKPI_NET_REGULATORY_H */

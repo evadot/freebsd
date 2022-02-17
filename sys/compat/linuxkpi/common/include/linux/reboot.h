@@ -1,8 +1,5 @@
 /*-
- * Copyright (c) 2020 The FreeBSD Foundation
- *
- * This software was developed by Emmanuel Vadot under sponsorship
- * from the FreeBSD Foundation.
+ * Copyright (c) 2022 Beckhoff Automation GmbH & Co. KG
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,49 +22,19 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $FreeBSD$
  */
 
-#ifndef __LINUXKPI_LINUX_WAITBIT_H__
-#define	__LINUXKPI_LINUX_WAITBIT_H__
+#ifndef _LINUXKPI_LINUX_REBOOT_H_
+#define	_LINUXKPI_LINUX_REBOOT_H_
 
-#include <linux/wait.h>
-#include <linux/bitops.h>
-
-extern wait_queue_head_t linux_bit_waitq;
-extern wait_queue_head_t linux_var_waitq;
-
-#define	wait_var_event_killable(var, cond) \
-	wait_event_killable(linux_var_waitq, cond)
-
-#define	wait_var_event_interruptible(var, cond) \
-	wait_event_interruptible(linux_var_waitq, cond)
+#include <sys/reboot.h>
 
 static inline void
-clear_and_wake_up_bit(int bit, void *word)
-{
-	clear_bit_unlock(bit, word);
-	wake_up_bit(word, bit);
-}
-
-static inline wait_queue_head_t *
-bit_waitqueue(void *word, int bit)
+orderly_poweroff(bool force)
 {
 
-	return (&linux_bit_waitq);
+	shutdown_nice(RB_POWEROFF);
 }
 
-static inline void
-wake_up_var(void *var)
-{
+#endif
 
-	wake_up(&linux_var_waitq);
-}
-
-static inline wait_queue_head_t *
-__var_waitqueue(void *p)
-{
-	return (&linux_var_waitq);
-}
-
-#endif	/* __LINUXKPI_LINUX_WAITBIT_H__ */

@@ -1,8 +1,5 @@
 /*-
- * Copyright (c) 2020 The FreeBSD Foundation
- *
- * This software was developed by Emmanuel Vadot under sponsorship
- * from the FreeBSD Foundation.
+ * Copyright (c) 2022 Beckhoff Automation GmbH & Co. KG
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,49 +22,33 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $FreeBSD$
  */
 
-#ifndef __LINUXKPI_LINUX_WAITBIT_H__
-#define	__LINUXKPI_LINUX_WAITBIT_H__
+#ifndef _LINUXKPI_LINUX_MMAP_LOCK_H_
+#define	_LINUXKPI_LINUX_MMAP_LOCK_H_
 
-#include <linux/wait.h>
-#include <linux/bitops.h>
-
-extern wait_queue_head_t linux_bit_waitq;
-extern wait_queue_head_t linux_var_waitq;
-
-#define	wait_var_event_killable(var, cond) \
-	wait_event_killable(linux_var_waitq, cond)
-
-#define	wait_var_event_interruptible(var, cond) \
-	wait_event_interruptible(linux_var_waitq, cond)
+#include <linux/mm_types.h>
+#include <linux/rwsem.h>
 
 static inline void
-clear_and_wake_up_bit(int bit, void *word)
-{
-	clear_bit_unlock(bit, word);
-	wake_up_bit(word, bit);
-}
-
-static inline wait_queue_head_t *
-bit_waitqueue(void *word, int bit)
+mmap_read_lock(struct mm_struct *mm)
 {
 
-	return (&linux_bit_waitq);
+	down_read(&mm->mmap_sem);
 }
 
 static inline void
-wake_up_var(void *var)
+mmap_read_unlock(struct mm_struct *mm)
 {
 
-	wake_up(&linux_var_waitq);
+	up_read(&mm->mmap_sem);
 }
 
-static inline wait_queue_head_t *
-__var_waitqueue(void *p)
+static inline void
+mmap_write_lock_killable(struct mm_struct *mm)
 {
-	return (&linux_var_waitq);
+
+	down_write_killable(&mm->mmap_sem);
 }
 
-#endif	/* __LINUXKPI_LINUX_WAITBIT_H__ */
+#endif	/* _LINUXKPI_LINUX_MMAP_LOCK_H_ */
