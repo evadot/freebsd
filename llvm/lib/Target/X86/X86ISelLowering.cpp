@@ -3533,13 +3533,19 @@ void VarArgsLoweringHelper::createVarArgAreaAndStoreRegisters(
       SmallVector<SDValue, 12> SaveXMMOps;
       SaveXMMOps.push_back(Chain);
       SaveXMMOps.push_back(ALVal);
-      SaveXMMOps.push_back(
-          DAG.getTargetConstant(FuncInfo->getRegSaveFrameIndex(), DL, MVT::i32));
+      SaveXMMOps.push_back(RSFIN);
       SaveXMMOps.push_back(
           DAG.getTargetConstant(FuncInfo->getVarArgsFPOffset(), DL, MVT::i32));
       llvm::append_range(SaveXMMOps, LiveXMMRegs);
-      MemOps.push_back(DAG.getNode(X86ISD::VASTART_SAVE_XMM_REGS, DL,
-                                   MVT::Other, SaveXMMOps));
+      MachineMemOperand *StoreMMO =
+          DAG.getMachineFunction().getMachineMemOperand(
+              MachinePointerInfo::getFixedStack(
+                  DAG.getMachineFunction(), FuncInfo->getRegSaveFrameIndex(),
+                  Offset),
+              MachineMemOperand::MOStore, 128, Align(16));
+      MemOps.push_back(DAG.getMemIntrinsicNode(X86ISD::VASTART_SAVE_XMM_REGS,
+                                               DL, DAG.getVTList(MVT::Other),
+                                               SaveXMMOps, MVT::i8, StoreMMO));
     }
 
     if (!MemOps.empty())
@@ -44070,32 +44076,9 @@ static SDValue combineVectorHADDSUB(SDNode *N, SelectionDAG &DAG,
          "Unexpected horizontal add/sub opcode");
 
   if (!shouldUseHorizontalOp(true, DAG, Subtarget)) {
-    // For slow-hop targets, if we have a hop with a single op, see if we already
-    // have another user that we can reuse and shuffle the result.
     MVT VT = N->getSimpleValueType(0);
     SDValue LHS = N->getOperand(0);
     SDValue RHS = N->getOperand(1);
-    if (VT.is128BitVector() && LHS == RHS) {
-      for (SDNode *User : LHS->uses()) {
-        if (User != N && User->getOpcode() == N->getOpcode()) {
-          MVT ShufVT = VT.isFloatingPoint() ? MVT::v4f32 : MVT::v4i32;
-          if (User->getOperand(0) == LHS && !User->getOperand(1).isUndef()) {
-            return DAG.getBitcast(
-                VT,
-                DAG.getVectorShuffle(ShufVT, SDLoc(N),
-                                     DAG.getBitcast(ShufVT, SDValue(User, 0)),
-                                     DAG.getUNDEF(ShufVT), {0, 1, 0, 1}));
-          }
-          if (User->getOperand(1) == LHS && !User->getOperand(0).isUndef()) {
-            return DAG.getBitcast(
-                VT,
-                DAG.getVectorShuffle(ShufVT, SDLoc(N),
-                                     DAG.getBitcast(ShufVT, SDValue(User, 0)),
-                                     DAG.getUNDEF(ShufVT), {2, 3, 2, 3}));
-          }
-        }
-      }
-    }
 
     // HOP(HOP'(X,X),HOP'(Y,Y)) -> HOP(PERMUTE(HOP'(X,Y)),PERMUTE(HOP'(X,Y)).
     if (LHS != RHS && LHS.getOpcode() == N->getOpcode() &&
