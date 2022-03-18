@@ -89,6 +89,7 @@ struct pfctl_eth_rule {
 	uint8_t			 direction;
 	uint16_t		 proto;
 	struct pfctl_eth_addr	 src, dst;
+	struct pf_rule_addr	 ipsrc, ipdst;
 
 	/* Stats */
 	uint64_t		 evaluations;
@@ -133,6 +134,11 @@ struct pfctl_pool {
 	int			 tblidx;
 	uint16_t		 proxy_port[2];
 	uint8_t			 opts;
+};
+
+struct pfctl_rules_info {
+	uint32_t	nr;
+	uint32_t	ticket;
 };
 
 struct pfctl_rule {
@@ -357,6 +363,8 @@ int	pfctl_get_eth_rule(int dev, uint32_t nr, uint32_t ticket,
 	    char *anchor_call);
 int	pfctl_add_eth_rule(int dev, const struct pfctl_eth_rule *r,
 	    const char *anchor, const char *anchor_call, uint32_t ticket);
+int	pfctl_get_rules_info(int dev, struct pfctl_rules_info *rules,
+	    uint32_t ruleset, const char *path);
 int	pfctl_get_rule(int dev, uint32_t nr, uint32_t ticket,
 	    const char *anchor, uint32_t ruleset, struct pfctl_rule *rule,
 	    char *anchor_call);
@@ -373,6 +381,9 @@ int	pfctl_clear_states(int dev, const struct pfctl_kill *kill,
 	    unsigned int *killed);
 int	pfctl_kill_states(int dev, const struct pfctl_kill *kill,
 	    unsigned int *killed);
+int	pfctl_clear_rules(int dev, const char *anchorname);
+int	pfctl_clear_nat(int dev, const char *anchorname);
+int	pfctl_clear_eth_rules(int dev, const char *anchorname);
 int	pfctl_set_syncookies(int dev, const struct pfctl_syncookies *s);
 int	pfctl_get_syncookies(int dev, struct pfctl_syncookies *s);
 

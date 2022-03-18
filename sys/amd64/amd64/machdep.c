@@ -816,7 +816,7 @@ add_efi_map_entries(struct efi_map_header *efihdr, vm_paddr_t *physmap,
 			continue;
 		}
 
-		if (!add_physmap_entry(p->md_phys, (p->md_pages * PAGE_SIZE),
+		if (!add_physmap_entry(p->md_phys, p->md_pages * EFI_PAGE_SIZE,
 		    physmap, physmap_idx))
 			break;
 	}
@@ -1167,7 +1167,6 @@ static void
 native_clock_source_init(void)
 {
 	i8254_init();
-	tsc_init();
 }
 
 static void
@@ -1458,12 +1457,6 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	lidt(&r_idt);
 
 	/*
-	 * Initialize the clock before the console so that console
-	 * initialization can use DELAY().
-	 */
-	clock_init();
-
-	/*
 	 * Use vt(4) by default for UEFI boot (during the sc(4)/vt(4)
 	 * transition).
 	 * Once bootblocks have updated, we can test directly for
@@ -1490,6 +1483,13 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	    &x86_rngds_mitg_enable);
 
 	finishidentcpu();	/* Final stage of CPU initialization */
+
+	/*
+	 * Initialize the clock before the console so that console
+	 * initialization can use DELAY().
+	 */
+	clock_init();
+
 	initializecpu();	/* Initialize CPU registers */
 
 	amd64_bsp_ist_init(pc);

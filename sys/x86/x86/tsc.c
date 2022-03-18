@@ -147,6 +147,21 @@ tsc_freq_vmware(void)
 	tsc_early_calib_exact = 1;
 }
 
+static void
+tsc_freq_xen(void)
+{
+	u_int regs[4];
+
+	/*
+	 * Must run *after* generic tsc_freq_cpuid_vm, so that when Xen is
+	 * emulating Viridian support the Viridian leaf is used instead.
+	 */
+	KASSERT(hv_high >= 0x40000003, ("Invalid max hypervisor leaf on Xen"));
+	cpuid_count(0x40000003, 0, regs);
+	tsc_freq = (uint64_t)(regs[2]) * 1000;
+	tsc_early_calib_exact = 1;
+}
+
 /*
  * Calculate TSC frequency using information from the CPUID leaf 0x15 'Time
  * Stamp Counter and Nominal Core Crystal Clock'.  If leaf 0x15 is not
@@ -240,7 +255,7 @@ tsc_freq_intel_brand(uint64_t *res)
 }
 
 static void
-tsc_freq_8254(uint64_t *res)
+tsc_freq_tc(uint64_t *res)
 {
 	uint64_t tsc1, tsc2;
 	int64_t overhead;
@@ -262,8 +277,15 @@ tsc_freq_8254(uint64_t *res)
 	tsc_freq = (tsc2 - tsc1 - overhead) * 10;
 }
 
+/*
+ * Try to determine the TSC frequency using CPUID or hypercalls.  If successful,
+ * this lets use the TSC for early DELAY() calls instead of the 8254 timer,
+ * which may be unreliable or entirely absent on contemporary systems.  However,
+ * avoid calibrating using the 8254 here so as to give hypervisors a chance to
+ * register a timecounter that can be used instead.
+ */
 static void
-probe_tsc_freq(void)
+probe_tsc_freq_early(void)
 {
 #ifdef __i386__
 	/* The TSC is known to be broken on certain CPUs. */
@@ -351,6 +373,12 @@ probe_tsc_freq(void)
 			printf(
 		    "Early TSC frequency %juHz derived from VMWare hypercall\n",
 			    (uintmax_t)tsc_freq);
+	} else if (vm_guest == VM_GUEST_XEN) {
+		tsc_freq_xen();
+		if (bootverbose)
+			printf(
+			"Early TSC frequency %juHz derived from Xen CPUID\n",
+			    (uintmax_t)tsc_freq);
 	} else if (tsc_freq_cpuid(&tsc_freq)) {
 		/*
 		 * If possible, use the value obtained from CPUID as the initial
@@ -364,7 +392,20 @@ probe_tsc_freq(void)
 		if (bootverbose)
 			printf("Early TSC frequency %juHz derived from CPUID\n",
 			    (uintmax_t)tsc_freq);
-	} else if (tsc_skip_calibration) {
+	}
+}
+
+/*
+ * If we were unable to determine the TSC frequency via CPU registers, try
+ * to calibrate against a known clock.
+ */
+static void
+probe_tsc_freq_late(void)
+{
+	if (tsc_freq != 0)
+		return;
+
+	if (tsc_skip_calibration) {
 		/*
 		 * Try to parse the brand string to obtain the nominal TSC
 		 * frequency.
@@ -380,15 +421,24 @@ probe_tsc_freq(void)
 		}
 	} else {
 		/*
-		 * Calibrate against the 8254 PIT.  This estimate will be
-		 * refined later in tsc_calib().
+		 * Calibrate against a timecounter or the 8254 PIT.  This
+		 * estimate will be refined later in tsc_calib().
 		 */
-		tsc_freq_8254(&tsc_freq);
+		tsc_freq_tc(&tsc_freq);
 		if (bootverbose)
 			printf(
 		    "Early TSC frequency %juHz calibrated from 8254 PIT\n",
 			    (uintmax_t)tsc_freq);
 	}
+}
+
+void
+start_TSC(void)
+{
+	if ((cpu_feature & CPUID_TSC) == 0 || tsc_disabled)
+		return;
+
+	probe_tsc_freq_late();
 
 	if (cpu_power_ecx & CPUID_PERF_STAT) {
 		/*
@@ -401,13 +451,6 @@ probe_tsc_freq(void)
 		if (rdmsr(MSR_MPERF) > 0 && rdmsr(MSR_APERF) > 0)
 			tsc_perf_stat = 1;
 	}
-}
-
-void
-start_TSC(void)
-{
-	if ((cpu_feature & CPUID_TSC) == 0 || tsc_disabled)
-		return;
 
 	/*
 	 * Inform CPU accounting about our boot-time clock rate.  This will
@@ -718,7 +761,7 @@ tsc_init(void)
 	if ((cpu_feature & CPUID_TSC) == 0 || tsc_disabled)
 		return;
 
-	probe_tsc_freq();
+	probe_tsc_freq_early();
 }
 
 /*
