@@ -137,7 +137,7 @@ cond_resched_lock(spinlock_t *lock)
 	spin_lock(lock);
 	cond_resched();
 	spin_unlock(lock);
-	return (0);
+	return (1);
 }
 
 bool linux_signal_pending(struct task_struct *task);
