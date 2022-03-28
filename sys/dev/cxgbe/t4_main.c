@@ -5789,7 +5789,6 @@ init_link_config(struct port_info *pi)
 	struct link_config *lc = &pi->link_cfg;
 
 	PORT_LOCK_ASSERT_OWNED(pi);
-	MPASS(lc->pcaps != 0);
 
 	lc->requested_caps = 0;
 	lc->requested_speed = 0;
@@ -5815,13 +5814,12 @@ init_link_config(struct port_info *pi)
 		if (lc->requested_fec == 0)
 			lc->requested_fec = FEC_AUTO;
 	}
-	lc->force_fec = 0;
-	if (lc->pcaps & FW_PORT_CAP32_FORCE_FEC) {
-		if (t4_force_fec < 0)
-			lc->force_fec = -1;
-		else if (t4_force_fec > 0)
-			lc->force_fec = 1;
-	}
+	if (t4_force_fec < 0)
+		lc->force_fec = -1;
+	else if (t4_force_fec > 0)
+		lc->force_fec = 1;
+	else
+		lc->force_fec = 0;
 }
 
 /*
@@ -9011,7 +9009,7 @@ dump_cimla(struct adapter *sc)
 		    device_get_nameunit(sc->dev));
 		return;
 	}
-	rc = sbuf_cim_la(sc, &sb, M_NOWAIT);
+	rc = sbuf_cim_la(sc, &sb, M_WAITOK);
 	if (rc == 0) {
 		rc = sbuf_finish(&sb);
 		if (rc == 0) {
@@ -9452,7 +9450,7 @@ dump_devlog(struct adapter *sc)
 		    device_get_nameunit(sc->dev));
 		return;
 	}
-	rc = sbuf_devlog(sc, &sb, M_NOWAIT);
+	rc = sbuf_devlog(sc, &sb, M_WAITOK);
 	if (rc == 0) {
 		rc = sbuf_finish(&sb);
 		if (rc == 0) {

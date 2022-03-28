@@ -887,7 +887,7 @@ pfa_anchor	: '{'
 			char ta[PF_ANCHOR_NAME_SIZE];
 			struct pfctl_ruleset *rs;
 
-			/* steping into a brace anchor */
+			/* stepping into a brace anchor */
 			pf->asd++;
 			pf->bn++;
 
@@ -3261,6 +3261,16 @@ l3fromto	: /* empty */			{
 			bzero(&$$, sizeof($$));
 		}
 		| L3 fromto			{
+			if ($2.src.host != NULL &&
+			    $2.src.host->addr.type != PF_ADDR_ADDRMASK) {
+				yyerror("from must be an address");
+				YYERROR;
+			}
+			if ($2.dst.host != NULL &&
+			    $2.dst.host->addr.type != PF_ADDR_ADDRMASK) {
+				yyerror("to must be an address");
+				YYERROR;
+			}
 			$$ = $2;
 		}
 		;
