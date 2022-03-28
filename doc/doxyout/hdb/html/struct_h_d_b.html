@@ -74,6 +74,8 @@ Data Fields</h2></td></tr>
 <tr class="separator:a74e50836e2b6032c53e079e24f37bd3b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a54cc9eb48be2209ca7761764bdffb747"><td class="memItemLeft" align="right" valign="top">krb5_error_code(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="struct_h_d_b.html#a54cc9eb48be2209ca7761764bdffb747">hdb_check_s4u2self</a> )(krb5_context, struct <a class="el" href="struct_h_d_b.html">HDB</a> *, <a class="el" href="structhdb__entry__ex.html">hdb_entry_ex</a> *, krb5_const_principal)</td></tr>
 <tr class="separator:a54cc9eb48be2209ca7761764bdffb747"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5095640648b5f15b030ee15318881422"><td class="memItemLeft" align="right" valign="top">krb5_error_code(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="struct_h_d_b.html#a5095640648b5f15b030ee15318881422">hdb_set_sync</a> )(krb5_context, struct <a class="el" href="struct_h_d_b.html">HDB</a> *, int)</td></tr>
+<tr class="separator:a5095640648b5f15b030ee15318881422"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p><a class="el" href="struct_h_d_b.html">HDB</a> backend function pointer structure</p>
@@ -395,6 +397,22 @@ Data Fields</h2></td></tr>
 
 </div>
 </div>
+<a id="a5095640648b5f15b030ee15318881422"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5095640648b5f15b030ee15318881422">&#9670;&nbsp;</a></span>hdb_set_sync</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">krb5_error_code(* HDB::hdb_set_sync) (krb5_context, struct <a class="el" href="struct_h_d_b.html">HDB</a> *, int)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Enable/disable synchronous updates</p>
+<p>Calling this with 0 disables sync. Calling it with non-zero enables sync and does an fsync(). </p>
+
+</div>
+</div>
 <a id="ace37bcc785b39826a25043302aaad7d4"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ace37bcc785b39826a25043302aaad7d4">&#9670;&nbsp;</a></span>hdb_store</h2>
 
@@ -430,6 +448,6 @@ Data Fields</h2></td></tr>
 </ul>
 </div><!-- contents -->
 <hr size="1"><address style="text-align: right;"><small>
-Generated on Fri Dec 8 2017 03:48:57 for Heimdalhdblibrary by&nbsp;<a href="http://www.doxygen.org/index.html"><img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.8.13</small></address>
+Generated on Fri Jun 7 2019 02:49:54 for Heimdalhdblibrary by&nbsp;<a href="http://www.doxygen.org/index.html"><img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.8.13</small></address>
 </body>
 </html>

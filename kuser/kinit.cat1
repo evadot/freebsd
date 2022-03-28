@@ -13,7 +13,7 @@ SSYYNNOOPPSSIISS
            [--kk | ----uussee--kkeeyyttaabb] [--vv | ----vvaalliiddaattee] [--ee _e_n_c_t_y_p_e_s |
            ----eennccttyyppeess==_e_n_c_t_y_p_e_s] [--aa _a_d_d_r_e_s_s_e_s | ----eexxttrraa--aaddddrreesssseess==_a_d_d_r_e_s_s_e_s]
            [----ppaasssswwoorrdd--ffiillee==_f_i_l_e_n_a_m_e] [----ffccaacchhee--vveerrssiioonn==_v_e_r_s_i_o_n_-_n_u_m_b_e_r]
-           [--AA | ----nnoo--aaddddrreesssseess] [----aannoonnyymmoouuss] [----eenntteerrpprriissee] [----vveerrssiioonn]
+           [--AA | ----nnoo--aaddddrreesssseess] [--nn | ----aannoonnyymmoouuss] [----eenntteerrpprriissee] [----vveerrssiioonn]
            [----hheellpp] [_p_r_i_n_c_i_p_a_l [_c_o_m_m_a_n_d]]
 
 DDEESSCCRRIIPPTTIIOONN
@@ -90,9 +90,13 @@ DDEESSCCRRIIPPTTIIOONN
      --AA, ----nnoo--aaddddrreesssseess
              Request a ticket with no addresses.
 
-     ----aannoonnyymmoouuss
-             Request an anonymous ticket (which means that the ticket will be
-             issued to an anonymous principal, typically ``anonymous@REALM'').
+     --nn, ----aannoonnyymmoouuss
+             Request an anonymous ticket. If the principal is specified as
+             @REALM, then anonymous PKINIT will be used to acquire an unau-
+             thenticated anonymous ticket and both the client name and realm
+             in the returned ticket will be anonymized.  Otherwise, authenti-
+             cation proceeds as normal and the anonymous ticket will have only
+             the client name anonymized.
 
      ----eenntteerrpprriissee
              Parse principal as a enterprise (KRB5-NT-ENTERPRISE) name. Enter-

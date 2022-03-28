@@ -38,7 +38,7 @@ DDEESSCCRRIIPPTTIIOONN
      ++oo   add
      ++oo   get
      ++oo   get-keys
-     ++oo   all
+     ++oo   all (everything except get-keys)
 
      And the optional _p_r_i_n_c_i_p_a_l_-_p_a_t_t_e_r_n restricts the rights to operations on
      principals that match the glob-style pattern.

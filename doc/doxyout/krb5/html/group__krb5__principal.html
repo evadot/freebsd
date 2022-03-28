@@ -86,6 +86,8 @@ Functions</h2></td></tr>
 <tr class="separator:gac02e16cbed909d4535fd030b5651c978"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ga2c4425068eb189d876e4e0747636f628"><td class="memItemLeft" align="right" valign="top">krb5_boolean KRB5_LIB_FUNCTION&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__krb5__principal.html#ga2c4425068eb189d876e4e0747636f628">krb5_principal_is_root_krbtgt</a> (krb5_context context, krb5_const_principal p)</td></tr>
 <tr class="separator:ga2c4425068eb189d876e4e0747636f628"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ga2e7740d323d81838d5e00dfd4bf408ff"><td class="memItemLeft" align="right" valign="top">KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__krb5__principal.html#ga2e7740d323d81838d5e00dfd4bf408ff">krb5_principal_is_anonymous</a> (krb5_context context, krb5_const_principal p, unsigned int flags)</td></tr>
+<tr class="separator:ga2e7740d323d81838d5e00dfd4bf408ff"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ga8be0f5000da6ee0d4bd5dcaf3cb01d08"><td class="memItemLeft" align="right" valign="top">KRB5_LIB_FUNCTION krb5_error_code KRB5_LIB_CALL&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__krb5__principal.html#ga8be0f5000da6ee0d4bd5dcaf3cb01d08">krb5_sname_to_principal</a> (krb5_context context, const char *hostname, const char *sname, int32_t type, krb5_principal *ret_princ)</td></tr>
 <tr class="separator:ga8be0f5000da6ee0d4bd5dcaf3cb01d08"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
@@ -612,6 +614,41 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>the type of principal </dd></dl>
+
+</div>
+</div>
+<a id="ga2e7740d323d81838d5e00dfd4bf408ff"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga2e7740d323d81838d5e00dfd4bf408ff">&#9670;&nbsp;</a></span>krb5_principal_is_anonymous()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">KRB5_LIB_FUNCTION krb5_boolean KRB5_LIB_CALL krb5_principal_is_anonymous </td>
+          <td>(</td>
+          <td class="paramtype">krb5_context&#160;</td>
+          <td class="paramname"><em>context</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">krb5_const_principal&#160;</td>
+          <td class="paramname"><em>p</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">unsigned int&#160;</td>
+          <td class="paramname"><em>flags</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Returns true iff name is WELLKNOWN/ANONYMOUS </p>
 
 </div>
 </div>
@@ -1337,6 +1374,6 @@ Functions</h2></td></tr>
 </div>
 </div><!-- contents -->
 <hr size="1"><address style="text-align: right;"><small>
-Generated on Fri Dec 8 2017 03:48:59 for HeimdalKerberos5library by&nbsp;<a href="http://www.doxygen.org/index.html"><img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.8.13</small></address>
+Generated on Fri Jun 7 2019 02:49:56 for HeimdalKerberos5library by&nbsp;<a href="http://www.doxygen.org/index.html"><img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.8.13</small></address>
 </body>
 </html>

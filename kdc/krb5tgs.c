@@ -104,7 +104,7 @@ _kdc_add_KRB5SignedPath(krb5_context context,
 			krb5_kdc_configuration *config,
 			hdb_entry_ex *krbtgt,
 			krb5_enctype enctype,
-			krb5_principal client,
+			krb5_const_principal client,
 			krb5_const_principal server,
 			krb5_principals principals,
 			EncTicketPart *tkt)
@@ -124,7 +124,7 @@ _kdc_add_KRB5SignedPath(krb5_context context,
     {
 	KRB5SignedPathData spd;
 
-	spd.client = client;
+	spd.client = rk_UNCONST(client);
 	spd.authtime = tkt->authtime;
 	spd.delegated = principals;
 	spd.method_data = NULL;
@@ -366,6 +366,24 @@ check_PAC(krb5_context context,
     return 0;
 }
 
+static krb5_boolean
+is_anon_tgs_request_p(const KDC_REQ_BODY *b,
+		      const EncTicketPart *tgt)
+{
+    KDCOptions f = b->kdc_options;
+
+    /*
+     * Versions of Heimdal from 1.0 to 7.6, inclusive, send both the
+     * request-anonymous and cname-in-addl-tkt flags for constrained
+     * delegation requests. A true anonymous TGS request will only
+     * have the request-anonymous flag set. (A corollary of this is
+     * that it is not possible to support anonymous constrained
+     * delegation requests, although they would be of limited utility.)
+     */
+    return tgt->flags.anonymous ||
+	(f.request_anonymous && !f.cname_in_addl_tkt && !b->additional_tickets);
+}
+
 /*
  *
  */
@@ -373,7 +391,10 @@ check_PAC(krb5_context context,
 static krb5_error_code
 check_tgs_flags(krb5_context context,
 		krb5_kdc_configuration *config,
-		KDC_REQ_BODY *b, const EncTicketPart *tgt, EncTicketPart *et)
+		KDC_REQ_BODY *b,
+		krb5_const_principal tgt_name,
+		const EncTicketPart *tgt,
+		EncTicketPart *et)
 {
     KDCOptions f = b->kdc_options;
 
@@ -487,14 +508,25 @@ check_tgs_flags(krb5_context context,
 	    et->endtime = min(*et->renew_till, et->endtime);
     }
 
-#if 0
-    /* checks for excess flags */
-    if(f.request_anonymous && !config->allow_anonymous){
+    /*
+     * RFC 8062 section 3 defines an anonymous ticket as one containing
+     * the anonymous principal and the anonymous ticket flag.
+     */
+    if (tgt->flags.anonymous &&
+	!_kdc_is_anonymous(context, tgt_name)) {
 	kdc_log(context, config, 0,
-		"Request for anonymous ticket");
+		"Anonymous ticket flag set without anonymous principal");
 	return KRB5KDC_ERR_BADOPTION;
     }
-#endif
+
+    /*
+     * RFC 8062 section 4.2 states that if the TGT is anonymous, the
+     * anonymous KDC option SHOULD be set, but it is not required.
+     * Treat an anonymous TGT as if the anonymous flag was set.
+     */
+    if (is_anon_tgs_request_p(b, tgt))
+	et->flags.anonymous = 1;
+
     return 0;
 }
 
@@ -770,7 +802,7 @@ tgs_make_reply(krb5_context context,
     ALLOC(et.starttime);
     *et.starttime = kdc_time;
 
-    ret = check_tgs_flags(context, config, b, tgt, &et);
+    ret = check_tgs_flags(context, config, b, tgt_name, tgt, &et);
     if(ret)
 	goto out;
 
@@ -807,15 +839,26 @@ tgs_make_reply(krb5_context context,
     if(ret)
 	goto out;
 
-    copy_Realm(&server_principal->realm, &rep.ticket.realm);
+    ret = copy_Realm(&server_principal->realm, &rep.ticket.realm);
+    if (ret)
+	goto out;
     _krb5_principal2principalname(&rep.ticket.sname, server_principal);
-    copy_Realm(&tgt_name->realm, &rep.crealm);
-/*
-    if (f.request_anonymous)
-	_kdc_make_anonymous_principalname (&rep.cname);
-    else */
+    ret = copy_Realm(&tgt_name->realm, &rep.crealm);
+    if (ret)
+	goto out;
 
-    copy_PrincipalName(&tgt_name->name, &rep.cname);
+    /*
+     * RFC 8062 states "if the ticket in the TGS request is an anonymous
+     * one, the client and client realm are copied from that ticket". So
+     * whilst the TGT flag check below is superfluous, it is included in
+     * order to follow the specification to its letter.
+     */
+    if (et.flags.anonymous && !tgt->flags.anonymous)
+	_kdc_make_anonymous_principalname(&rep.cname);
+    else
+	ret = copy_PrincipalName(&tgt_name->name, &rep.cname);
+    if (ret)
+	goto out;
     rep.ticket.tkt_vno = 5;
 
     ek.caddr = et.caddr;
@@ -867,10 +910,15 @@ tgs_make_reply(krb5_context context,
 
     et.flags.pre_authent = tgt->flags.pre_authent;
     et.flags.hw_authent  = tgt->flags.hw_authent;
-    et.flags.anonymous   = tgt->flags.anonymous;
     et.flags.ok_as_delegate = server->entry.flags.ok_as_delegate;
 
-    if(rspac->length) {
+    /*
+     * For anonymous tickets, we should filter out positive authorization data
+     * that could reveal the client's identity, and return a policy error for
+     * restrictive authorization data. Policy for unknown authorization types
+     * is implementation dependent.
+     */
+    if (rspac->length && !et.flags.anonymous) {
 	/*
 	 * No not need to filter out the any PAC from the
 	 * auth_data since it's signed by the KDC.
@@ -920,8 +968,8 @@ tgs_make_reply(krb5_context context,
     ret = krb5_copy_keyblock_contents(context, sessionkey, &et.key);
     if (ret)
 	goto out;
-    et.crealm = tgt_name->realm;
-    et.cname = tgt_name->name;
+    et.crealm = rep.crealm;
+    et.cname = rep.cname;
 
     ek.key = et.key;
     /* MIT must have at least one last_req */
@@ -1988,6 +2036,13 @@ server_lookup:
 		goto out;
 	    }
 
+	    if (!krb5_checksum_is_keyed(context, self.cksum.cksumtype)) {
+		free_PA_S4U2Self(&self);
+		kdc_log(context, config, 0, "Reject PA-S4U2Self with unkeyed checksum");
+		ret = KRB5KRB_AP_ERR_INAPP_CKSUM;
+		goto out;
+	    }
+
 	    ret = _krb5_s4u2self_to_checksumdata(context, &self, &datack);
 	    if (ret)
 		goto out;
@@ -2002,12 +2057,29 @@ server_lookup:
 		goto out;
 	    }
 
-	    ret = krb5_verify_checksum(context,
-				       crypto,
-				       KRB5_KU_OTHER_CKSUM,
-				       datack.data,
-				       datack.length,
-				       &self.cksum);
+	    /* Allow HMAC_MD5 checksum with any key type */
+	    if (self.cksum.cksumtype == CKSUMTYPE_HMAC_MD5) {
+		unsigned char csdata[16];
+		Checksum cs;
+
+		cs.checksum.length = sizeof(csdata);
+		cs.checksum.data = &csdata;
+
+		ret = _krb5_HMAC_MD5_checksum(context, &crypto->key,
+					      datack.data, datack.length,
+					      KRB5_KU_OTHER_CKSUM, &cs);
+		if (ret == 0 &&
+		    krb5_data_ct_cmp(&cs.checksum, &self.cksum.checksum) != 0)
+		    ret = KRB5KRB_AP_ERR_BAD_INTEGRITY;
+	    }
+	    else {
+		ret = krb5_verify_checksum(context,
+					   crypto,
+					   KRB5_KU_OTHER_CKSUM,
+					   datack.data,
+					   datack.length,
+					   &self.cksum);
+	    }
 	    krb5_data_free(&datack);
 	    krb5_crypto_destroy(context, crypto);
 	    if (ret) {
@@ -2111,6 +2183,7 @@ server_lookup:
     if (client != NULL
 	&& b->additional_tickets != NULL
 	&& b->additional_tickets->len != 0
+	&& b->kdc_options.cname_in_addl_tkt
 	&& b->kdc_options.enc_tkt_in_skey == 0)
     {
 	int ad_signedpath = 0;
@@ -2277,6 +2350,13 @@ server_lookup:
 	ret = KRB5KRB_AP_ERR_BADADDR;
 	kdc_log(context, config, 0, "Request from wrong address");
 	goto out;
+    }
+
+    /* check local and per-principal anonymous ticket issuance policy */
+    if (is_anon_tgs_request_p(b, tgt)) {
+	ret = _kdc_check_anon_policy(context, config, client, server);
+	if (ret)
+	    goto out;
     }
 
     /*

@@ -263,6 +263,7 @@ krb5/man/man3/krb5_v4compat.3
 krb5/man/man3/krb5_principal_is_null.3
 krb5/man/man3/krb5_ret_string.3
 krb5/man/man3/krb5_get_kdc_sec_offset.3
+krb5/man/man3/krb5_principal_is_anonymous.3
 krb5/man/man3/krb5_ccache.3
 krb5/man/man3/krb5_init_creds_intro.3
 krb5/man/man3/krb5_parse_name_flags.3

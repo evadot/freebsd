@@ -8,7 +8,8 @@ SSYYNNOOPPSSIISS
      kkggeettccrreedd [----ccaannoonniiccaalliizzee] [----ccaannoonniiccaall] [--cc --ccaacchhee | ----ccaacchhee==_c_a_c_h_e] [--ee
               _e_n_c_t_y_p_e | ----eennccttyyppee==_e_n_c_t_y_p_e] [----ddeebbuugg] [--HH | ----hhoossttbbaasseedd]
               [----nnaammee--ttyyppee==_n_a_m_e_-_t_y_p_e] [----nnoo--ttrraannssiitt--cchheecckk] [----nnoo--ssttoorree]
-              [----ccaacchheedd--oonnllyy] [----vveerrssiioonn] [----hheellpp] _p_r_i_n_c_i_p_a_l
+              [----ccaacchheedd--oonnllyy] [--nn | ----aannoonnyymmoouuss] [----vveerrssiioonn] [----hheellpp]
+              _p_r_i_n_c_i_p_a_l
      kkggeettccrreedd [options] ----hhoossttbbaasseedd _p_r_i_n_c_i_p_a_l
      kkggeettccrreedd [options] ----hhoossttbbaasseedd _s_e_r_v_i_c_e _h_o_s_t_n_a_m_e _[_e_x_t_r_a_-_c_o_m_p_o_n_e_n_t_s_]
 
@@ -75,6 +76,9 @@ DDEESSCCRRIIPPTTIIOONN
 
      ----ccaacchheedd--oonnllyy
              do not talk the TGS, search only the ccache.
+
+     ----aannoonnyymmoouuss
+             obtain an anonymous service ticket.
 
      ----ffoorrwwaarrddaabbllee
 

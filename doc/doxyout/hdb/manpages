@@ -9,6 +9,7 @@ hdb/man/man3/hdb_check_s4u2self.3
 hdb/man/man3/hdb_lock.3
 hdb/man/man3/hdb_remove.3
 hdb/man/man3/hdb_open.3
+hdb/man/man3/hdb_set_sync.3
 hdb/man/man3/hdb__get.3
 hdb/man/man3/hdb_firstkey.3
 hdb/man/man3/hdb_get_realms.3

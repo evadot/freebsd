@@ -49,7 +49,8 @@ DDEESSCCRRIIPPTTIIOONN
              with unencrypted keys.
 
      --EE, ----eennccrryypptt
-             This option transmits the database with encrypted keys.
+             This option transmits the database with encrypted keys. This is
+             the default if no option is supplied.
 
      --nn, ----ssttddoouutt
              Dump the database on stdout, in a format that can be fed to

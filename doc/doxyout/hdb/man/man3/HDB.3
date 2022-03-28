@@ -1,4 +1,4 @@
-.TH "HDB" 3 "Fri Dec 8 2017" "Version 7.5.0" "Heimdalhdblibrary" \" -*- nroff -*-
+.TH "HDB" 3 "Fri Jun 7 2019" "Version 7.7.0" "Heimdalhdblibrary" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
@@ -76,6 +76,9 @@ HDB
 .br
 .ti -1c
 .RI "krb5_error_code(* \fBhdb_check_s4u2self\fP )(krb5_context, struct \fBHDB\fP *, \fBhdb_entry_ex\fP *, krb5_const_principal)"
+.br
+.ti -1c
+.RI "krb5_error_code(* \fBhdb_set_sync\fP )(krb5_context, struct \fBHDB\fP *, int)"
 .br
 .in -1c
 .SH "Detailed Description"
@@ -157,6 +160,10 @@ Remove an entry from the database\&.
 Rename the data base\&.
 .PP
 Assume that the database is not hdb_open'ed and not locked\&. 
+.SS "krb5_error_code(* HDB::hdb_set_sync) (krb5_context, struct \fBHDB\fP *, int)"
+Enable/disable synchronous updates
+.PP
+Calling this with 0 disables sync\&. Calling it with non-zero enables sync and does an fsync()\&. 
 .SS "krb5_error_code(* HDB::hdb_store) (krb5_context, struct \fBHDB\fP *, unsigned, \fBhdb_entry_ex\fP *)"
 Store an entry to database 
 .SS "krb5_error_code(* HDB::hdb_unlock) (krb5_context, struct \fBHDB\fP *)"

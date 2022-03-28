@@ -418,6 +418,10 @@ hdb_sqlite_make_database(krb5_context context, HDB *db, const char *filename)
 
         created_file = 1;
 
+        hdb_sqlite_exec_stmt(context, hsdb,
+                             "PRAGMA main.page_size = 8192",
+                             HDB_ERR_UK_SERROR);
+
         ret = hdb_sqlite_exec_stmt(context, hsdb,
                                    HDBSQLITE_CREATE_TABLES,
                                    HDB_ERR_UK_SERROR);
@@ -803,6 +807,15 @@ hdb_sqlite_destroy(krb5_context context, HDB *db)
     return ret ? ret : ret2;
 }
 
+static krb5_error_code
+hdb_sqlite_set_sync(krb5_context context, HDB *db, int on)
+{
+    return hdb_sqlite_exec_stmt(context, (hdb_sqlite_db*)(db->hdb_db),
+                                on ?  "PRAGMA main.synchronous = NORMAL" :
+                                      "PRAGMA main.synchronous = OFF",
+                                HDB_ERR_UK_SERROR);
+}
+
 /*
  * Not sure if this is needed.
  */
@@ -1031,6 +1044,7 @@ hdb_sqlite_create(krb5_context context, HDB **db, const char *filename)
     (*db)->hdb_remove = hdb_sqlite_remove;
     (*db)->hdb_destroy = hdb_sqlite_destroy;
     (*db)->hdb_rename = hdb_sqlite_rename;
+    (*db)->hdb_set_sync = hdb_sqlite_set_sync;
     (*db)->hdb__get = NULL;
     (*db)->hdb__put = NULL;
     (*db)->hdb__del = NULL;

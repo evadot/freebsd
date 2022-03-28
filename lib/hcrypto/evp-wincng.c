@@ -196,6 +196,11 @@ wincng_key_init(EVP_CIPHER_CTX *ctx,
     if (ctx->cipher->app_data == NULL)
 	return 0;
 
+    if (cng->hKey) {
+	BCryptDestroyKey(cng->hKey); /* allow reinitialization */
+	cng->hKey = (BCRYPT_KEY_HANDLE)0;
+    }
+
     /*
      * Note: ctx->key_len not EVP_CIPHER_CTX_key_length() for
      * variable length key support.
@@ -569,6 +574,11 @@ wincng_md_hash_init(BCRYPT_ALG_HANDLE hAlgorithm,
     struct wincng_md_ctx *cng = (struct wincng_md_ctx *)ctx;
     NTSTATUS status;
     ULONG cbData;
+
+    if (cng->hHash) {
+	BCryptDestroyHash(cng->hHash); /* allow reinitialization */
+	cng->hHash = (BCRYPT_HASH_HANDLE)0;
+    }
 
     status = BCryptGetProperty(hAlgorithm,
 			       BCRYPT_OBJECT_LENGTH,

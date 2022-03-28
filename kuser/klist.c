@@ -122,6 +122,12 @@ print_cred(krb5_context context, krb5_creds *cred, rtbl_t ct, int do_flags)
 	    *sp++ = 'A';
 	if(cred->flags.b.hw_authent)
 	    *sp++ = 'H';
+	if(cred->flags.b.transited_policy_checked)
+	    *sp++ = 'T';
+	if(cred->flags.b.ok_as_delegate)
+	    *sp++ = 'O';
+	if(cred->flags.b.anonymous)
+	    *sp++ = 'a';
 	*sp = '\0';
 	rtbl_add_column_entry(ct, COL_FLAGS, s);
     }
@@ -403,7 +409,7 @@ display_tokens(int do_verbose)
 	    continue;
 	t[min(parms.out_size,sizeof(t)-1)] = 0;
 	memcpy(&size_secret_tok, r, sizeof(size_secret_tok));
-	/* dont bother about the secret token */
+	/* don't bother about the secret token */
 	r += size_secret_tok + sizeof(size_secret_tok);
 	if (parms.out_size < (r - t) + sizeof(size_public_tok))
 	    continue;
@@ -413,7 +419,7 @@ display_tokens(int do_verbose)
 	    continue;
 	memcpy(&ct, r, size_public_tok);
 	r += size_public_tok;
-	/* there is a int32_t with length of cellname, but we dont read it */
+	/* there is a int32_t with length of cellname, but we don't read it */
 	r += sizeof(int32_t);
 	cell = r;
 

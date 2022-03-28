@@ -42,7 +42,7 @@ export KRB5_CONFIG
 
 testfailed="echo test failed; cat messages.log; exit 1"
 
-# If there is no useful db support compile in, disable test
+# If there is no useful db support compiled in, disable test
 ${have_db} || exit 77
 
 R=TEST.H5L.SE
@@ -487,6 +487,30 @@ for a in $enctypes; do
 done
 ${kdestroy}
 
+echo "Getting client authenticated anonymous initial tickets"; > messages.log
+${kinit} -n --password-file=${objdir}/foopassword foo@$R || \
+	{ ec=1 ; eval "${testfailed}"; }
+for a in $enctypes; do
+	echo "Getting tickets ($a)"; > messages.log
+	${kgetcred} -e $a ${server}@${R} || { ec=1 ; eval "${testfailed}"; }
+	${test_ap_req} ${server}@${R} ${keytab} ${cache} || \
+		{ ec=1 ; eval "${testfailed}"; }
+	${kdestroy} --credential=${server}@${R}
+done
+${kdestroy}
+
+echo "Getting client anonymous service tickets"; > messages.log
+${kinit} --password-file=${objdir}/foopassword foo@$R || \
+	{ ec=1 ; eval "${testfailed}"; }
+for a in $enctypes; do
+	echo "Getting tickets ($a)"; > messages.log
+	${kgetcred} -n -e $a ${server}@${R} || { ec=1 ; eval "${testfailed}"; }
+	${test_ap_req} ${server}@${R} ${keytab} ${cache} || \
+		{ ec=1 ; eval "${testfailed}"; }
+	${kdestroy} --credential=${server}@${R}
+done
+${kdestroy}
+
 echo "Getting client initial tickets for cross realm case"; > messages.log
 ${kinit} --password-file=${objdir}/foopassword foo@$R || { ec=1 ; eval "${testfailed}"; }
 for a in $enctypes; do
@@ -713,9 +737,10 @@ fi
 if test "$pkinit" = yes -a "$rsa" = yes ; then
 
     echo "try anonymous pkinit"; > messages.log
-    ${kinit} --anonymous ${R} || \
+    ${kinit} --renewable -n @${R} || \
 	{ ec=1 ; eval "${testfailed}"; }
     ${kgetcred} ${server}@${R} || { ec=1 ; eval "${testfailed}"; }
+    ${kinit} --renew || { ec=1 ; eval "${testfailed}"; }
     ${kdestroy}
 
     for type in "" "--pk-use-enckey"; do
@@ -760,6 +785,14 @@ if test "$pkinit" = yes -a "$rsa" = yes ; then
 else
 	echo "no pkinit (pkinit: $pkinit, rsa: $rsa)"; > messages.log
 fi
+
+echo "test impersonate using rc4 based tgt"; > messages.log
+${kinit} -e arcfour-hmac-md5 --forwardable --password-file=${objdir}/foopassword ${ps} || \
+        { ec=1 ; eval "${testfailed}"; }
+${kgetcred_imp} --impersonate=bar@${R} ${ps} || \
+        { ec=1 ; eval "${testfailed}"; }
+${test_ap_req} ${ps} ${keytab} ${ocache} || \
+        { ec=1 ; eval "${testfailed}"; }
 
 echo "tickets for impersonate test case"; > messages.log
 ${kinit} --forwardable --password-file=${objdir}/foopassword ${ps} || \
