@@ -60,6 +60,8 @@
 #include <sys/malloc.h>
 #include <sys/priv.h>
 
+#include <dev/pci/pci_vendors.h>
+
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 
@@ -76,7 +78,6 @@
 #include <dev/usb/controller/uhcireg.h>
 #include "usb_if.h"
 
-#define	PCI_UHCI_VENDORID_INTEL		0x8086
 #define	PCI_UHCI_VENDORID_HP		0x103c
 #define	PCI_UHCI_VENDORID_VIA		0x1106
 #define	PCI_UHCI_VENDORID_VMWARE	0x15ad
@@ -336,7 +337,7 @@ uhci_pci_attach(device_t self)
 	 */
 	device_set_desc(sc->sc_bus.bdev, uhci_pci_match(self));
 	switch (pci_get_vendor(self)) {
-	case PCI_UHCI_VENDORID_INTEL:
+	case PCI_VENDOR_INTEL_CORPORATION:
 		sprintf(sc->sc_vendor, "Intel");
 		break;
 	case PCI_UHCI_VENDORID_HP:

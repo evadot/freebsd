@@ -85,6 +85,7 @@ __KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.6 2020/06/14 23:23:12 riastradh Exp $");
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include "qatreg.h"
 #include "qatvar.h"
@@ -92,7 +93,6 @@ __KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.6 2020/06/14 23:23:12 riastradh Exp $");
 
 extern struct qat_hw qat_hw_c2xxx;
 
-#define PCI_VENDOR_INTEL			0x8086
 #define PCI_PRODUCT_INTEL_C2000_IQIA_PHYS	0x1f18
 
 static const struct qat_product {
@@ -102,7 +102,7 @@ static const struct qat_product {
 	enum qat_chip_type qatp_chip;
 	const struct qat_hw *qatp_hw;
 } qat_products[] = {
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_C2000_IQIA_PHYS,
+	{ PCI_VENDOR_INTEL_CORPORATION,	PCI_PRODUCT_INTEL_C2000_IQIA_PHYS,
 	  "Intel C2000 QuickAssist PF",
 	  QAT_CHIP_C2XXX, &qat_hw_c2xxx },
 	{ 0, 0, NULL, 0, NULL },

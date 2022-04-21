@@ -29,6 +29,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <dev/pci/pci_vendors.h>
+
 #include "iavf_type.h"
 #include "iavf_adminq.h"
 #include "iavf_prototype.h"
@@ -47,7 +49,7 @@ enum iavf_status iavf_set_mac_type(struct iavf_hw *hw)
 
 	DEBUGFUNC("iavf_set_mac_type\n");
 
-	if (hw->vendor_id == IAVF_INTEL_VENDOR_ID) {
+	if (hw->vendor_id == PCI_VENDOR_INTEL_CORPORATION) {
 		switch (hw->device_id) {
 		case IAVF_DEV_ID_X722_VF:
 			hw->mac.type = IAVF_MAC_X722_VF;

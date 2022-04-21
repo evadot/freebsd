@@ -29,6 +29,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <dev/pci/pci_vendors.h>
+
 #include "ice_common.h"
 #include "ice_sched.h"
 #include "ice_adminq_cmd.h"
@@ -155,7 +157,7 @@ enum ice_status ice_set_mac_type(struct ice_hw *hw)
 {
 	ice_debug(hw, ICE_DBG_TRACE, "%s\n", __func__);
 
-	if (hw->vendor_id != ICE_INTEL_VENDOR_ID)
+	if (hw->vendor_id != PCI_VENDOR_INTEL_CORPORATION)
 		return ICE_ERR_DEVICE_NOT_SUPPORTED;
 
 	switch (hw->device_id) {

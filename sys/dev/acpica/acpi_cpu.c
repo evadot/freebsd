@@ -41,6 +41,7 @@
 #include <sys/smp.h>
 
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 #include <machine/atomic.h>
 #include <machine/bus.h>
 #if defined(__amd64__) || defined(__i386__)
@@ -117,7 +118,6 @@ struct acpi_cpu_device {
 #define CPU_QUIRK_NO_C3		(1<<0)	/* C3-type states are not usable. */
 #define CPU_QUIRK_NO_BM_CTRL	(1<<2)	/* No bus mastering control. */
 
-#define PCI_VENDOR_INTEL	0x8086
 #define PCI_DEVICE_82371AB_3	0x7113	/* PIIX4 chipset for quirks. */
 #define PCI_REVISION_A_STEP	0
 #define PCI_REVISION_B_STEP	1
@@ -1301,7 +1301,7 @@ acpi_cpu_quirks_piix4(void)
     uint32_t val;
     ACPI_STATUS status;
 
-    acpi_dev = pci_find_device(PCI_VENDOR_INTEL, PCI_DEVICE_82371AB_3);
+    acpi_dev = pci_find_device(PCI_VENDOR_INTEL_CORPORATION, PCI_DEVICE_82371AB_3);
     if (acpi_dev != NULL) {
 	switch (pci_get_revid(acpi_dev)) {
 	/*

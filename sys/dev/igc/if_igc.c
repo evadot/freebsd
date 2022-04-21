@@ -32,6 +32,8 @@
 #include <sys/sbuf.h>
 #include <machine/_inttypes.h>
 
+#include <dev/pci/pci_vendors.h>
+
 #ifdef RSS
 #include <net/rss_config.h>
 #include <netinet/in_rss.h>
@@ -49,22 +51,22 @@
 static const pci_vendor_info_t igc_vendor_info_array[] =
 {
 	/* Intel(R) PRO/1000 Network Connection - igc */
-	PVID(0x8086, IGC_DEV_ID_I225_LM, "Intel(R) Ethernet Controller I225-LM"),
-	PVID(0x8086, IGC_DEV_ID_I225_V, "Intel(R) Ethernet Controller I225-V"),
-	PVID(0x8086, IGC_DEV_ID_I225_K, "Intel(R) Ethernet Controller I225-K"),
-	PVID(0x8086, IGC_DEV_ID_I225_I, "Intel(R) Ethernet Controller I225-I"),
-	PVID(0x8086, IGC_DEV_ID_I220_V, "Intel(R) Ethernet Controller I220-V"),
-	PVID(0x8086, IGC_DEV_ID_I225_K2, "Intel(R) Ethernet Controller I225-K(2)"),
-	PVID(0x8086, IGC_DEV_ID_I225_LMVP, "Intel(R) Ethernet Controller I225-LMvP(2)"),
-	PVID(0x8086, IGC_DEV_ID_I226_K, "Intel(R) Ethernet Controller I226-K"),
-	PVID(0x8086, IGC_DEV_ID_I226_LMVP, "Intel(R) Ethernet Controller I226-LMvP"),
-	PVID(0x8086, IGC_DEV_ID_I225_IT, "Intel(R) Ethernet Controller I225-IT(2)"),
-	PVID(0x8086, IGC_DEV_ID_I226_LM, "Intel(R) Ethernet Controller I226-LM"),
-	PVID(0x8086, IGC_DEV_ID_I226_V, "Intel(R) Ethernet Controller I226-V"),
-	PVID(0x8086, IGC_DEV_ID_I226_IT, "Intel(R) Ethernet Controller I226-IT"),
-	PVID(0x8086, IGC_DEV_ID_I221_V, "Intel(R) Ethernet Controller I221-V"),
-	PVID(0x8086, IGC_DEV_ID_I226_BLANK_NVM, "Intel(R) Ethernet Controller I226(blankNVM)"),
-	PVID(0x8086, IGC_DEV_ID_I225_BLANK_NVM, "Intel(R) Ethernet Controller I225(blankNVM)"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_LM, "Intel(R) Ethernet Controller I225-LM"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_V, "Intel(R) Ethernet Controller I225-V"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_K, "Intel(R) Ethernet Controller I225-K"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_I, "Intel(R) Ethernet Controller I225-I"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I220_V, "Intel(R) Ethernet Controller I220-V"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_K2, "Intel(R) Ethernet Controller I225-K(2)"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_LMVP, "Intel(R) Ethernet Controller I225-LMvP(2)"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_K, "Intel(R) Ethernet Controller I226-K"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_LMVP, "Intel(R) Ethernet Controller I226-LMvP"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_IT, "Intel(R) Ethernet Controller I225-IT(2)"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_LM, "Intel(R) Ethernet Controller I226-LM"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_V, "Intel(R) Ethernet Controller I226-V"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_IT, "Intel(R) Ethernet Controller I226-IT"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I221_V, "Intel(R) Ethernet Controller I221-V"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I226_BLANK_NVM, "Intel(R) Ethernet Controller I226(blankNVM)"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IGC_DEV_ID_I225_BLANK_NVM, "Intel(R) Ethernet Controller I225(blankNVM)"),
 	/* required last entry */
 	PVID_END
 };

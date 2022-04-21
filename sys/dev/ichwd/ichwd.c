@@ -71,12 +71,14 @@
 
 #include <isa/isavar.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <dev/ichwd/ichwd.h>
 
 #include <x86/pci_cfgreg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pci_private.h>
+#include <dev/pci/pci_vendors.h>
 
 static struct ichwd_device ichwd_devices[] = {
 	{ DEVICEID_82801AA,  "Intel 82801AA watchdog timer",	1, 1 },
@@ -569,7 +571,7 @@ ichwd_find_ich_lpc_bridge(device_t isa, struct ichwd_device **id_p)
 	pci = device_get_parent(isab);
 	if (pci == NULL || device_get_devclass(pci) != devclass_find("pci"))
 		return (NULL);
-	if (pci_get_vendor(isab) != VENDORID_INTEL)
+	if (pci_get_vendor(isab) != PCI_VENDOR_INTEL_CORPORATION)
 		return (NULL);
 	devid = pci_get_device(isab);
 	for (id = ichwd_devices; id->desc != NULL; ++id) {
@@ -599,7 +601,7 @@ ichwd_find_smb_dev(device_t isa, struct ichwd_device **id_p)
 	smb = pci_find_dbsf(pci_get_domain(isab), pci_get_bus(isab), 31, 4);
 	if (smb == NULL)
 		return (NULL);
-	if (pci_get_vendor(smb) != VENDORID_INTEL)
+	if (pci_get_vendor(smb) != PCI_VENDOR_INTEL_CORPORATION)
 		return (NULL);
 	devid = pci_get_device(smb);
 	for (id = ichwd_smb_devices; id->desc != NULL; ++id) {

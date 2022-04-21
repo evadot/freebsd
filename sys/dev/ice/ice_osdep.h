@@ -56,8 +56,6 @@
 
 #include "ice_alloc.h"
 
-#define ICE_INTEL_VENDOR_ID 0x8086
-
 #define ICE_STR_BUF_LEN 32
 
 struct ice_hw;

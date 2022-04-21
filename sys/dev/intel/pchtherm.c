@@ -39,6 +39,7 @@
 #include <machine/resource.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 
 #define PCHTHERM_REG_TEMP 0
 #define PCHTHERM_REG_TSC 4
@@ -82,27 +83,27 @@ struct pchtherm_softc
 
 static const struct pci_device_table pchtherm_devices[] =
 {
-	{ PCI_DEV(0x8086, 0x9c24),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x9c24),
 	  PCI_DESCR("Haswell Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x8c24),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x8c24),
 	  PCI_DESCR("Haswell Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x9ca4),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x9ca4),
 	  PCI_DESCR("Wildcat Point Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x9d31),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x9d31),
 	  PCI_DESCR("Skylake PCH Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0xa131),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0xa131),
 	  PCI_DESCR("Skylake PCH 100 Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x9df9),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x9df9),
 	  PCI_DESCR("CannonLake-LP Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0xa379),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0xa379),
 	  PCI_DESCR("CannonLake-H Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x02f9),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x02f9),
 	  PCI_DESCR("CometLake-LP Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x06f9),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x06f9),
 	  PCI_DESCR("CometLake-H Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0xa1b1),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0xa1b1),
 	  PCI_DESCR("Lewisburg Thermal Subsystem")},
-	{ PCI_DEV(0x8086, 0x8d24),
+	{ PCI_DEV(PCI_VENDOR_INTEL_CORPORATION, 0x8d24),
 	  PCI_DESCR("Wellsburg Thermal Subsystem")},
 };
 

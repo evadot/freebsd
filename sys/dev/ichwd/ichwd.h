@@ -64,7 +64,6 @@ struct ichwd_softc {
 	eventhandler_tag	 ev_tag;
 };
 
-#define	VENDORID_INTEL		0x8086
 #define	DEVICEID_BAYTRAIL	0x0f1c
 #define	DEVICEID_C3000		0x19df
 #define	DEVICEID_CPT0		0x1c40

@@ -43,6 +43,7 @@
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <dev/smbus/smbconf.h>
 
@@ -100,7 +101,6 @@
  */
 
 /* PCIe device IDs for (Sandy,Ivy)bridge)-Xeon and (Has,Broad)well-Xeon */
-#define PCI_VENDOR_INTEL		0x8086
 #define IMCSMB_PCI_DEV_ID_IMC0_SBX	0x3ca8
 #define IMCSMB_PCI_DEV_ID_IMC0_IBX	0x0ea8
 #define IMCSMB_PCI_DEV_ID_IMC0_HSX	0x2fa8
@@ -238,7 +238,7 @@ imcsmb_pci_probe(device_t dev)
 
 	rc = ENXIO;
 
-	if (pci_get_vendor(dev) != PCI_VENDOR_INTEL) {
+	if (pci_get_vendor(dev) != PCI_VENDOR_INTEL_CORPORATION) {
 		goto out;
 	}
 

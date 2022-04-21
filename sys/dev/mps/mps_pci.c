@@ -48,6 +48,7 @@
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pci_private.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <dev/mps/mpi/mpi2_type.h>
 #include <dev/mps/mpi/mpi2.h>
@@ -125,13 +126,13 @@ struct mps_ident {
 	// Add Customer specific vender/subdevice id before generic
 	// (0xffff) vender/subdevice id.
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_2,
-	    0x8086, 0x3516, 0, "Intel(R) Integrated RAID Module RMS25JB080" },
+	    PCI_VENDOR_INTEL_CORPORATION, 0x3516, 0, "Intel(R) Integrated RAID Module RMS25JB080" },
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_2,
-	    0x8086, 0x3517, 0, "Intel(R) Integrated RAID Module RMS25JB040" },
+	    PCI_VENDOR_INTEL_CORPORATION, 0x3517, 0, "Intel(R) Integrated RAID Module RMS25JB040" },
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_2,
-	    0x8086, 0x3518, 0, "Intel(R) Integrated RAID Module RMS25KB080" },
+	    PCI_VENDOR_INTEL_CORPORATION, 0x3518, 0, "Intel(R) Integrated RAID Module RMS25KB080" },
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_2,
-	    0x8086, 0x3519, 0, "Intel(R) Integrated RAID Module RMS25KB040" },
+	    PCI_VENDOR_INTEL_CORPORATION, 0x3519, 0, "Intel(R) Integrated RAID Module RMS25KB040" },
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_2,
 	    0xffff, 0xffff, 0, "Avago Technologies (LSI) SAS2308" },
 	{ MPI2_MFGPAGE_VENDORID_LSI, MPI2_MFGPAGE_DEVID_SAS2308_3,

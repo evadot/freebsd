@@ -78,9 +78,6 @@
 /* Override this by setting IOMEM in your ixgbe_osdep.h header */
 #define IOMEM
 
-/* Vendor ID */
-#define IXGBE_INTEL_VENDOR_ID			0x8086
-
 /* Device IDs */
 #define IXGBE_DEV_ID_82598			0x10B6
 #define IXGBE_DEV_ID_82598_BX			0x1508

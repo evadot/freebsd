@@ -224,7 +224,6 @@
 /*
  * Miscellaneous constants
  */
-#define EM_VENDOR_ID			0x8086
 #define EM_FLASH			0x0014
 
 #define EM_JUMBO_PBA			0x00000028

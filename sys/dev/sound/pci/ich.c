@@ -37,6 +37,7 @@
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 /* -------------------------------------------------------------------- */
 
@@ -50,7 +51,6 @@
 #define ICH_MIN_BLKCNT		2
 #define ICH_MIN_BLKSZ		64
 
-#define INTEL_VENDORID	0x8086
 #define SIS_VENDORID	0x1039
 #define NVIDIA_VENDORID	0x10de
 #define AMD_VENDORID	0x1022
@@ -103,25 +103,25 @@ static const struct ich_type {
 #define PROBE_LOW	0x01
         char		*name;
 } ich_devs[] = {
-	{ INTEL_VENDORID,	INTEL_82440MX,	0,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82440MX,	0,
 		"Intel 440MX" },
-	{ INTEL_VENDORID,	INTEL_82801AA,	0,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801AA,	0,
 		"Intel ICH (82801AA)" },
-	{ INTEL_VENDORID,	INTEL_82801AB,	0,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801AB,	0,
 		"Intel ICH (82801AB)" },
-	{ INTEL_VENDORID,	INTEL_82801BA,	0,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801BA,	0,
 		"Intel ICH2 (82801BA)" },
-	{ INTEL_VENDORID,	INTEL_82801CA,	0,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801CA,	0,
 		"Intel ICH3 (82801CA)" },
-	{ INTEL_VENDORID,	INTEL_82801DB,	PROBE_LOW,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801DB,	PROBE_LOW,
 		"Intel ICH4 (82801DB)" },
-	{ INTEL_VENDORID,	INTEL_82801EB,	PROBE_LOW,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801EB,	PROBE_LOW,
 		"Intel ICH5 (82801EB)" },
-	{ INTEL_VENDORID,	INTEL_6300ESB,	PROBE_LOW,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_6300ESB,	PROBE_LOW,
 		"Intel 6300ESB" },
-	{ INTEL_VENDORID,	INTEL_82801FB,	PROBE_LOW,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801FB,	PROBE_LOW,
 		"Intel ICH6 (82801FB)" },
-	{ INTEL_VENDORID,	INTEL_82801GB,	PROBE_LOW,
+	{ PCI_VENDOR_INTEL_CORPORATION,	INTEL_82801GB,	PROBE_LOW,
 		"Intel ICH7 (82801GB)" },
 	{ SIS_VENDORID,		SIS_7012,	0,
 		"SiS 7012" },
@@ -834,7 +834,7 @@ ich_init(struct sc_info *sc)
 
 	if ((stat & ICH_GLOB_STA_PCR) == 0) {
 		/* ICH4/ICH5 may fail when busmastering is enabled. Continue */
-		if (sc->vendor == INTEL_VENDORID && (
+		if (sc->vendor == PCI_VENDOR_INTEL_CORPORATION && (
 		    sc->devid == INTEL_82801DB || sc->devid == INTEL_82801EB ||
 		    sc->devid == INTEL_6300ESB || sc->devid == INTEL_82801FB ||
 		    sc->devid == INTEL_82801GB)) {
@@ -912,7 +912,7 @@ ich_pci_attach(device_t dev)
 	 *
 	 * http://www.intel.com/design/chipsets/specupdt/245051.htm
 	 */
-	if (vendor == INTEL_VENDORID && devid == INTEL_82440MX)
+	if (vendor == PCI_VENDOR_INTEL_CORPORATION && devid == INTEL_82440MX)
 		sc->flags |= ICH_DMA_NOCACHE;
 
 	/*
@@ -928,7 +928,7 @@ ich_pci_attach(device_t dev)
 	 * but doing so will mess things up here.  ich4 has enough new
 	 * features it warrants it's own driver. 
 	 */
-	if (vendor == INTEL_VENDORID && (devid == INTEL_82801DB ||
+	if (vendor == PCI_VENDOR_INTEL_CORPORATION && (devid == INTEL_82801DB ||
 	    devid == INTEL_82801EB || devid == INTEL_6300ESB ||
 	    devid == INTEL_82801FB || devid == INTEL_82801GB)) {
 		sc->nambarid = PCIR_MMBAR;

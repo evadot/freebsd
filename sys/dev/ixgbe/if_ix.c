@@ -39,6 +39,8 @@
 #include "ixgbe_sriov.h"
 #include "ifdi_if.h"
 
+#include <dev/pci/pci_vendors.h>
+
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 

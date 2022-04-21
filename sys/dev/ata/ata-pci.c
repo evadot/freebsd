@@ -44,6 +44,7 @@
 #include <sys/rman.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 #include <dev/ata/ata-all.h>
 #include <dev/ata/ata-pci.h>
 #include <ata_if.h>
@@ -896,7 +897,7 @@ ata_pcivendor2str(device_t dev)
     case ATA_CYRIX_ID:          return "Cyrix";
     case ATA_CYPRESS_ID:        return "Cypress";
     case ATA_HIGHPOINT_ID:      return "HighPoint";
-    case ATA_INTEL_ID:          return "Intel";
+    case PCI_VENDOR_INTEL_CORPORATION:          return "Intel";
     case ATA_ITE_ID:            return "ITE";
     case ATA_JMICRON_ID:        return "JMicron";
     case ATA_MARVELL_ID:        return "Marvell";

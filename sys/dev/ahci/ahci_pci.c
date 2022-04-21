@@ -43,6 +43,7 @@
 #include <sys/rman.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 #include <dev/iommu/iommu.h>
 #include "ahci.h"
 
@@ -546,7 +547,7 @@ ahci_pci_attach(device_t dev)
 	 * here, or the user has to change the mode in the BIOS
 	 * from RST to AHCI.
 	 */
-	if (pci_get_vendor(dev) == 0x8086) {
+	if (pci_get_vendor(dev) == PCI_VENDOR_INTEL_CORPORATION) {
 		uint32_t vscap;
 
 		vscap = ATA_INL(ctlr->r_mem, AHCI_VSCAP);

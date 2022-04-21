@@ -50,6 +50,7 @@
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pci_private.h>
 #include <dev/pci/pcib_private.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <dev/vmd/vmd.h>
 
@@ -104,14 +105,14 @@ SYSCTL_INT(_hw_vmd, OID_AUTO, max_msix, CTLFLAG_RWTUN, &vmd_max_msix, 0,
     "Maximum number of MSI-X vectors per device");
 
 static struct vmd_type vmd_devs[] = {
-        { 0x8086, 0x201d, "Intel Volume Management Device", 0 },
-        { 0x8086, 0x28c0, "Intel Volume Management Device", BUS_RESTRICT | CAN_BYPASS_MSI },
-        { 0x8086, 0x467f, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
-        { 0x8086, 0x4c3d, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
-        { 0x8086, 0x7d0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
-        { 0x8086, 0x9a0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
-        { 0x8086, 0xa77f, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
-        { 0x8086, 0xad0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x201d, "Intel Volume Management Device", 0 },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x28c0, "Intel Volume Management Device", BUS_RESTRICT | CAN_BYPASS_MSI },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x467f, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x4c3d, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x7d0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0x9a0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0xa77f, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
+        { PCI_VENDOR_INTEL_CORPORATION, 0xad0b, "Intel Volume Management Device", BUS_RESTRICT | VECTOR_OFFSET },
         { 0, 0, NULL, 0 }
 };
 

@@ -32,6 +32,8 @@
 
 ******************************************************************************/
 
+#include <dev/pci/pci_vendors.h>
+
 #include "ixgbe_api.h"
 #include "ixgbe_common.h"
 
@@ -141,7 +143,7 @@ s32 ixgbe_set_mac_type(struct ixgbe_hw *hw)
 
 	DEBUGFUNC("ixgbe_set_mac_type\n");
 
-	if (hw->vendor_id != IXGBE_INTEL_VENDOR_ID) {
+	if (hw->vendor_id != PCI_VENDOR_INTEL_CORPORATION) {
 		ERROR_REPORT2(IXGBE_ERROR_UNSUPPORTED,
 			     "Unsupported vendor id: %x", hw->vendor_id);
 		return IXGBE_ERR_DEVICE_NOT_SUPPORTED;

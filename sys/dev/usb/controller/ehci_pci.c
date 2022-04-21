@@ -64,6 +64,8 @@
 #include <sys/malloc.h>
 #include <sys/priv.h>
 
+#include <dev/pci/pci_vendors.h>
+
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 
@@ -85,7 +87,6 @@
 #define	PCI_EHCI_VENDORID_ATI		0x1002
 #define	PCI_EHCI_VENDORID_CMDTECH	0x1095
 #define	PCI_EHCI_VENDORID_HYGON		0x1d94
-#define	PCI_EHCI_VENDORID_INTEL		0x8086
 #define	PCI_EHCI_VENDORID_NEC		0x1033
 #define	PCI_EHCI_VENDORID_OPTI		0x1045
 #define	PCI_EHCI_VENDORID_PHILIPS	0x1131
@@ -391,7 +392,7 @@ ehci_pci_attach(device_t self)
 	case PCI_EHCI_VENDORID_HYGON:
 		sprintf(sc->sc_vendor, "Hygon");
 		break;
-	case PCI_EHCI_VENDORID_INTEL:
+	case PCI_VENDOR_INTEL_CORPORATION:
 		sprintf(sc->sc_vendor, "Intel");
 		break;
 	case PCI_EHCI_VENDORID_NEC:

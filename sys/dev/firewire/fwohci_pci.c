@@ -52,6 +52,7 @@
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <dev/firewire/firewire.h>
 #include <dev/firewire/firewirereg.h>
@@ -177,7 +178,7 @@ fwohci_pci_probe(device_t dev)
 		device_set_desc(dev, "Lucent FW322/323");
 		return BUS_PROBE_DEFAULT;
 	}
-	if (id == (FW_VENDORID_INTEL | FW_DEVICE_82372FB)) {
+	if (id == (PCI_VENDOR_INTEL_CORPORATION | FW_DEVICE_82372FB)) {
 		device_set_desc(dev, "Intel 82372FB");
 		return BUS_PROBE_DEFAULT;
 	}

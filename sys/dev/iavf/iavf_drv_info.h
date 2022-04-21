@@ -29,6 +29,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <dev/pci/pci_vendors.h>
+
 /**
  * @file iavf_drv_info.h
  * @brief device IDs and driver version
@@ -66,12 +68,13 @@ const char iavf_driver_version[] = "3.0.26-k";
  * to most-generic entry; e.g. PVIDV_OEM()s for a device ID must come before
  * the PVIDV() for it.
  */
+
 static const pci_vendor_info_t iavf_vendor_info_array[] = {
-	PVIDV(IAVF_INTEL_VENDOR_ID, IAVF_DEV_ID_VF,
+	PVIDV(PCI_VENDOR_INTEL_CORPORATION, IAVF_DEV_ID_VF,
 	    "Intel(R) Ethernet Virtual Function 700 Series"),
-	PVIDV(IAVF_INTEL_VENDOR_ID, IAVF_DEV_ID_X722_VF,
+	PVIDV(PCI_VENDOR_INTEL_CORPORATION, IAVF_DEV_ID_X722_VF,
 	    "Intel(R) Ethernet Virtual Function 700 Series (X722)"),
-	PVIDV(IAVF_INTEL_VENDOR_ID, IAVF_DEV_ID_ADAPTIVE_VF,
+	PVIDV(PCI_VENDOR_INTEL_CORPORATION, IAVF_DEV_ID_ADAPTIVE_VF,
 	    "Intel(R) Ethernet Adaptive Virtual Function"),
 	PVID_END
 };

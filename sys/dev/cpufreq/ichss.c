@@ -37,6 +37,7 @@
 #include <sys/systm.h>
 
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 #include <machine/bus.h>
 #include <machine/resource.h>
 #include <sys/rman.h>
@@ -62,7 +63,6 @@ struct ichss_softc {
 };
 
 /* Supported PCI IDs. */
-#define PCI_VENDOR_INTEL	0x8086
 #define PCI_DEV_82801BA		0x244c /* ICH2M */
 #define PCI_DEV_82801CA		0x248c /* ICH3M */
 #define PCI_DEV_82801DB		0x24cc /* ICH4M */
@@ -158,7 +158,7 @@ ichss_identify(driver_t *driver, device_t parent)
 	 */
 	ich_device = pci_find_bsf(0, 0x1f, 0);
 	if (ich_device == NULL ||
-	    pci_get_vendor(ich_device) != PCI_VENDOR_INTEL ||
+	    pci_get_vendor(ich_device) != PCI_VENDOR_INTEL_CORPORATION ||
 	    (pci_get_device(ich_device) != PCI_DEV_82801BA &&
 	    pci_get_device(ich_device) != PCI_DEV_82801CA &&
 	    pci_get_device(ich_device) != PCI_DEV_82801DB))
@@ -174,7 +174,7 @@ ichss_identify(driver_t *driver, device_t parent)
 
 		hostb = pci_find_bsf(0, 0, 0);
 		if (hostb != NULL &&
-		    pci_get_vendor(hostb) == PCI_VENDOR_INTEL &&
+		    pci_get_vendor(hostb) == PCI_VENDOR_INTEL_CORPORATION &&
 		    pci_get_device(hostb) == PCI_DEV_82815_MC &&
 		    pci_get_revid(hostb) < 5)
 			return;

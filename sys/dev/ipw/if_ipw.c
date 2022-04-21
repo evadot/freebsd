@@ -57,6 +57,7 @@
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -101,7 +102,7 @@ struct ipw_ident {
 };
 
 static const struct ipw_ident ipw_ident_table[] = {
-	{ 0x8086, 0x1043, "Intel(R) PRO/Wireless 2100 MiniPCI" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x1043, "Intel(R) PRO/Wireless 2100 MiniPCI" },
 
 	{ 0, 0, NULL }
 };

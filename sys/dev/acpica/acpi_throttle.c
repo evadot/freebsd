@@ -41,6 +41,7 @@
 
 #include <dev/acpica/acpivar.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include "cpufreq_if.h"
 
@@ -80,7 +81,6 @@ struct acpi_throttle_softc {
 #define CPU_P_CNT_THT_EN	(1<<4)
 #define CPU_QUIRK_NO_THROTTLE	(1<<1)	/* Throttling is not usable. */
 
-#define PCI_VENDOR_INTEL	0x8086
 #define PCI_DEVICE_82371AB_3	0x7113	/* PIIX4 chipset for quirks. */
 #define PCI_REVISION_A_STEP	0
 #define PCI_REVISION_B_STEP	1
@@ -318,7 +318,7 @@ acpi_throttle_quirks(struct acpi_throttle_softc *sc)
 	device_t acpi_dev;
 
 	/* Look for various quirks of the PIIX4 part. */
-	acpi_dev = pci_find_device(PCI_VENDOR_INTEL, PCI_DEVICE_82371AB_3);
+	acpi_dev = pci_find_device(PCI_VENDOR_INTEL_CORPORATION, PCI_DEVICE_82371AB_3);
 	if (acpi_dev) {
 		switch (pci_get_revid(acpi_dev)) {
 		/*

@@ -81,6 +81,7 @@
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -115,13 +116,13 @@ struct wpi_ident {
 
 static const struct wpi_ident wpi_ident_table[] = {
 	/* The below entries support ABG regardless of the subid */
-	{ 0x8086, 0x4222,    0x0, "Intel(R) PRO/Wireless 3945ABG" },
-	{ 0x8086, 0x4227,    0x0, "Intel(R) PRO/Wireless 3945ABG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4222,    0x0, "Intel(R) PRO/Wireless 3945ABG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4227,    0x0, "Intel(R) PRO/Wireless 3945ABG" },
 	/* The below entries only support BG */
-	{ 0x8086, 0x4222, 0x1005, "Intel(R) PRO/Wireless 3945BG"  },
-	{ 0x8086, 0x4222, 0x1034, "Intel(R) PRO/Wireless 3945BG"  },
-	{ 0x8086, 0x4227, 0x1014, "Intel(R) PRO/Wireless 3945BG"  },
-	{ 0x8086, 0x4222, 0x1044, "Intel(R) PRO/Wireless 3945BG"  },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4222, 0x1005, "Intel(R) PRO/Wireless 3945BG"  },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4222, 0x1034, "Intel(R) PRO/Wireless 3945BG"  },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4227, 0x1014, "Intel(R) PRO/Wireless 3945BG"  },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4222, 0x1044, "Intel(R) PRO/Wireless 3945BG"  },
 	{ 0, 0, 0, NULL }
 };
 

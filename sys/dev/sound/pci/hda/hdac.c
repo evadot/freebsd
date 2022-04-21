@@ -39,6 +39,7 @@
 #include <dev/sound/pcm/sound.h>
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <sys/ctype.h>
 #include <sys/endian.h>
@@ -219,7 +220,7 @@ static const struct {
 	uint8_t mask;
 	uint8_t enable;
 } hdac_pcie_snoop[] = {
-	{  INTEL_VENDORID, 0x00, 0x00, 0x00 },
+	{  PCI_VENDOR_INTEL_CORPORATION, 0x00, 0x00, 0x00 },
 	{    ATI_VENDORID, 0x42, 0xf8, 0x02 },
 	{    AMD_VENDORID, 0x42, 0xf8, 0x02 },
 	{ NVIDIA_VENDORID, 0x4e, 0xf0, 0x0f },
@@ -1203,7 +1204,7 @@ hdac_attach(device_t dev)
 	pci_enable_busmaster(dev);
 
 	vendor = pci_get_vendor(dev);
-	if (vendor == INTEL_VENDORID) {
+	if (vendor == PCI_VENDOR_INTEL_CORPORATION) {
 		/* TCSEL -> TC0 */
 		v = pci_read_config(dev, 0x44, 1);
 		pci_write_config(dev, 0x44, v & 0xf8, 1);

@@ -31,11 +31,12 @@
 
 ******************************************************************************/
 
+#include <dev/pci/pci_vendors.h>
+
 #include "i40e_type.h"
 #include "i40e_adminq.h"
 #include "i40e_prototype.h"
 #include "virtchnl.h"
-
 
 /**
  * i40e_set_mac_type - Sets MAC type
@@ -50,7 +51,7 @@ enum i40e_status_code i40e_set_mac_type(struct i40e_hw *hw)
 
 	DEBUGFUNC("i40e_set_mac_type\n");
 
-	if (hw->vendor_id == I40E_INTEL_VENDOR_ID) {
+	if (hw->vendor_id == PCI_VENDOR_INTEL_CORPORATION) {
 		switch (hw->device_id) {
 		case I40E_DEV_ID_SFP_XL710:
 		case I40E_DEV_ID_QEMU:

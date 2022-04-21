@@ -117,9 +117,6 @@ enum {
 #define CMD_MEM_WRT_INVALIDATE          0x0010  /* BIT_4 */
 #define PCI_COMMAND_REGISTER            PCIR_COMMAND
 
-/* Shared code dropped this define.. */
-#define IXGBE_INTEL_VENDOR_ID		0x8086
-
 /* Bunch of defines for shared code bogosity */
 #define UNREFERENCED_PARAMETER(_p)
 #define UNREFERENCED_1PARAMETER(_p)

@@ -74,6 +74,9 @@
 
 #include <dev/hyperv/include/hyperv.h>
 #include <dev/hyperv/include/vmbus.h>
+
+#include <dev/pci/pci_vendors.h>
+
 #include "hv_vstorage.h"
 #include "vmbus_if.h"
 
@@ -2486,7 +2489,6 @@ storvsc_get_storage_type(device_t dev)
 	return DRIVER_UNKNOWN;
 }
 
-#define	PCI_VENDOR_INTEL	0x8086
 #define	PCI_PRODUCT_PIIX4	0x7111
 
 static void
@@ -2505,7 +2507,7 @@ storvsc_ada_probe_veto(void *arg __unused, struct cam_path *path,
 
 		xpt_path_inq(&cpi, path);
 		if (cpi.ccb_h.status == CAM_REQ_CMP &&
-		    cpi.hba_vendor == PCI_VENDOR_INTEL &&
+		    cpi.hba_vendor == PCI_VENDOR_INTEL_CORPORATION &&
 		    cpi.hba_device == PCI_PRODUCT_PIIX4) {
 			(*veto)++;
 			if (bootverbose) {

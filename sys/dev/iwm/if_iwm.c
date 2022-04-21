@@ -129,6 +129,7 @@
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <net/bpf.h>
 
@@ -5768,7 +5769,6 @@ iwm_intr(void *arg)
 /*
  * Autoconf glue-sniffing
  */
-#define	PCI_VENDOR_INTEL		0x8086
 #define	PCI_PRODUCT_INTEL_WL_3160_1	0x08b3
 #define	PCI_PRODUCT_INTEL_WL_3160_2	0x08b4
 #define	PCI_PRODUCT_INTEL_WL_3165_1	0x3165
@@ -5814,7 +5814,7 @@ iwm_probe(device_t dev)
 	int i;
 
 	for (i = 0; i < nitems(iwm_devices); i++) {
-		if (pci_get_vendor(dev) == PCI_VENDOR_INTEL &&
+		if (pci_get_vendor(dev) == PCI_VENDOR_INTEL_CORPORATION &&
 		    pci_get_device(dev) == iwm_devices[i].device) {
 			device_set_desc(dev, iwm_devices[i].cfg->name);
 			return (BUS_PROBE_DEFAULT);

@@ -45,6 +45,8 @@
 #include <sys/malloc.h>
 #include <sys/priv.h>
 
+#include <dev/pci/pci_vendors.h>
+
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 
@@ -397,7 +399,7 @@ xhci_pci_attach(device_t self)
 	case PCI_XHCI_VENDORID_AMD:
 		strlcpy(sc->sc_vendor, "AMD", sizeof(sc->sc_vendor));
 		break;
-	case PCI_XHCI_VENDORID_INTEL:
+	case PCI_VENDOR_INTEL_CORPORATION:
 		strlcpy(sc->sc_vendor, "Intel", sizeof(sc->sc_vendor));
 		break;
 	case PCI_XHCI_VENDORID_VMWARE:

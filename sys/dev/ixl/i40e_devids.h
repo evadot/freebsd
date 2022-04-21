@@ -34,9 +34,6 @@
 #ifndef _I40E_DEVIDS_H_
 #define _I40E_DEVIDS_H_
 
-/* Vendor ID */
-#define I40E_INTEL_VENDOR_ID		0x8086
-
 /* Device IDs */
 #define I40E_DEV_ID_X710_N3000		0x0CF8
 #define I40E_DEV_ID_XXV710_N3000	0x0D58

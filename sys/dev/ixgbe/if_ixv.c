@@ -39,6 +39,8 @@
 #include "ixgbe.h"
 #include "ifdi_if.h"
 
+#include <dev/pci/pci_vendors.h>
+
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 
@@ -58,11 +60,11 @@ static const char ixv_driver_version[] = "2.0.1-k";
  ************************************************************************/
 static const pci_vendor_info_t ixv_vendor_info_array[] =
 {
-	PVID(IXGBE_INTEL_VENDOR_ID, IXGBE_DEV_ID_82599_VF, "Intel(R) X520 82599 Virtual Function"),
-	PVID(IXGBE_INTEL_VENDOR_ID, IXGBE_DEV_ID_X540_VF, "Intel(R) X540 Virtual Function"),
-	PVID(IXGBE_INTEL_VENDOR_ID, IXGBE_DEV_ID_X550_VF, "Intel(R) X550 Virtual Function"),
-	PVID(IXGBE_INTEL_VENDOR_ID, IXGBE_DEV_ID_X550EM_X_VF, "Intel(R) X552 Virtual Function"),
-	PVID(IXGBE_INTEL_VENDOR_ID, IXGBE_DEV_ID_X550EM_A_VF, "Intel(R) X553 Virtual Function"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IXGBE_DEV_ID_82599_VF, "Intel(R) X520 82599 Virtual Function"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IXGBE_DEV_ID_X540_VF, "Intel(R) X540 Virtual Function"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IXGBE_DEV_ID_X550_VF, "Intel(R) X550 Virtual Function"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IXGBE_DEV_ID_X550EM_X_VF, "Intel(R) X552 Virtual Function"),
+	PVID(PCI_VENDOR_INTEL_CORPORATION, IXGBE_DEV_ID_X550EM_A_VF, "Intel(R) X553 Virtual Function"),
 	/* required last entry */
 PVID_END
 };

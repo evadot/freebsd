@@ -61,6 +61,7 @@
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pci_vendors.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -122,10 +123,10 @@ struct iwi_ident {
 };
 
 static const struct iwi_ident iwi_ident_table[] = {
-	{ 0x8086, 0x4220, "Intel(R) PRO/Wireless 2200BG" },
-	{ 0x8086, 0x4221, "Intel(R) PRO/Wireless 2225BG" },
-	{ 0x8086, 0x4223, "Intel(R) PRO/Wireless 2915ABG" },
-	{ 0x8086, 0x4224, "Intel(R) PRO/Wireless 2915ABG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4220, "Intel(R) PRO/Wireless 2200BG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4221, "Intel(R) PRO/Wireless 2225BG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4223, "Intel(R) PRO/Wireless 2915ABG" },
+	{ PCI_VENDOR_INTEL_CORPORATION, 0x4224, "Intel(R) PRO/Wireless 2915ABG" },
 
 	{ 0, 0, NULL }
 };

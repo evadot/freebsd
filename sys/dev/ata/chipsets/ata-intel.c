@@ -45,6 +45,7 @@
 #include <sys/rman.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
+#include <dev/pci/pci_vendors.h>
 #include <dev/ata/ata-all.h>
 #include <dev/ata/ata-pci.h>
 #include <ata_if.h>
@@ -192,7 +193,7 @@ ata_intel_probe(device_t dev)
      { ATA_IBT_S2,       0,          0, 0, ATA_SA300, "BayTrail" },
      { 0, 0, 0, 0, 0, 0}};
 
-    if (pci_get_vendor(dev) != ATA_INTEL_ID)
+    if (pci_get_vendor(dev) != PCI_VENDOR_INTEL_CORPORATION)
 	return ENXIO;
 
     if (!(ctlr->chip = ata_match_chip(dev, ids)))

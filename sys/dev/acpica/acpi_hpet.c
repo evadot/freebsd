@@ -54,6 +54,8 @@
 #include <dev/acpica/acpivar.h>
 #include <dev/acpica/acpi_hpet.h>
 
+#include <dev/pci/pci_vendors.h>
+
 #ifdef DEV_APIC
 #include "pcib_if.h"
 #endif
@@ -61,7 +63,6 @@
 #define HPET_VENDID_AMD		0x4353
 #define HPET_VENDID_AMD2	0x1022
 #define HPET_VENDID_HYGON	0x1d94
-#define HPET_VENDID_INTEL	0x8086
 #define HPET_VENDID_NVIDIA	0x10de
 #define HPET_VENDID_SW		0x1166
 

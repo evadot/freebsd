@@ -145,7 +145,6 @@ struct ata_pci_controller {
 #define ATA_HPT371              0x00071103
 #define ATA_HPT374              0x00081103
 
-#define ATA_INTEL_ID            0x8086
 #define ATA_I960RM              0x09628086
 #define ATA_I82371FB            0x12308086
 #define ATA_I82371SB            0x70108086
