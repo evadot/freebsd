@@ -270,7 +270,7 @@ struct xvnode {
 #define	VV_COPYONWRITE	0x0040	/* vnode is doing copy-on-write */
 #define	VV_SYSTEM	0x0080	/* vnode being used by kernel */
 #define	VV_PROCDEP	0x0100	/* vnode is process dependent */
-/* UNUSED		0x0200	*/
+#define	VV_UNLINKED	0x0200	/* unlinked but stil open directory */
 #define	VV_DELETED	0x0400	/* should be removed */
 #define	VV_MD		0x0800	/* vnode backs the md device */
 #define	VV_FORCEINSMQ	0x1000	/* force the insmntque to succeed */
@@ -616,6 +616,7 @@ typedef void vop_getpages_iodone_t(void *, vm_page_t *, int, int);
 #define	VN_OPEN_NOCAPCHECK	0x00000002
 #define	VN_OPEN_NAMECACHE	0x00000004
 #define	VN_OPEN_INVFS		0x00000008
+#define	VN_OPEN_WANTIOCTLCAPS	0x00000010
 
 /* copy_file_range kernel flags */
 #define	COPY_FILE_RANGE_KFLAGS		0xff000000

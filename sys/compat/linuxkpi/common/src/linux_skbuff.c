@@ -80,7 +80,7 @@ linuxkpi_alloc_skb(size_t size, gfp_t gfp)
 	skb = malloc(len, M_LKPISKB, linux_check_m_flags(gfp) | M_ZERO);
 	if (skb == NULL)
 		return (skb);
-	skb->_alloc_len = size;
+	skb->_alloc_len = len;
 	skb->truesize = size;
 
 	skb->head = skb->data = skb->tail = (uint8_t *)(skb+1);
@@ -90,8 +90,63 @@ linuxkpi_alloc_skb(size_t size, gfp_t gfp)
 
 	skb->shinfo = (struct skb_shared_info *)(skb->end);
 
-	SKB_TRACE_FMT(skb, "data %p size %zu", skb->data, size);
+	SKB_TRACE_FMT(skb, "data %p size %zu", (skb) ? skb->data : NULL, size);
 	return (skb);
+}
+
+struct sk_buff *
+linuxkpi_dev_alloc_skb(size_t size, gfp_t gfp)
+{
+	struct sk_buff *skb;
+	size_t len;
+
+	len = size + NET_SKB_PAD;
+	skb = linuxkpi_alloc_skb(len, gfp);
+
+	if (skb != NULL)
+		skb_reserve(skb, NET_SKB_PAD);
+
+	SKB_TRACE_FMT(skb, "data %p size %zu len %zu",
+	    (skb) ? skb->data : NULL, size, len);
+	return (skb);
+}
+
+struct sk_buff *
+linuxkpi_skb_copy(struct sk_buff *skb, gfp_t gfp)
+{
+	struct sk_buff *new;
+	struct skb_shared_info *shinfo;
+	size_t len;
+	unsigned int headroom;
+
+	/* Full buffer size + any fragments. */
+	len = skb->end - skb->head + skb->data_len;
+
+	new = linuxkpi_alloc_skb(len, gfp);
+	if (new == NULL)
+		return (NULL);
+
+	headroom = skb_headroom(skb);
+	/* Fixup head and end. */
+	skb_reserve(new, headroom);	/* data and tail move headroom forward. */
+	skb_put(new, skb->len);		/* tail and len get adjusted */
+
+	/* Copy data. */
+	memcpy(new->head, skb->data - headroom, headroom + skb->len);
+
+	/* Deal with fragments. */
+	shinfo = skb->shinfo;
+	if (shinfo->nr_frags > 0) {
+		printf("%s:%d: NOT YET SUPPORTED; missing %d frags\n",
+		    __func__, __LINE__, shinfo->nr_frags);
+		SKB_TODO();
+	}
+
+	/* Deal with header fields. */
+	memcpy(new->cb, skb->cb, sizeof(skb->cb));
+	SKB_IMPROVE("more header fields to copy?");
+
+	return (new);
 }
 
 void

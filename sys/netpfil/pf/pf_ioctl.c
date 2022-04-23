@@ -344,6 +344,8 @@ pfattach_vnet(void)
 	V_pf_default_rule.states_tot = counter_u64_alloc(M_WAITOK);
 	V_pf_default_rule.src_nodes = counter_u64_alloc(M_WAITOK);
 
+	V_pf_default_rule.timestamp = uma_zalloc_pcpu(pcpu_zone_4, M_WAITOK | M_ZERO);
+
 #ifdef PF_WANT_32_TO_64_COUNTER
 	V_pf_kifmarker = malloc(sizeof(*V_pf_kifmarker), PFI_MTYPE, M_WAITOK | M_ZERO);
 	V_pf_rulemarker = malloc(sizeof(*V_pf_rulemarker), M_PFRULE, M_WAITOK | M_ZERO);
@@ -520,11 +522,17 @@ pf_free_eth_rule(struct pf_keth_rule *rule)
 	if (rule->kif)
 		pfi_kkif_unref(rule->kif);
 
+	if (rule->ipsrc.addr.type == PF_ADDR_TABLE)
+		pfr_detach_table(rule->ipsrc.addr.p.tbl);
+	if (rule->ipdst.addr.type == PF_ADDR_TABLE)
+		pfr_detach_table(rule->ipdst.addr.p.tbl);
+
 	counter_u64_free(rule->evaluations);
 	for (int i = 0; i < 2; i++) {
 		counter_u64_free(rule->packets[i]);
 		counter_u64_free(rule->bytes[i]);
 	}
+	uma_zfree_pcpu(pcpu_zone_4, rule->timestamp);
 	pf_keth_anchor_remove(rule);
 
 	free(rule, M_PFRULE);
@@ -1364,7 +1372,7 @@ pf_commit_rules(u_int32_t ticket, int rs_num, char *anchor)
 
 	rs->rules[rs_num].inactive.ptr = old_rules;
 	rs->rules[rs_num].inactive.ptr_array = old_array;
-	rs->rules[rs_num].inactive.tree = NULL;
+	rs->rules[rs_num].inactive.tree = NULL; /* important for pf_ioctl_addrule */
 	rs->rules[rs_num].inactive.rcount = old_rcount;
 
 	rs->rules[rs_num].active.ticket =
@@ -1425,6 +1433,24 @@ pf_setup_pfsync_matching(struct pf_kruleset *rs)
 	MD5Final(digest, &ctx);
 	memcpy(V_pf_status.pf_chksum, digest, sizeof(V_pf_status.pf_chksum));
 	return (0);
+}
+
+static int
+pf_eth_addr_setup(struct pf_keth_ruleset *ruleset, struct pf_addr_wrap *addr)
+{
+	int error = 0;
+
+	switch (addr->type) {
+	case PF_ADDR_TABLE:
+		addr->p.tbl = pfr_eth_attach_table(ruleset, addr->v.tblname);
+		if (addr->p.tbl == NULL)
+			error = ENOMEM;
+		break;
+	default:
+		error = EINVAL;
+	}
+
+	return (error);
 }
 
 static int
@@ -1778,6 +1804,7 @@ pf_krule_free(struct pf_krule *rule)
 	counter_u64_free(rule->states_cur);
 	counter_u64_free(rule->states_tot);
 	counter_u64_free(rule->src_nodes);
+	uma_zfree_pcpu(pcpu_zone_4, rule->timestamp);
 
 	mtx_destroy(&rule->rpool.mtx);
 	free(rule, M_PFRULE);
@@ -2107,6 +2134,7 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	rule->states_cur = counter_u64_alloc(M_WAITOK);
 	rule->states_tot = counter_u64_alloc(M_WAITOK);
 	rule->src_nodes = counter_u64_alloc(M_WAITOK);
+	rule->timestamp = uma_zalloc_pcpu(pcpu_zone_4, M_WAITOK | M_ZERO);
 	rule->cuid = td->td_ucred->cr_ruid;
 	rule->cpid = td->td_proc ? td->td_proc->p_pid : 0;
 	TAILQ_INIT(&rule->rpool.list);
@@ -2136,6 +2164,16 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 		    ("pool_ticket: %d != %d\n", pool_ticket,
 		    V_ticket_pabuf));
 		ERROUT(EBUSY);
+	}
+	/*
+	 * XXXMJG hack: there is no mechanism to ensure they started the
+	 * transaction. Ticket checked above may happen to match by accident,
+	 * even if nobody called DIOCXBEGIN, let alone this process.
+	 * Partially work around it by checking if the RB tree got allocated,
+	 * see pf_begin_rules.
+	 */
+	if (ruleset->rules[rs_num].inactive.tree == NULL) {
+		ERROUT(EINVAL);
 	}
 
 	tail = TAILQ_LAST(ruleset->rules[rs_num].inactive.ptr,
@@ -2230,10 +2268,11 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	pf_hash_rule(rule);
 	if (RB_INSERT(pf_krule_global, ruleset->rules[rs_num].inactive.tree, rule) != NULL) {
 		PF_RULES_WLOCK();
+		TAILQ_REMOVE(ruleset->rules[rs_num].inactive.ptr, rule, entries);
+		ruleset->rules[rs_num].inactive.rcount--;
 		pf_free_rule(rule);
 		rule = NULL;
-		error = EINVAL;
-		ERROUT(error);
+		ERROUT(EEXIST);
 	}
 	PF_CONFIG_UNLOCK();
 
@@ -2453,6 +2492,8 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 		case DIOCCLRIFFLAG:
 		case DIOCGETETHRULES:
 		case DIOCGETETHRULE:
+		case DIOCGETETHRULESETS:
+		case DIOCGETETHRULESET:
 			break;
 		case DIOCRCLRTABLES:
 		case DIOCRADDTABLES:
@@ -2502,6 +2543,8 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 		case DIOCGETRULENV:
 		case DIOCGETETHRULES:
 		case DIOCGETETHRULE:
+		case DIOCGETETHRULESETS:
+		case DIOCGETETHRULESET:
 			break;
 		case DIOCRCLRTABLES:
 		case DIOCRADDTABLES:
@@ -2575,7 +2618,7 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 		nvl = NULL;
 		packed = NULL;
 
-#define	ERROUT(x)	do { error = (x); goto DIOCGETETHRULES_error; } while (0)
+#define	ERROUT(x)	ERROUT_IOCTL(DIOCGETETHRULES_error, x)
 
 		if (nv->len > pf_ioctl_maxcount)
 			ERROUT(ENOMEM);
@@ -2656,7 +2699,10 @@ DIOCGETETHRULES_error:
 		bool			 clear = false;
 		const char		*anchor;
 
-#define ERROUT(x)	do { error = (x); goto DIOCGETETHRULE_error; } while (0)
+#define ERROUT(x)	ERROUT_IOCTL(DIOCGETETHRULE_error, x)
+
+		if (nv->len > pf_ioctl_maxcount)
+			ERROUT(ENOMEM);
 
 		nvlpacked = malloc(nv->len, M_TEMP, M_WAITOK);
 		if (nvlpacked == NULL)
@@ -2667,6 +2713,8 @@ DIOCGETETHRULES_error:
 			ERROUT(error);
 
 		nvl = nvlist_unpack(nvlpacked, nv->len, 0);
+		if (nvl == NULL)
+			ERROUT(EBADMSG);
 		if (! nvlist_exists_number(nvl, "ticket"))
 			ERROUT(EBADMSG);
 		ticket = nvlist_get_number(nvl, "ticket");
@@ -2699,8 +2747,6 @@ DIOCGETETHRULES_error:
 		nvl = NULL;
 		free(nvlpacked, M_TEMP);
 		nvlpacked = NULL;
-
-		nvl = nvlist_create(0);
 
 		rule = TAILQ_FIRST(rs->active.rules);
 		while ((rule != NULL) && (rule->nr != nr))
@@ -2753,7 +2799,7 @@ DIOCGETETHRULE_error:
 		struct pfi_kkif		*kif = NULL;
 		const char		*anchor = "", *anchor_call = "";
 
-#define ERROUT(x)	do { error = (x); goto DIOCADDETHRULE_error; } while (0)
+#define ERROUT(x)	ERROUT_IOCTL(DIOCADDETHRULE_error, x)
 
 		nvlpacked = malloc(nv->len, M_TEMP, M_WAITOK);
 		if (nvlpacked == NULL)
@@ -2791,6 +2837,7 @@ DIOCGETETHRULE_error:
 		rule = malloc(sizeof(*rule), M_PFRULE, M_WAITOK);
 		if (rule == NULL)
 			ERROUT(ENOMEM);
+		rule->timestamp = NULL;
 
 		error = pf_nveth_rule_to_keth_rule(nvl, rule);
 		if (error != 0)
@@ -2803,6 +2850,8 @@ DIOCGETETHRULE_error:
 			rule->packets[i] = counter_u64_alloc(M_WAITOK);
 			rule->bytes[i] = counter_u64_alloc(M_WAITOK);
 		}
+		rule->timestamp = uma_zalloc_pcpu(pcpu_zone_4,
+		    M_WAITOK | M_ZERO);
 
 		PF_RULES_WLOCK();
 
@@ -2824,6 +2873,11 @@ DIOCGETETHRULE_error:
 		if (rule->tagname[0])
 			if ((rule->tag = pf_tagname2tag(rule->tagname)) == 0)
 				error = EBUSY;
+
+		if (error == 0 && rule->ipdst.addr.type == PF_ADDR_TABLE)
+			error = pf_eth_addr_setup(ruleset, &rule->ipdst.addr);
+		if (error == 0 && rule->ipsrc.addr.type == PF_ADDR_TABLE)
+			error = pf_eth_addr_setup(ruleset, &rule->ipsrc.addr);
 
 		if (error) {
 			pf_free_eth_rule(rule);
@@ -2851,6 +2905,184 @@ DIOCGETETHRULE_error:
 DIOCADDETHRULE_error:
 		nvlist_destroy(nvl);
 		free(nvlpacked, M_TEMP);
+		break;
+	}
+
+	case DIOCGETETHRULESETS: {
+		struct epoch_tracker	 et;
+		struct pfioc_nv		*nv = (struct pfioc_nv *)addr;
+		nvlist_t		*nvl = NULL;
+		void			*nvlpacked = NULL;
+		struct pf_keth_ruleset	*ruleset;
+		struct pf_keth_anchor	*anchor;
+		int			 nr = 0;
+
+#define ERROUT(x)	ERROUT_IOCTL(DIOCGETETHRULESETS_error, x)
+
+		if (nv->len > pf_ioctl_maxcount)
+			ERROUT(ENOMEM);
+
+		nvlpacked = malloc(nv->len, M_NVLIST, M_WAITOK);
+		if (nvlpacked == NULL)
+			ERROUT(ENOMEM);
+
+		error = copyin(nv->data, nvlpacked, nv->len);
+		if (error)
+			ERROUT(error);
+
+		nvl = nvlist_unpack(nvlpacked, nv->len, 0);
+		if (nvl == NULL)
+			ERROUT(EBADMSG);
+		if (! nvlist_exists_string(nvl, "path"))
+			ERROUT(EBADMSG);
+
+		NET_EPOCH_ENTER(et);
+
+		if ((ruleset = pf_find_keth_ruleset(
+		    nvlist_get_string(nvl, "path"))) == NULL) {
+			NET_EPOCH_EXIT(et);
+			ERROUT(ENOENT);
+		}
+
+		if (ruleset->anchor == NULL) {
+			RB_FOREACH(anchor, pf_keth_anchor_global, &V_pf_keth_anchors)
+				if (anchor->parent == NULL)
+					nr++;
+		} else {
+			RB_FOREACH(anchor, pf_keth_anchor_node,
+			    &ruleset->anchor->children)
+				nr++;
+		}
+
+		NET_EPOCH_EXIT(et);
+
+		nvlist_destroy(nvl);
+		nvl = NULL;
+		free(nvlpacked, M_NVLIST);
+		nvlpacked = NULL;
+
+		nvl = nvlist_create(0);
+		if (nvl == NULL)
+			ERROUT(ENOMEM);
+
+		nvlist_add_number(nvl, "nr", nr);
+
+		nvlpacked = nvlist_pack(nvl, &nv->len);
+		if (nvlpacked == NULL)
+			ERROUT(ENOMEM);
+
+		if (nv->size == 0)
+			ERROUT(0);
+		else if (nv->size < nv->len)
+			ERROUT(ENOSPC);
+
+		error = copyout(nvlpacked, nv->data, nv->len);
+
+#undef ERROUT
+DIOCGETETHRULESETS_error:
+		free(nvlpacked, M_NVLIST);
+		nvlist_destroy(nvl);
+		break;
+	}
+
+	case DIOCGETETHRULESET: {
+		struct epoch_tracker	 et;
+		struct pfioc_nv		*nv = (struct pfioc_nv *)addr;
+		nvlist_t		*nvl = NULL;
+		void			*nvlpacked = NULL;
+		struct pf_keth_ruleset	*ruleset;
+		struct pf_keth_anchor	*anchor;
+		int			 nr = 0, req_nr = 0;
+		bool			 found = false;
+
+#define ERROUT(x)	ERROUT_IOCTL(DIOCGETETHRULESET_error, x)
+
+		if (nv->len > pf_ioctl_maxcount)
+			ERROUT(ENOMEM);
+
+		nvlpacked = malloc(nv->len, M_NVLIST, M_WAITOK);
+		if (nvlpacked == NULL)
+			ERROUT(ENOMEM);
+
+		error = copyin(nv->data, nvlpacked, nv->len);
+		if (error)
+			ERROUT(error);
+
+		nvl = nvlist_unpack(nvlpacked, nv->len, 0);
+		if (nvl == NULL)
+			ERROUT(EBADMSG);
+		if (! nvlist_exists_string(nvl, "path"))
+			ERROUT(EBADMSG);
+		if (! nvlist_exists_number(nvl, "nr"))
+			ERROUT(EBADMSG);
+
+		req_nr = nvlist_get_number(nvl, "nr");
+
+		NET_EPOCH_ENTER(et);
+
+		if ((ruleset = pf_find_keth_ruleset(
+		    nvlist_get_string(nvl, "path"))) == NULL) {
+			NET_EPOCH_EXIT(et);
+			ERROUT(ENOENT);
+		}
+
+		nvlist_destroy(nvl);
+		nvl = NULL;
+		free(nvlpacked, M_NVLIST);
+		nvlpacked = NULL;
+
+		nvl = nvlist_create(0);
+		if (nvl == NULL) {
+			NET_EPOCH_EXIT(et);
+			ERROUT(ENOMEM);
+		}
+
+		if (ruleset->anchor == NULL) {
+			RB_FOREACH(anchor, pf_keth_anchor_global,
+			    &V_pf_keth_anchors) {
+				if (anchor->parent == NULL && nr++ == req_nr) {
+					found = true;
+					break;
+				}
+			}
+		} else {
+			RB_FOREACH(anchor, pf_keth_anchor_node,
+			     &ruleset->anchor->children) {
+				if (nr++ == req_nr) {
+					found = true;
+					break;
+				}
+			}
+		}
+
+		NET_EPOCH_EXIT(et);
+		if (found) {
+			nvlist_add_number(nvl, "nr", nr);
+			nvlist_add_string(nvl, "name", anchor->name);
+			if (ruleset->anchor)
+				nvlist_add_string(nvl, "path",
+				    ruleset->anchor->path);
+			else
+				nvlist_add_string(nvl, "path", "");
+		} else {
+			ERROUT(EBUSY);
+		}
+
+		nvlpacked = nvlist_pack(nvl, &nv->len);
+		if (nvlpacked == NULL)
+			ERROUT(ENOMEM);
+
+		if (nv->size == 0)
+			ERROUT(0);
+		else if (nv->size < nv->len)
+			ERROUT(ENOSPC);
+
+		error = copyout(nvlpacked, nv->data, nv->len);
+
+#undef ERROUT
+DIOCGETETHRULESET_error:
+		free(nvlpacked, M_NVLIST);
+		nvlist_destroy(nvl);
 		break;
 	}
 
@@ -3198,7 +3430,7 @@ DIOCGETRULENV_error:
 			newrule->cpid = td->td_proc ? td->td_proc->p_pid : 0;
 			TAILQ_INIT(&newrule->rpool.list);
 		}
-#define	ERROUT(x)	{ error = (x); goto DIOCCHANGERULE_error; }
+#define	ERROUT(x)	ERROUT_IOCTL(DIOCCHANGERULE_error, x)
 
 		PF_RULES_WLOCK();
 #ifdef PF_WANT_32_TO_64_COUNTER
@@ -4893,6 +5125,8 @@ DIOCCHANGEADDR_error:
 			free(ioes, M_TEMP);
 			break;
 		}
+		/* Ensure there's no more ethernet rules to clean up. */
+		epoch_drain_callbacks(net_epoch_preempt);
 		PF_RULES_WLOCK();
 		for (i = 0, ioe = ioes; i < io->size; i++, ioe++) {
 			ioe->anchor[sizeof(ioe->anchor) - 1] = '\0';
@@ -6266,7 +6500,7 @@ hook_pf(void)
 {
 	struct pfil_hook_args pha;
 	struct pfil_link_args pla;
-	int ret;
+	int ret __diagused;
 
 	if (V_pf_pfil_hooked)
 		return;
@@ -6402,7 +6636,7 @@ pf_load(void)
 static void
 pf_unload_vnet(void)
 {
-	int ret;
+	int ret __diagused;
 
 	V_pf_vnet_active = 0;
 	V_pf_status.running = 0;
@@ -6471,6 +6705,7 @@ pf_unload_vnet(void)
 	counter_u64_free(V_pf_default_rule.states_cur);
 	counter_u64_free(V_pf_default_rule.states_tot);
 	counter_u64_free(V_pf_default_rule.src_nodes);
+	uma_zfree_pcpu(pcpu_zone_4, V_pf_default_rule.timestamp);
 
 	for (int i = 0; i < PFRES_MAX; i++)
 		counter_u64_free(V_pf_status.counters[i]);

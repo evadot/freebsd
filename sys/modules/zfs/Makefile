@@ -29,7 +29,7 @@ CFLAGS+= -I${.CURDIR}
 
 CFLAGS+= -D__KERNEL__ -DFREEBSD_NAMECACHE -DBUILDING_ZFS \
 	-DHAVE_UIO_ZEROCOPY -DWITHOUT_NETDUMP -D__KERNEL -D_SYS_CONDVAR_H_ \
-	-D_SYS_VMEM_H_ -DIN_FREEBSD_BASE -DHAVE_KSID
+	-D_SYS_VMEM_H_ -DIN_FREEBSD_BASE
 
 .if ${MACHINE_ARCH} == "amd64"
 CFLAGS+= -DHAVE_AVX2 -DHAVE_AVX -D__x86_64 -DHAVE_SSE2 -DHAVE_AVX512F -DHAVE_AVX512BW -DHAVE_SSSE3
@@ -339,6 +339,7 @@ CFLAGS.zprop_common.c= -Wno-cast-qual
 CFLAGS.ddt.c= -Wno-cast-qual
 CFLAGS.dmu.c= -Wno-cast-qual
 CFLAGS.dmu_traverse.c= -Wno-cast-qual
+CFLAGS.dnode.c+= ${NO_WUNUSED_BUT_SET_VARIABLE}
 CFLAGS.dsl_dir.c= -Wno-cast-qual
 CFLAGS.dsl_deadlist.c= -Wno-cast-qual
 CFLAGS.dsl_prop.c= -Wno-cast-qual
@@ -421,6 +422,7 @@ CFLAGS.zstd.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.entropy_common.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.error_private.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.fse_compress.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
+CFLAGS.fse_compress.c+= ${NO_WUNUSED_BUT_SET_VARIABLE}
 CFLAGS.fse_decompress.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.hist.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.huf_compress.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
@@ -433,6 +435,7 @@ CFLAGS.zstd_compress.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.zstd_compress_literals.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.zstd_compress_sequences.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.zstd_compress_superblock.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
+CFLAGS.zstd_compress_superblock.c+= ${NO_WUNUSED_BUT_SET_VARIABLE}
 CFLAGS.zstd_ddict.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.zstd_decompress.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}
 CFLAGS.zstd_decompress_block.c+= ${NO_WBITWISE_INSTEAD_OF_LOGICAL}

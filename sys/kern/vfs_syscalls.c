@@ -907,7 +907,7 @@ sys_fchdir(struct thread *td, struct fchdir_args *uap)
 	if (error != 0)
 		return (error);
 	vp = fp->f_vnode;
-	vref(vp);
+	vrefact(vp);
 	fdrop(fp, td);
 	vn_lock(vp, LK_SHARED | LK_RETRY);
 	AUDIT_ARG_VNODE1(vp);
@@ -1164,10 +1164,11 @@ kern_openat(struct thread *td, int fd, const char *path, enum uio_seg pathseg,
 	/* Set the flags early so the finit in devfs can pick them up. */
 	fp->f_flag = flags & FMASK;
 	cmode = ((mode & ~pdp->pd_cmask) & ALLPERMS) & ~S_ISTXT;
-	NDINIT_ATRIGHTS(&nd, LOOKUP, FOLLOW | AUDITVNODE1, pathseg, path, fd,
-	    &rights);
+	NDINIT_ATRIGHTS(&nd, LOOKUP, FOLLOW | AUDITVNODE1 | WANTIOCTLCAPS,
+	    pathseg, path, fd, &rights);
 	td->td_dupfd = -1;		/* XXX check for fdopen */
-	error = vn_open(&nd, &flags, cmode, fp);
+	error = vn_open_cred(&nd, &flags, cmode, VN_OPEN_WANTIOCTLCAPS,
+	    td->td_ucred, fp);
 	if (error != 0) {
 		/*
 		 * If the vn_open replaced the method vector, something
@@ -1218,8 +1219,6 @@ kern_openat(struct thread *td, int fd, const char *path, enum uio_seg pathseg,
 		if ((flags & O_PATH) != 0) {
 			finit(fp, (flags & FMASK) | (fp->f_flag & FKQALLOWED),
 			    DTYPE_VNODE, NULL, &path_fileops);
-			vhold(vp);
-			vunref(vp);
 		} else {
 			finit_vnode(fp, flags, NULL, &vnops);
 		}
@@ -1247,11 +1246,10 @@ success:
 		error = finstall_refed(td, fp, &indx, flags, fcaps);
 		/* On success finstall_refed() consumes fcaps. */
 		if (error != 0) {
-			filecaps_free(&nd.ni_filecaps);
 			goto bad;
 		}
 	} else {
-		filecaps_free(&nd.ni_filecaps);
+		NDFREE_IOCTLCAPS(&nd);
 		falloc_abort(td, fp);
 	}
 
@@ -1259,6 +1257,7 @@ success:
 	return (0);
 bad:
 	KASSERT(indx == -1, ("indx=%d, should be -1", indx));
+	NDFREE_IOCTLCAPS(&nd);
 	falloc_abort(td, fp);
 	return (error);
 }
@@ -4192,6 +4191,10 @@ kern_getdirentries(struct thread *td, int fd, char *buf, size_t count,
 unionread:
 	if (vp->v_type != VDIR) {
 		error = EINVAL;
+		goto fail;
+	}
+	if (__predict_false((vp->v_vflag & VV_UNLINKED) != 0)) {
+		error = ENOENT;
 		goto fail;
 	}
 	aiov.iov_base = buf;

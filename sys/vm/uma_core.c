@@ -4263,7 +4263,7 @@ zone_alloc_bucket(uma_zone_t zone, void *udata, int domain, int flags)
 	else
 		maxbucket = zone->uz_bucket_size;
 	if (maxbucket == 0)
-		return (false);
+		return (NULL);
 
 	/* Don't wait for buckets, preserve caller's NOVM setting. */
 	bucket = bucket_alloc(zone, udata, M_NOWAIT | (flags & M_NOVM));
@@ -4394,7 +4394,10 @@ uma_zfree_smr(uma_zone_t zone, void *item)
 {
 	uma_cache_t cache;
 	uma_cache_bucket_t bucket;
-	int itemdomain, uz_flags;
+	int itemdomain;
+#ifdef NUMA
+	int uz_flags;
+#endif
 
 	CTR3(KTR_UMA, "uma_zfree_smr zone %s(%p) item %p",
 	    zone->uz_name, zone, item);
@@ -4408,9 +4411,9 @@ uma_zfree_smr(uma_zone_t zone, void *item)
 		return;
 #endif
 	cache = &zone->uz_cpu[curcpu];
-	uz_flags = cache_uz_flags(cache);
 	itemdomain = 0;
 #ifdef NUMA
+	uz_flags = cache_uz_flags(cache);
 	if ((uz_flags & UMA_ZONE_FIRSTTOUCH) != 0)
 		itemdomain = item_domain(item);
 #endif
@@ -4880,6 +4883,8 @@ uma_zone_set_max(uma_zone_t zone, int nitems)
 	 * way to clear a limit.
 	 */
 	ZONE_LOCK(zone);
+	if (zone->uz_max_items == 0)
+		ZONE_ASSERT_COLD(zone);
 	zone->uz_max_items = nitems;
 	zone->uz_flags |= UMA_ZFLAG_LIMIT;
 	zone_update_caches(zone);

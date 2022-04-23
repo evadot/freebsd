@@ -111,6 +111,7 @@ int	 pfctl_show_limits(int, int);
 void	 pfctl_debug(int, u_int32_t, int);
 int	 pfctl_test_altqsupport(int, int);
 int	 pfctl_show_anchors(int, int, char *);
+int	 pfctl_show_eth_anchors(int, int, char *);
 int	 pfctl_ruleset_trans(struct pfctl *, char *, struct pfctl_anchor *, bool);
 int	 pfctl_eth_ruleset_trans(struct pfctl *, char *,
 	    struct pfctl_eth_anchor *);
@@ -1015,6 +1016,18 @@ pfctl_print_eth_rule_counters(struct pfctl_eth_rule *rule, int opts)
 			    (unsigned long long)(rule->bytes[0] +
 			    rule->bytes[1]));
 	}
+	if (opts & PF_OPT_VERBOSE2) {
+		char timestr[30];
+
+		if (rule->last_active_timestamp != 0) {
+			time_t last_active = rule->last_active_timestamp;
+			bcopy(ctime(&last_active), timestr, sizeof(timestr));
+			*strchr(timestr, '\n') = '\0';
+		} else {
+			snprintf(timestr, sizeof(timestr), "N/A");
+		}
+		printf("  [ Last Active Time: %s ]\n", timestr);
+	}
 }
 
 void
@@ -1053,6 +1066,17 @@ pfctl_print_rule_counters(struct pfctl_rule *rule, int opts)
 			    "State Creations: %-6ju]\n",
 			    (unsigned)rule->cuid, (unsigned)rule->cpid,
 			    (uintmax_t)rule->states_tot);
+	}
+	if (opts & PF_OPT_VERBOSE2) {
+		char timestr[30];
+		if (rule->last_active_timestamp != 0) {
+			time_t last_active = rule->last_active_timestamp;
+			bcopy(ctime(&last_active), timestr, sizeof(timestr));
+			*strchr(timestr, '\n') = '\0';
+		} else {
+			snprintf(timestr, sizeof(timestr), "N/A");
+		}
+		printf("  [ Last Active Time: %s ]\n", timestr);
 	}
 }
 
@@ -1247,13 +1271,11 @@ pfctl_show_rules(int dev, char *path, int opts, enum pfctl_show format,
 			   ((void *)p == (void *)anchor_call ||
 			   *(--p) == '/')) || (opts & PF_OPT_RECURSE))) {
 				brace++;
-				if ((p = strrchr(anchor_call, '/')) !=
-				    NULL)
-					p++;
-				else
-					p = &anchor_call[0];
-			} else
-				p = &anchor_call[0];
+				int aclen = strlen(anchor_call);
+				if (anchor_call[aclen - 1] == '*')
+					anchor_call[aclen - 2] = '\0';
+			}
+			p = &anchor_call[0];
 		
 			print_rule(&rule, p, rule_numbers, numeric);
 			if (brace)
@@ -1845,6 +1867,8 @@ pfctl_load_rule(struct pfctl *pf, char *path, struct pfctl_rule *r, int depth)
 	u_int32_t		ticket;
 	char			anchor[PF_ANCHOR_NAME_SIZE];
 	int			len = strlen(path);
+	int			error;
+	bool			was_present;
 
 	/* set up anchor before adding to path for anchor_call */
 	if ((pf->opts & PF_OPT_NOACTION) == 0)
@@ -1866,12 +1890,23 @@ pfctl_load_rule(struct pfctl *pf, char *path, struct pfctl_rule *r, int depth)
 	} else
 		name = "";
 
+	was_present = false;
 	if ((pf->opts & PF_OPT_NOACTION) == 0) {
 		if (pfctl_add_pool(pf, &r->rpool, r->af))
 			return (1);
-		if (pfctl_add_rule(pf->dev, r, anchor, name, ticket,
-		    pf->paddr.ticket))
+		error = pfctl_add_rule(pf->dev, r, anchor, name, ticket,
+		    pf->paddr.ticket);
+		switch (error) {
+		case 0:
+			/* things worked, do nothing */
+			break;
+		case EEXIST:
+			/* an identical rule is already present */
+			was_present = true;
+			break;
+		default:
 			err(1, "DIOCADDRULENV");
+		}
 	}
 
 	if (pf->opts & PF_OPT_VERBOSE) {
@@ -1879,6 +1914,8 @@ pfctl_load_rule(struct pfctl *pf, char *path, struct pfctl_rule *r, int depth)
 		print_rule(r, r->anchor ? r->anchor->name : "",
 		    pf->opts & PF_OPT_VERBOSE2,
 		    pf->opts & PF_OPT_NUMERIC);
+		if (was_present)
+			printf(" -- rule was already present");
 	}
 	path[len] = '\0';
 	pfctl_clear_pool(&r->rpool);
@@ -2604,6 +2641,44 @@ pfctl_show_anchors(int dev, int opts, char *anchorname)
 	return (0);
 }
 
+int
+pfctl_show_eth_anchors(int dev, int opts, char *anchorname)
+{
+	struct pfctl_eth_rulesets_info ri;
+	struct pfctl_eth_ruleset_info rs;
+	int ret;
+
+	if ((ret = pfctl_get_eth_rulesets_info(dev, &ri, anchorname)) != 0) {
+		if (ret == ENOENT)
+			fprintf(stderr, "Anchor '%s' not found.\n",
+			    anchorname);
+		else
+			err(1, "DIOCGETETHRULESETS");
+		return (-1);
+	}
+
+	for (int nr = 0; nr < ri.nr; nr++) {
+		char sub[MAXPATHLEN];
+
+		if (pfctl_get_eth_ruleset(dev, anchorname, nr, &rs) != 0)
+			err(1, "DIOCGETETHRULESET");
+
+		if (!strcmp(rs.name, PF_RESERVED_ANCHOR))
+			continue;
+		sub[0] = 0;
+		if (rs.path[0]) {
+			strlcat(sub, rs.path, sizeof(sub));
+			strlcat(sub, "/", sizeof(sub));
+		}
+		strlcat(sub, rs.name, sizeof(sub));
+		if (sub[0] != '_' || (opts & PF_OPT_VERBOSE))
+			printf("  %s\n", sub);
+		if ((opts & PF_OPT_VERBOSE) && pfctl_show_eth_anchors(dev, opts, sub))
+			return (-1);
+	}
+	return (0);
+}
+
 const char *
 pfctl_lookup_option(char *cmd, const char * const *list)
 {
@@ -2830,6 +2905,7 @@ main(int argc, char *argv[])
 		switch (*showopt) {
 		case 'A':
 			pfctl_show_anchors(dev, opts, anchorname);
+			pfctl_show_eth_anchors(dev, opts, anchorname);
 			break;
 		case 'r':
 			pfctl_load_fingerprints(dev, opts);

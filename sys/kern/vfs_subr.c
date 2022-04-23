@@ -1565,7 +1565,7 @@ vnlru_proc(void)
 		if (usevnodes <= 0)
 			usevnodes = 1;
 		/*
-		 * The trigger value is is chosen to give a conservatively
+		 * The trigger value is chosen to give a conservatively
 		 * large value to ensure that it alone doesn't prevent
 		 * making progress.  The value can easily be so large that
 		 * it is effectively infinite in some congested and
@@ -5980,6 +5980,7 @@ vop_rmdir_post(void *ap, int rc)
 	vn_seqc_write_end(dvp);
 	vn_seqc_write_end(vp);
 	if (!rc) {
+		vp->v_vflag |= VV_UNLINKED;
 		VFS_KNOTE_LOCKED(dvp, NOTE_WRITE | NOTE_LINK);
 		VFS_KNOTE_LOCKED(vp, NOTE_DELETE);
 	}
