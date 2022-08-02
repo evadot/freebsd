@@ -419,6 +419,9 @@ dummynet_body()
 	pft_set_rules alcatraz \
 		"ether pass in dnpipe 1"
 
+	# Ensure things don't break if non-IP(v4/v6) traffic hits dummynet
+	arp -d 192.0.2.2
+
 	# single ping succeeds just fine
 	atf_check -s exit:0 -o ignore ping -c 1 192.0.2.2
 
@@ -665,13 +668,10 @@ short_pkt_body()
 	# Try sending ever shorter ping requests
 	# BPF won't let us send anything shorter than an Ethernet header, but
 	# that's good enough for this test
-	for i in `seq 46 14`
-	do
-		$(atf_get_srcdir)/pft_ether.py \
-		    --sendif ${epair}a \
-		    --to 192.0.2.2 \
-		    --len ${i}
-	done
+	$(atf_get_srcdir)/pft_ether.py \
+	    --sendif ${epair}a \
+	    --to 192.0.2.2 \
+	    --len 14-64
 }
 
 short_pkt_cleanup()

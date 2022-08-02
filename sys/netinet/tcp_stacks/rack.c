@@ -11855,10 +11855,9 @@ rack_do_fin_wait_1(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	 * If new data are received on a connection after the user processes
 	 * are gone, then RST the other end.
 	 */
-	if ((so->so_state & SS_NOFDREF) && tlen) {
-		if (rack_check_data_after_close(m, tp, &tlen, th, so))
-			return (1);
-	}
+	if ((tp->t_flags & TF_CLOSED) && tlen &&
+	    rack_check_data_after_close(m, tp, &tlen, th, so))
+		return (1);
 	/*
 	 * If last ACK falls within this segment's sequence numbers, record
 	 * its timestamp. NOTE: 1) That the test incorporates suggestions
@@ -11983,10 +11982,9 @@ rack_do_closing(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	 * If new data are received on a connection after the user processes
 	 * are gone, then RST the other end.
 	 */
-	if ((so->so_state & SS_NOFDREF) && tlen) {
-		if (rack_check_data_after_close(m, tp, &tlen, th, so))
-			return (1);
-	}
+	if ((tp->t_flags & TF_CLOSED) && tlen &&
+	    rack_check_data_after_close(m, tp, &tlen, th, so))
+		return (1);
 	/*
 	 * If last ACK falls within this segment's sequence numbers, record
 	 * its timestamp. NOTE: 1) That the test incorporates suggestions
@@ -12097,10 +12095,9 @@ rack_do_lastack(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	 * If new data are received on a connection after the user processes
 	 * are gone, then RST the other end.
 	 */
-	if ((so->so_state & SS_NOFDREF) && tlen) {
-		if (rack_check_data_after_close(m, tp, &tlen, th, so))
-			return (1);
-	}
+	if ((tp->t_flags & TF_CLOSED) && tlen &&
+	    rack_check_data_after_close(m, tp, &tlen, th, so))
+		return (1);
 	/*
 	 * If last ACK falls within this segment's sequence numbers, record
 	 * its timestamp. NOTE: 1) That the test incorporates suggestions
@@ -12212,11 +12209,9 @@ rack_do_fin_wait_2(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	 * If new data are received on a connection after the user processes
 	 * are gone, then RST the other end.
 	 */
-	if ((so->so_state & SS_NOFDREF) &&
-	    tlen) {
-		if (rack_check_data_after_close(m, tp, &tlen, th, so))
-			return (1);
-	}
+	if ((tp->t_flags & TF_CLOSED) && tlen &&
+	    rack_check_data_after_close(m, tp, &tlen, th, so))
+		return (1);
 	/*
 	 * If last ACK falls within this segment's sequence numbers, record
 	 * its timestamp. NOTE: 1) That the test incorporates suggestions
@@ -12613,12 +12608,9 @@ rack_init(struct tcpcb *tp)
 		rsm->r_tim_lastsent[0] = rack_to_usec_ts(&rack->r_ctl.act_rcv_time);
 		rsm->r_rtr_cnt = 1;
 		rsm->r_rtr_bytes = 0;
-		if (tp->t_flags & TF_SENTFIN) {
-			rsm->r_end = tp->snd_max - 1;
+		if (tp->t_flags & TF_SENTFIN)
 			rsm->r_flags |= RACK_HAS_FIN;
-		} else {
-			rsm->r_end = tp->snd_max;
-		}
+		rsm->r_end = tp->snd_max;
 		if (tp->snd_una == tp->iss) {
 			/* The data space is one beyond snd_una */
 			rsm->r_flags |= RACK_HAS_SYN;
