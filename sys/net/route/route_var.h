@@ -212,23 +212,28 @@ void tmproutes_destroy(struct rib_head *rh);
 
 /* route_ctl.c */
 struct route_nhop_data;
-int change_route_nhop(struct rib_head *rnh, struct rtentry *rt,
+int change_route(struct rib_head *rnh, struct rtentry *rt,
     struct route_nhop_data *rnd, struct rib_cmd_info *rc);
 int change_route_conditional(struct rib_head *rnh, struct rtentry *rt,
-    struct rt_addrinfo *info, struct route_nhop_data *nhd_orig,
-    struct route_nhop_data *nhd_new, struct rib_cmd_info *rc);
+    struct route_nhop_data *nhd_orig, struct route_nhop_data *nhd_new,
+    struct rib_cmd_info *rc);
 struct rtentry *lookup_prefix(struct rib_head *rnh,
     const struct rt_addrinfo *info, struct route_nhop_data *rnd);
+struct rtentry *lookup_prefix_rt(struct rib_head *rnh, const struct rtentry *rt,
+    struct route_nhop_data *rnd);
 
 bool nhop_can_multipath(const struct nhop_object *nh);
 bool match_nhop_gw(const struct nhop_object *nh, const struct sockaddr *gw);
 int check_info_match_nhop(const struct rt_addrinfo *info,
     const struct rtentry *rt, const struct nhop_object *nh);
-int can_override_nhop(const struct rt_addrinfo *info,
-    const struct nhop_object *nh);
 
+/* route_rtentry.c */
 void vnet_rtzone_init(void);
 void vnet_rtzone_destroy(void);
+void rt_free(struct rtentry *rt);
+void rt_free_immediate(struct rtentry *rt);
+struct rtentry *rt_alloc(struct rib_head *rnh, const struct sockaddr *dst,
+    struct sockaddr *netmask);
 
 /* subscriptions */
 void rib_init_subscriptions(struct rib_head *rnh);
@@ -282,8 +287,6 @@ struct weightened_nhop;
 int add_route_mpath(struct rib_head *rnh, struct rt_addrinfo *info,
     struct rtentry *rt, struct route_nhop_data *rnd_add,
     struct route_nhop_data *rnd_orig, struct rib_cmd_info *rc);
-int del_route_mpath(struct rib_head *rh, struct rt_addrinfo *info,
-    struct rtentry *rt, struct nhgrp_object *nhg, struct rib_cmd_info *rc);
 
 /* nhgrp.c */
 int nhgrp_ctl_init(struct nh_control *ctl);
@@ -296,9 +299,9 @@ int nhgrp_dump_sysctl(struct rib_head *rh, struct sysctl_req *w);
 
 int nhgrp_get_group(struct rib_head *rh, struct weightened_nhop *wn,
     int num_nhops, struct nhgrp_object **pnhg);
-typedef bool nhgrp_filter_cb_t(const struct nhop_object *nh, void *data);
-int nhgrp_get_filtered_group(struct rib_head *rh, const struct nhgrp_object *src,
-    nhgrp_filter_cb_t flt_func, void *flt_data, struct route_nhop_data *rnd);
+int nhgrp_get_filtered_group(struct rib_head *rh, const struct rtentry *rt,
+    const struct nhgrp_object *src, rib_filter_f_t flt_func, void *flt_data,
+    struct route_nhop_data *rnd);
 int nhgrp_get_addition_group(struct rib_head *rnh,
     struct route_nhop_data *rnd_orig, struct route_nhop_data *rnd_add,
     struct route_nhop_data *rnd_new);
