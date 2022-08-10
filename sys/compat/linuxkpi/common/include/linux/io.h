@@ -38,7 +38,9 @@
 
 #include <linux/compiler.h>
 #include <linux/types.h>
+#if !defined(__arm__)
 #include <asm/set_memory.h>
+#endif
 
 /*
  * XXX This is all x86 specific.  It should be bus space access.
