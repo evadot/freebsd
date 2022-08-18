@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <linux/list.h>
 #include <linux/pci.h>
 
+#include "iicbus_if.h"
 #include "iicbb_if.h"
 #include "lkpi_iic_if.h"
 
@@ -54,6 +55,27 @@ struct lkpi_iicbb_softc {
 	device_t		iicbb;
 	struct i2c_adapter	*adapter;
 };
+
+static struct sx lkpi_sx_i2cbb;
+
+static void
+lkpi_sysinit_i2cbb(void *arg __unused)
+{
+
+	sx_init(&lkpi_sx_i2cbb, "lkpi-i2cbb");
+}
+
+static void
+lkpi_sysuninit_i2cbb(void *arg __unused)
+{
+
+	sx_destroy(&lkpi_sx_i2cbb);
+}
+
+SYSINIT(lkpi_i2cbb, SI_SUB_DRIVERS, SI_ORDER_ANY,
+    lkpi_sysinit_i2cbb, NULL);
+SYSUNINIT(lkpi_i2cbb, SI_SUB_DRIVERS, SI_ORDER_ANY,
+    lkpi_sysuninit_i2cbb, NULL);
 
 static int
 lkpi_iicbb_probe(device_t dev)
@@ -137,9 +159,10 @@ driver_t lkpi_iicbb_driver = {
 	sizeof(struct lkpi_iicbb_softc),
 };
 
-DRIVER_MODULE(lkpi_iicbb, lkpi_iic, lkpi_iicbb_driver, 0, 0);
+DRIVER_MODULE(lkpi_iicbb, drmn, lkpi_iicbb_driver, 0, 0);
+DRIVER_MODULE(lkpi_iicbb, drm, lkpi_iicbb_driver, 0, 0);
 DRIVER_MODULE(iicbb, lkpi_iicbb, iicbb_driver, 0, 0);
-MODULE_DEPEND(lkpi_iicbb, iicbb, IICBB_MINVER, IICBB_PREFVER, IICBB_MAXVER);
+MODULE_DEPEND(linuxkpi, iicbb, IICBUS_MINVER, IICBUS_PREFVER, IICBUS_MAXVER);
 
 static void
 lkpi_iicbb_setsda(device_t dev, int val)
@@ -219,14 +242,52 @@ static int
 lkpi_iicbb_reset(device_t dev, u_char speed, u_char addr, u_char *oldaddr)
 {
 
+	/* That doesn't seems to be supported in linux */
 	return (0);
 }
 
 int
 lkpi_i2cbb_transfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, int nmsgs)
 {
+	device_t child;
+	struct iic_msg *bsd_msgs;
+	struct i2c_algo_bit_data *algo_data;
+	int i, unit, ret = 0;
 
-	/* TODO: convert from i2c_msg to iic_msg and call IICBUS_TRANFER */
+	linux_set_current(curthread);
+
+	bsd_msgs = malloc(sizeof(struct i2c_msg) * nmsgs,
+	    M_DEVBUF, M_WAITOK | M_ZERO);
+
+	for (i = 0; i < nmsgs; i++) {
+		bsd_msgs[i].slave = msgs[i].addr;
+		bsd_msgs[i].len = msgs[i].len;
+		bsd_msgs[i].buf = msgs[i].buf;
+		if (msgs[i].flags & I2C_M_RD) {
+			bsd_msgs[i].flags |= IIC_M_RD;
+			for (int j = 0; j < msgs[i].len; j++)
+				bsd_msgs[i].buf[j] = 0;
+		}
+		if (msgs[i].flags & I2C_M_NOSTART)
+			bsd_msgs[i].flags |= IIC_M_NOSTART;
+	}
+	algo_data = (struct i2c_algo_bit_data *)adapter->algo_data;
+
+	unit = 0;
+	while ((child = device_find_child(adapter->dev.parent->bsddev, "lkpi_iicbb", unit++)) != NULL) {
+		if (adapter == LKPI_IIC_GET_ADAPTER(child)) {
+			if (algo_data->pre_xfer != NULL)
+				algo_data->pre_xfer(adapter);
+			ret = IICBUS_TRANSFER(child, bsd_msgs, nmsgs);
+			if (algo_data->post_xfer != NULL)
+				algo_data->post_xfer(adapter);
+		}
+	}
+
+	free(bsd_msgs, M_DEVBUF);
+
+	if (ret < 0)
+		return (-ret);
 	return (0);
 }
 
@@ -239,19 +300,24 @@ lkpi_i2c_bit_add_bus(struct i2c_adapter *adapter)
 	if (bootverbose)
 		device_printf(adapter->dev.parent->bsddev,
 		    "Adding i2c adapter %s\n", adapter->name);
+	sx_xlock(&lkpi_sx_i2cbb);
 	lkpi_iicbb = device_add_child(adapter->dev.parent->bsddev, "lkpi_iicbb", -1);
 	if (lkpi_iicbb == NULL) {
 		device_printf(adapter->dev.parent->bsddev, "Couldn't add lkpi_iicbb\n");
+		sx_xunlock(&lkpi_sx_i2cbb);
 		return (ENXIO);
 	}
 
+	bus_topo_lock();
 	error = bus_generic_attach(adapter->dev.parent->bsddev);
+	bus_topo_unlock();
 	if (error) {
 		device_printf(adapter->dev.parent->bsddev,
 		  "failed to attach child: error %d\n", error);
+		sx_xunlock(&lkpi_sx_i2cbb);
 		return (ENXIO);
 	}
 	LKPI_IIC_ADD_ADAPTER(lkpi_iicbb, adapter);
+	sx_xunlock(&lkpi_sx_i2cbb);
 	return (0);
 }
-
