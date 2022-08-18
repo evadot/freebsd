@@ -364,32 +364,62 @@ rip6_ctlinput(int cmd, struct sockaddr *sa, void *d)
  * Generate IPv6 header and pass packet to ip6_output.  Tack on options user
  * may have setup with control call.
  */
-int
-rip6_output(struct mbuf *m, struct socket *so, ...)
+static int
+rip6_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
+    struct mbuf *control, struct thread *td)
 {
 	struct epoch_tracker et;
-	struct mbuf *control;
-	struct m_tag *mtag;
-	struct sockaddr_in6 *dstsock;
-	struct ip6_hdr *ip6;
 	struct inpcb *inp;
+	struct sockaddr_in6 tmp, *dstsock;
+	struct m_tag *mtag;
+	struct ip6_hdr *ip6;
 	u_int	plen = m->m_pkthdr.len;
-	int error = 0;
 	struct ip6_pktopts opt, *optp;
 	struct ifnet *oifp = NULL;
+	int error;
 	int type = 0, code = 0;		/* for ICMPv6 output statistics only */
 	int scope_ambiguous = 0;
 	int use_defzone = 0;
 	int hlim = 0;
 	struct in6_addr in6a;
-	va_list ap;
-
-	va_start(ap, so);
-	dstsock = va_arg(ap, struct sockaddr_in6 *);
-	control = va_arg(ap, struct mbuf *);
-	va_end(ap);
 
 	inp = sotoinpcb(so);
+	KASSERT(inp != NULL, ("rip6_send: inp == NULL"));
+
+	/* Always copy sockaddr to avoid overwrites. */
+	/* Unlocked read. */
+	if (so->so_state & SS_ISCONNECTED) {
+		if (nam) {
+			error = EISCONN;
+			goto release;
+		}
+		tmp = (struct sockaddr_in6 ){
+			.sin6_family = AF_INET6,
+			.sin6_len = sizeof(struct sockaddr_in6),
+		};
+		INP_RLOCK(inp);
+		bcopy(&inp->in6p_faddr, &tmp.sin6_addr,
+		    sizeof(struct in6_addr));
+		INP_RUNLOCK(inp);
+		dstsock = &tmp;
+	} else {
+		if (nam == NULL)
+			error = ENOTCONN;
+		else if (nam->sa_family != AF_INET6)
+			error = EAFNOSUPPORT;
+		else if (nam->sa_len != sizeof(struct sockaddr_in6))
+			error = EINVAL;
+		else
+			error = 0;
+		if (error != 0)
+			goto release;
+		dstsock = (struct sockaddr_in6 *)nam;
+		if (dstsock->sin6_family != AF_INET6) {
+			error = EAFNOSUPPORT;
+			goto release;
+		}
+	}
+
 	INP_WLOCK(inp);
 
 	if (control != NULL) {
@@ -555,6 +585,12 @@ rip6_output(struct mbuf *m, struct socket *so, ...)
 	}
 	INP_WUNLOCK(inp);
 	return (error);
+
+release:
+	if (control != NULL)
+		m_freem(control);
+	m_freem(m);
+	return (error);
 }
 
 /*
@@ -658,9 +694,7 @@ rip6_attach(struct socket *so, int proto, struct thread *td)
 		return (error);
 	}
 	inp = (struct inpcb *)so->so_pcb;
-	inp->inp_vflag |= INP_IPV6;
 	inp->inp_ip_p = (long)proto;
-	inp->in6p_hops = -1;	/* use kernel default */
 	inp->in6p_cksum = -1;
 	inp->in6p_icmp6filt = filter;
 	ICMP6_FILTER_SETPASSALL(inp->in6p_icmp6filt);
@@ -835,81 +869,66 @@ rip6_shutdown(struct socket *so)
 	return (0);
 }
 
-static int
-rip6_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
-    struct mbuf *control, struct thread *td)
-{
-	struct inpcb *inp;
-	struct sockaddr_in6 tmp;
-	struct sockaddr_in6 *dst;
-	int error;
+/*
+ * See comment in in6_proto.c containing "protosw definitions are not needed".
+ */
+#define	RAW6_PROTOSW						\
+	.pr_type =		SOCK_RAW,			\
+	.pr_flags =		PR_ATOMIC|PR_ADDR,		\
+	.pr_ctloutput =		rip6_ctloutput,			\
+	.pr_abort =		rip6_abort,			\
+	.pr_attach =		rip6_attach,			\
+	.pr_bind =		rip6_bind,			\
+	.pr_connect =		rip6_connect,			\
+	.pr_control =		in6_control,			\
+	.pr_detach =		rip6_detach,			\
+	.pr_disconnect =	rip6_disconnect,		\
+	.pr_peeraddr =		in6_getpeeraddr,		\
+	.pr_send =		rip6_send,			\
+	.pr_shutdown =		rip6_shutdown,			\
+	.pr_sockaddr =		in6_getsockaddr,		\
+	.pr_close =		rip6_close
 
-	inp = sotoinpcb(so);
-	KASSERT(inp != NULL, ("rip6_send: inp == NULL"));
-
-	/* Always copy sockaddr to avoid overwrites. */
-	/* Unlocked read. */
-	if (so->so_state & SS_ISCONNECTED) {
-		if (nam) {
-			error = EISCONN;
-			goto release;
-		}
-		/* XXX */
-		bzero(&tmp, sizeof(tmp));
-		tmp.sin6_family = AF_INET6;
-		tmp.sin6_len = sizeof(struct sockaddr_in6);
-		INP_RLOCK(inp);
-		bcopy(&inp->in6p_faddr, &tmp.sin6_addr,
-		    sizeof(struct in6_addr));
-		INP_RUNLOCK(inp);
-		dst = &tmp;
-	} else {
-		error = 0;
-		if (nam == NULL)
-			error = ENOTCONN;
-		else if (nam->sa_family != AF_INET6)
-			error = EAFNOSUPPORT;
-		else if (nam->sa_len != sizeof(struct sockaddr_in6))
-			error = EINVAL;
-		if (error != 0)
-			goto release;
-		tmp = *(struct sockaddr_in6 *)nam;
-		dst = &tmp;
-
-		if (dst->sin6_family == AF_UNSPEC) {
-			/*
-			 * XXX: we allow this case for backward
-			 * compatibility to buggy applications that
-			 * rely on old (and wrong) kernel behavior.
-			 */
-			log(LOG_INFO, "rip6 SEND: address family is "
-			    "unspec. Assume AF_INET6\n");
-			dst->sin6_family = AF_INET6;
-		} else if (dst->sin6_family != AF_INET6) {
-			error = EAFNOSUPPORT;
-			goto release;
-		}
-	}
-	return (rip6_output(m, so, dst, control));
-
-release:
-	if (control != NULL)
-		m_freem(control);
-	m_freem(m);
-	return (error);
-}
-
-struct pr_usrreqs rip6_usrreqs = {
-	.pru_abort =		rip6_abort,
-	.pru_attach =		rip6_attach,
-	.pru_bind =		rip6_bind,
-	.pru_connect =		rip6_connect,
-	.pru_control =		in6_control,
-	.pru_detach =		rip6_detach,
-	.pru_disconnect =	rip6_disconnect,
-	.pru_peeraddr =		in6_getpeeraddr,
-	.pru_send =		rip6_send,
-	.pru_shutdown =		rip6_shutdown,
-	.pru_sockaddr =		in6_getsockaddr,
-	.pru_close =		rip6_close,
+struct protosw rip6_protosw = {
+	.pr_protocol =	IPPROTO_RAW,
+	RAW6_PROTOSW
+};
+struct protosw icmp6_protosw = {
+	.pr_protocol =	IPPROTO_ICMPV6,
+	RAW6_PROTOSW
+};
+struct protosw dstopts6_protosw = {
+	.pr_protocol =	IPPROTO_DSTOPTS,
+	RAW6_PROTOSW
+};
+struct protosw routing6_protosw = {
+	.pr_protocol =	IPPROTO_ROUTING,
+	RAW6_PROTOSW
+};
+struct protosw frag6_protosw = {
+	.pr_protocol =	IPPROTO_FRAGMENT,
+	RAW6_PROTOSW
+};
+struct protosw rawipv4in6_protosw = {
+	.pr_protocol =	IPPROTO_IPV4,
+	RAW6_PROTOSW
+};
+struct protosw rawipv6in6_protosw = {
+	.pr_protocol =	IPPROTO_IPV6,
+	RAW6_PROTOSW
+};
+struct protosw etherip6_protosw = {
+	.pr_protocol =	IPPROTO_ETHERIP,
+	RAW6_PROTOSW
+};
+struct protosw gre6_protosw = {
+	.pr_protocol =	IPPROTO_GRE,
+	RAW6_PROTOSW
+};
+struct protosw pim6_protosw = {
+	.pr_protocol =	IPPROTO_PIM,
+	RAW6_PROTOSW
+};
+struct protosw rip6wild_protosw = {
+	RAW6_PROTOSW
 };

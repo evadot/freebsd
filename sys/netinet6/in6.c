@@ -79,7 +79,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/priv.h>
 #include <sys/proc.h>
-#include <sys/protosw.h>
 #include <sys/time.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
@@ -246,7 +245,7 @@ struct in6_ndifreq32 {
 #endif
 
 int
-in6_control(struct socket *so, u_long cmd, caddr_t data,
+in6_control(struct socket *so, u_long cmd, void *data,
     struct ifnet *ifp, struct thread *td)
 {
 	struct	in6_ifreq *ifr = (struct in6_ifreq *)data;
@@ -733,7 +732,7 @@ in6_joingroup_legacy(struct ifnet *ifp, const struct in6_addr *mcaddr,
 		return (NULL);
 	}
 
-	delay = (delay * PR_FASTHZ) / hz;
+	delay = (delay * MLD_FASTHZ) / hz;
 
 	error = in6_joingroup(ifp, mcaddr, NULL, &imm->i6mm_maddr, delay);
 	if (error) {
