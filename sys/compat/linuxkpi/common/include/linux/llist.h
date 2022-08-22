@@ -17,8 +17,7 @@ struct llist_head {
 #define	LLIST_HEAD_INIT(name)	{ NULL }
 #define	LLIST_HEAD(name)	struct llist_head name = LLIST_HEAD_INIT(name)
 
-#define llist_entry(ptr, type, member) \
-	((ptr) ? container_of(ptr, type, member) : NULL)
+#define llist_entry(ptr, type, member) container_of(ptr, type, member)
 
 static inline struct llist_node *
 llist_del_all(struct llist_head *head)
@@ -87,15 +86,15 @@ llist_empty(struct llist_head *head)
 	    ((n) = (pos)->next, pos);					\
 	    (pos) = (n))
 
-#define llist_for_each_entry_safe(pos, n, node, member) 		\
-	for (pos = llist_entry((node), __typeof(*pos), member); 	\
-	    pos != NULL &&						\
-	    (n = llist_entry(pos->member.next, __typeof(*pos), member), pos); \
+#define llist_for_each_entry_safe(pos, n, node, member)				\
+	for (pos = llist_entry((node), __typeof(*pos), member);			\
+	    ((char *)(pos) + offsetof(typeof(*(pos)), member)) != NULL &&	\
+	    (n = llist_entry(pos->member.next, __typeof(*pos), member), pos);	\
 	    pos = n)
 
-#define llist_for_each_entry(pos, node, member)				\
-	for ((pos) = llist_entry((node), __typeof(*(pos)), member);	\
-	    (pos) != NULL;						\
-	    (pos) = llist_entry((pos)->member.next, __typeof(*(pos)), member))
+#define llist_for_each_entry(pos, node, member)					\
+	for ((pos) = llist_entry((node), __typeof(*(pos)), member);		\
+	     ((char *)(pos) + offsetof(typeof(*(pos)), member)) != NULL;	\
+	     (pos) = llist_entry((pos)->member.next, __typeof(*(pos)), member))
 
 #endif
