@@ -183,6 +183,9 @@ dev/axgbe/xgbe-phy-v1.c				optional axa
 
 dev/cpufreq/cpufreq_dt.c			optional cpufreq fdt
 
+# DRM Bridges
+dev/drm/bridges/dw_hdmi/rk_dw_hdmi.c		optional drm fdt dw_hdmi rk_drm compile-with "${DRMCOMPAT_C}"
+
 # Rockchip DRM driver
 dev/drm/rockchip/rk_drm.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
 dev/drm/rockchip/rk_gem.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
