@@ -311,6 +311,23 @@ MLXFW_C=	${OFED_C_NOIMP} \
 		-I${SRCTOP}/sys/contrib/xz-embedded/linux/lib/xz \
 		${.IMPSRC}
 
+# DRM C flags.
+DRM_INCLUDES+=	-I${S}/dev/drm/core/include
+DRM_INCLUDES+=	-I${S}/dev/drm/core/include/uapi
+DRMCOMPAT_INCLUDES+=	-I${S}/dev/drm/drmcompat/include/
+
+DRM_CFLAGS=	${CFLAGS} ${DRM_INCLUDES}
+DRM_CFLAGS+=	-Wno-cast-qual -Wno-pointer-arith -Wno-missing-prototypes
+DRMCOMPAT_CFLAGS=	${DRM_CFLAGS} ${DRMCOMPAT_INCLUDES}
+DRMCOMPAT_CFLAGS+=	-include ${S}/dev/drm/drmcompat/include/drm/drm_os_freebsd.h
+DRMCOMPAT_CFLAGS+=	'-DKBUILD_MODNAME="DRMv5.10"'
+# Complain about unsigned long long versus uint64_t, remove -Wformat for now
+.if ${MACHINE_CPUARCH} == "aarch64"
+DRM_CFLAGS+=	-Wno-format
+.endif
+DRM_C=		${CC} -c ${DRM_CFLAGS} ${WERROR} ${PROF} ${.IMPSRC}
+DRMCOMPAT_C=	${CC} -c ${DRMCOMPAT_CFLAGS} ${WERROR} ${PROF} ${.IMPSRC}
+
 GEN_CFILES= $S/$M/$M/genassym.c ${MFILES:T:S/.m$/.c/}
 SYSTEM_CFILES= config.c env.c hints.c vnode_if.c
 SYSTEM_DEP= Makefile ${SYSTEM_OBJS}
