@@ -1678,6 +1678,11 @@ dev/drm/drmcompat/drmcompat_work.c		optional drmcompat compile-with "${DRMCOMPAT
 dev/drm/drmcompat/hdmi.c			optional drmcompat compile-with "${DRMCOMPAT_C}"
 dev/drm/drmcompat/drmcompat_sort.c		optional drmcompat compile-with "${DRMCOMPAT_C}"
 
+# DRM bridges
+dev/drm/bridges/dw_hdmi/dw_hdmi.c		optional drm fdt dw_hdmi compile-with "${DRMCOMPAT_C}"
+dev/drm/bridges/dw_hdmi/dw_hdmi_if.m		optional drm fdt dw_hdmi
+dev/drm/bridges/dw_hdmi/dw_hdmi_phy_if.m	optional drm fdt dw_hdmi
+
 dev/drm2/drm_agpsupport.c	optional drm2
 dev/drm2/drm_auth.c		optional drm2
 dev/drm2/drm_bufs.c		optional drm2
