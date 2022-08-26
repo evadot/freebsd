@@ -183,6 +183,13 @@ dev/axgbe/xgbe-phy-v1.c				optional axa
 
 dev/cpufreq/cpufreq_dt.c			optional cpufreq fdt
 
+# Rockchip DRM driver
+dev/drm/rockchip/rk_drm.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/rockchip/rk_gem.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/rockchip/rk_plane.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/rockchip/rk_vop.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/rockchip/rk_vop_if.m			optional drm fdt rk_drm
+
 dev/dwc/if_dwc.c				optional fdt dwc_rk soc_rockchip_rk3328 | fdt dwc_rk soc_rockchip_rk3399 | fdt dwc_socfpga soc_intel_stratix10
 dev/dwc/if_dwc_if.m				optional fdt dwc_rk soc_rockchip_rk3328 | fdt dwc_rk soc_rockchip_rk3399 | fdt dwc_socfpga soc_intel_stratix10
 
