@@ -105,7 +105,7 @@ arm64/coresight/coresight_tmc_fdt.c		optional fdt
 
 arm64/iommu/iommu.c				optional iommu
 arm64/iommu/iommu_if.m				optional iommu
-arm64/iommu/iommu_pmap.c			optional iommu
+arm64/iommu/iommu_pmap.c			optional iommu | panfrost
 arm64/iommu/smmu.c				optional iommu
 arm64/iommu/smmu_acpi.c				optional iommu acpi
 arm64/iommu/smmu_fdt.c				optional iommu fdt
@@ -192,6 +192,13 @@ dev/drm/rockchip/rk_gem.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}
 dev/drm/rockchip/rk_plane.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
 dev/drm/rockchip/rk_vop.c			optional drm fdt rk_drm compile-with "${DRMCOMPAT_C}"
 dev/drm/rockchip/rk_vop_if.m			optional drm fdt rk_drm
+
+# Panfrost DRM driver
+dev/drm/panfrost/panfrost_drv.c			optional drm fdt panfrost compile-with "${DRMCOMPAT_C}"
+dev/drm/panfrost/panfrost_device.c		optional drm fdt panfrost compile-with "${DRMCOMPAT_C}"
+dev/drm/panfrost/panfrost_gem.c			optional drm fdt panfrost compile-with "${DRMCOMPAT_C}"
+dev/drm/panfrost/panfrost_mmu.c			optional drm fdt panfrost compile-with "${DRMCOMPAT_C}"
+dev/drm/panfrost/panfrost_job.c			optional drm fdt panfrost compile-with "${DRMCOMPAT_C}"
 
 dev/dwc/if_dwc.c				optional fdt dwc_rk soc_rockchip_rk3328 | fdt dwc_rk soc_rockchip_rk3399 | fdt dwc_socfpga soc_intel_stratix10
 dev/dwc/if_dwc_if.m				optional fdt dwc_rk soc_rockchip_rk3328 | fdt dwc_rk soc_rockchip_rk3399 | fdt dwc_socfpga soc_intel_stratix10
