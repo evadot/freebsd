@@ -1678,6 +1678,17 @@ dev/drm/drmcompat/drmcompat_work.c		optional drmcompat compile-with "${DRMCOMPAT
 dev/drm/drmcompat/hdmi.c			optional drmcompat compile-with "${DRMCOMPAT_C}"
 dev/drm/drmcompat/drmcompat_sort.c		optional drmcompat compile-with "${DRMCOMPAT_C}"
 
+# Allwinner DRM driver
+dev/drm/allwinner/aw_de2.c			optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_drm.c			optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_ui_plane.c		optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_vi_plane.c		optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_mixer.c		optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_tcon.c			optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_hdmi_phy.c		optional drm fdt aw_de2_drm compile-with "${DRMCOMPAT_C}"
+dev/drm/allwinner/aw_de2_mixer_if.m		optional drm fdt aw_de2_drm
+dev/drm/allwinner/aw_de2_tcon_if.m		optional drm fdt aw_de2_drm
+
 # DRM bridges
 dev/drm/bridges/dw_hdmi/dw_hdmi.c		optional drm fdt dw_hdmi compile-with "${DRMCOMPAT_C}"
 dev/drm/bridges/dw_hdmi/dw_hdmi_if.m		optional drm fdt dw_hdmi
