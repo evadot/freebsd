@@ -1693,6 +1693,7 @@ dev/drm/allwinner/aw_de2_tcon_if.m		optional drm fdt aw_de2_drm
 dev/drm/bridges/dw_hdmi/dw_hdmi.c		optional drm fdt dw_hdmi compile-with "${DRMCOMPAT_C}"
 dev/drm/bridges/dw_hdmi/dw_hdmi_if.m		optional drm fdt dw_hdmi
 dev/drm/bridges/dw_hdmi/dw_hdmi_phy_if.m	optional drm fdt dw_hdmi
+dev/drm/bridges/dw_hdmi/aw_de2_dw_hdmi.c	optional drm fdt dw_hdmi aw_de2_drm compile-with "${DRMCOMPAT_C}"
 
 dev/drm2/drm_agpsupport.c	optional drm2
 dev/drm2/drm_auth.c		optional drm2
