@@ -1039,7 +1039,8 @@ syncache_socket(struct syncache *sc, struct socket *lso, struct mbuf *m)
 	TCPSTAT_INC(tcps_accepts);
 	TCP_PROBE6(state__change, NULL, tp, NULL, tp, NULL, TCPS_LISTEN);
 
-	solisten_enqueue(so, SS_ISCONNECTED);
+	if (!solisten_enqueue(so, SS_ISCONNECTED))
+		tp->t_flags |= TF_INCQUEUE;
 
 	return (so);
 
@@ -1361,6 +1362,7 @@ syncache_tfo_expand(struct syncache *sc, struct socket *lso, struct mbuf *m,
 		tp->snd_max = tp->iss;
 		tp->snd_nxt = tp->iss;
 		tp->t_tfo_pending = pending_counter;
+		TCPSTATES_INC(TCPS_SYN_RECEIVED);
 		TCPSTAT_INC(tcps_sc_completed);
 	}
 

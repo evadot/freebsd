@@ -52,6 +52,42 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20220814: domain(9) updated
+OLD_FILES+=usr/share/man/man9/domain_init.9.gz
+OLD_FILES+=usr/share/man/man9/pfctlinput.9.gz
+OLD_FILES+=usr/share/man/man9/pffinddomain.9.gz
+OLD_FILES+=usr/share/man/man9/pffindproto.9.gz
+OLD_FILES+=usr/share/man/man9/pffindtype.9.gz
+
+# 20220825: awk tests moved to subdirs
+OLD_FILES+=usr/tests/usr.bin/awk/awk_test
+OLD_FILES+=usr/tests/usr.bin/awk/d_assign_NF.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_assign_NF.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_assign_NF.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_big_regexp.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_big_regexp.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_big_regexp.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_end1.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_end1.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_end1.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_end2.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_end2.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_end2.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_period.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_period.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_period.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_string1.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_string1.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_tolower.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_tolower.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_tolower.out
+OLD_FILES+=usr/tests/usr.bin/awk/d_toupper.awk
+OLD_FILES+=usr/tests/usr.bin/awk/d_toupper.in
+OLD_FILES+=usr/tests/usr.bin/awk/d_toupper.out
+
+# 20220820: remove knlist_init_rw_reader()
+OLD_FILES+=usr/share/man/man9/knlist_init_rw_reader.9.gz
+
 # 20220813: minigzip(1) removed in favor of gzip(1)
 OLD_FILES+=usr/bin/minigzip
 OLD_FILES+=usr/share/man/man1/minigzip.1.gz
