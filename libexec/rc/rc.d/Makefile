@@ -29,7 +29,6 @@ CONFS=	DAEMON \
 	gbde \
 	geli \
 	geli2 \
-	ggated \
 	gptboot \
 	growfs \
 	hostid \
@@ -122,6 +121,10 @@ DEVMATCHPACKAGE=	devmatch
 CONFGROUPS+=		DHCLIENT
 DHCLIENT=		dhclient
 DHCLIENTPACKAGE=	dhclient
+
+CONFGROUPS+=		GGATED
+GGATED=			ggated
+GGATEDPACKAGE=		ggate
 
 .if ${MK_NIS} != "no"
 CONFS+=	ypbind \
