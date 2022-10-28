@@ -22,7 +22,6 @@ CONFS=	DAEMON \
 	ctld \
 	ddb \
 	defaultroute \
-	devd \
 	devfs \
 	devmatch \
 	dhclient \
@@ -113,6 +112,10 @@ CONFS=	DAEMON \
 	var \
 	var_run \
 	watchdogd
+
+CONFGROUPS+=		DEVD
+DEVD=			devd
+DEVDPACKAGE=		devd
 
 .if ${MK_NIS} != "no"
 CONFS+=	ypbind \
