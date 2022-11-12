@@ -52,6 +52,10 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20221109: remove rc.sendmail(8)
+OLD_FILES+=etc/rc.sendmail
+OLD_FILES+=share/man/man8/rc.sendmail.8.gz
+
 # 20221015: update the ithread(9) man page
 OLD_FILES+=usr/share/man/man9/ithread.9.gz
 OLD_FILES+=usr/share/man/man9/ithread_add_handler.9.gz
@@ -5252,10 +5256,6 @@ OLD_FILES+=usr/include/crypto/xform.h
 OLD_FILES+=usr/include/crypto/xform_auth.h
 OLD_FILES+=usr/include/crypto/xform_comp.h
 OLD_FILES+=usr/include/crypto/xform_enc.h
-
-# 20210315: if_wg(4) removed
-OLD_FILES+=usr/share/man/man4/if_wg.4.gz
-OLD_FILES+=usr/share/man/man4/wg.4.gz
 
 # 20210305: removed Poly1305_* symbols
 OLD_FILES+=usr/include/crypto/xform_poly1305.h

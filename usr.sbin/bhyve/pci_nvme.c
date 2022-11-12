@@ -688,6 +688,7 @@ pci_nvme_init_nsdata(struct pci_nvme_softc *sc,
 static void
 pci_nvme_init_logpages(struct pci_nvme_softc *sc)
 {
+	__uint128_t power_cycles = 1;
 
 	memset(&sc->err_log, 0, sizeof(sc->err_log));
 	memset(&sc->health_log, 0, sizeof(sc->health_log));
@@ -707,6 +708,9 @@ pci_nvme_init_logpages(struct pci_nvme_softc *sc)
 	sc->fw_log.afi = (1 << NVME_FIRMWARE_PAGE_AFI_SLOT_SHIFT);
 	memcpy(&sc->fw_log.revision[0], sc->ctrldata.fr,
 	    sizeof(sc->fw_log.revision[0]));
+
+	memcpy(&sc->health_log.power_cycles, &power_cycles,
+	    sizeof(sc->health_log.power_cycles));
 }
 
 static void
@@ -2218,8 +2222,8 @@ pci_nvme_out_of_range(struct pci_nvme_blockstore *nvstore, uint64_t slba,
 }
 
 static int
-pci_nvme_append_iov_req(struct pci_nvme_softc *sc, struct pci_nvme_ioreq *req,
-	uint64_t gpaddr, size_t size, int do_write, uint64_t offset)
+pci_nvme_append_iov_req(struct pci_nvme_softc *sc __unused,
+    struct pci_nvme_ioreq *req, uint64_t gpaddr, size_t size, uint64_t offset)
 {
 	int iovidx;
 	bool range_is_contiguous;
@@ -2450,8 +2454,7 @@ nvme_write_read_blockif(struct pci_nvme_softc *sc,
 	uint16_t status = NVME_NO_STATUS;
 
 	size = MIN(PAGE_SIZE - (prp1 % PAGE_SIZE), bytes);
-	if (pci_nvme_append_iov_req(sc, req, prp1,
-	    size, is_write, offset)) {
+	if (pci_nvme_append_iov_req(sc, req, prp1, size, offset)) {
 		err = -1;
 		goto out;
 	}
@@ -2463,8 +2466,7 @@ nvme_write_read_blockif(struct pci_nvme_softc *sc,
 		;
 	} else if (bytes <= PAGE_SIZE) {
 		size = bytes;
-		if (pci_nvme_append_iov_req(sc, req, prp2,
-		    size, is_write, offset)) {
+		if (pci_nvme_append_iov_req(sc, req, prp2, size, offset)) {
 			err = -1;
 			goto out;
 		}
@@ -2490,8 +2492,8 @@ nvme_write_read_blockif(struct pci_nvme_softc *sc,
 
 			size = MIN(bytes, PAGE_SIZE);
 
-			if (pci_nvme_append_iov_req(sc, req, *prp_list,
-			    size, is_write, offset)) {
+			if (pci_nvme_append_iov_req(sc, req, *prp_list, size,
+			    offset)) {
 				err = -1;
 				goto out;
 			}
