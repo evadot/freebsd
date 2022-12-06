@@ -160,6 +160,8 @@ struct devsw {
     int		(*dv_print)(int verbose);	/* print device information */
     void	(*dv_cleanup)(void);
     char *	(*dv_fmtdev)(struct devdesc *);
+    int		(*dv_parsedev)(struct devdesc **, const char *, const char **);
+    bool	(*dv_match)(struct devsw *, const char *);
 };
 
 /*
@@ -186,6 +188,8 @@ struct devdesc {
 };
 
 char *devformat(struct devdesc *d);
+int devparse(struct devdesc **, const char *, const char **);
+int devinit(void);
 
 struct open_file {
     int			f_flags;	/* see F_* below */

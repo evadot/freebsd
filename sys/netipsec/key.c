@@ -806,8 +806,16 @@ int
 key_havesp(u_int dir)
 {
 
-	return (dir == IPSEC_DIR_INBOUND || dir == IPSEC_DIR_OUTBOUND ?
-		TAILQ_FIRST(&V_sptree[dir]) != NULL : 1);
+	IPSEC_ASSERT(dir == IPSEC_DIR_INBOUND || dir == IPSEC_DIR_OUTBOUND,
+		("invalid direction %u", dir));
+	return (TAILQ_FIRST(&V_sptree[dir]) != NULL);
+}
+
+int
+key_havesp_any(void)
+{
+
+	return (V_spd_size != 0);
 }
 
 /* %%% IPsec policy management */

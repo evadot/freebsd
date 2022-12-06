@@ -81,7 +81,6 @@ __DEFAULT_YES_OPTIONS = \
     CDDL \
     CLANG \
     CLANG_BOOTSTRAP \
-    CLANG_IS_CC \
     CLEAN \
     CPP \
     CROSS_COMPILER \
@@ -205,7 +204,6 @@ __DEFAULT_NO_OPTIONS = \
     DTRACE_TESTS \
     EXPERIMENTAL \
     HESIOD \
-    LOADER_FIREWIRE \
     LOADER_VERBOSE \
     LOADER_VERIEXEC_PASS_MANIFEST \
     LLVM_BINUTILS \
@@ -349,6 +347,11 @@ __DEFAULT_YES_OPTIONS+=OPENMP
 __DEFAULT_NO_OPTIONS+=OPENMP
 .endif
 
+# libc++ requires C++20
+.if !${COMPILER_FEATURES:Mc++20}
+BROKEN_OPTIONS+=CXX
+.endif
+
 .include <bsd.mkopt.mk>
 
 #
@@ -380,6 +383,9 @@ MK_KERBEROS_SUPPORT:=	no
 
 .if ${MK_CXX} == "no"
 MK_CLANG:=	no
+MK_LLD:=	no
+MK_LLDB:=	no
+MK_LLVM_BINUTILS:= no
 MK_GOOGLETEST:=	no
 MK_OFED:=	no
 MK_OPENMP:=	no

@@ -45,12 +45,12 @@ __FBSDID("$FreeBSD$");
 
 #include "bootstrap.h"
 #include "modinfo.h"
-#include "loader_efi.h"
 
 #if defined(__amd64__)
 #include <machine/specialreg.h>
 #endif
 
+#include "loader_efi.h"
 #include "gfx_fb.h"
 
 #if defined(LOADER_FDT_SUPPORT)
@@ -69,9 +69,10 @@ bi_getboothowto(char *kargs)
 {
 	const char *sw, *tmp;
 	char *opts;
-	char *console;
-	int howto, speed, port;
+	int speed, port;
 	char buf[50];
+	char *console;
+	int howto;
 
 	howto = boot_parse_cmdline(kargs);
 	howto |= boot_env_to_howto();
@@ -355,7 +356,7 @@ bi_load(char *args, vm_offset_t *modulep, vm_offset_t *kernendp, bool exit_bs)
 
 	addr = 0;
 	for (xp = file_findfile(NULL, NULL); xp != NULL; xp = xp->f_next) {
-		if (addr < (xp->f_addr + xp->f_size))
+		if (addr < xp->f_addr + xp->f_size)
 			addr = xp->f_addr + xp->f_size;
 	}
 
@@ -413,7 +414,7 @@ bi_load(char *args, vm_offset_t *modulep, vm_offset_t *kernendp, bool exit_bs)
 #endif
 	bi_load_efi_data(kfp, exit_bs);
 
-	size = md_copymodules(0, is64);
+	size = md_copymodules(0, is64);	/* Find the size of the modules */
 	kernend = roundup(addr + size, PAGE_SIZE);
 	*kernendp = kernend;
 
