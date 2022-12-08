@@ -95,9 +95,6 @@ main() {
 			_descr="Manual Pages"
 			pkgdeps="${outname}"
 			;;
-		${origname})
-			pkgdeps="runtime"
-			;;
 		*)
 			uclfile="${outname##*}${origname}"
 			outname="${outname##*}${origname}"
