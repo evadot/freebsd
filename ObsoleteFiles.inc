@@ -52,6 +52,15 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20221214: TCPDEBUG removed
+OLD_FILES+=usr/include/netinet/tcp_debug.h
+
+# 20221213: remove sync serial drivers and utilities
+OLD_FILES+=sbin/sconfig
+OLD_FILES+=usr/share/man/man4/ce.4
+OLD_FILES+=usr/share/man/man4/cp.4
+OLD_FILES+=usr/share/man/man8/sconfig.8.gz
+
 # 20221202: remove trpt(8)
 OLD_FILES+=usr/sbin/trpt
 OLD_FILES+=usr/share/man/man8/trpt.8.gz
@@ -94,7 +103,6 @@ OLD_FILES+=usr/lib/libopie.a
 OLD_FILES+=usr/lib/libopie.so
 OLD_LIBS+=usr/lib/libopie.so.8
 OLD_FILES+=usr/lib/libopie_p.a
-OLD_FILES+=usr/bin/opieinfo
 OLD_FILES+=usr/lib/pam_opie.so
 OLD_LIBS+=usr/lib/pam_opie.so.6
 OLD_FILES+=usr/lib/pam_opieaccess.so

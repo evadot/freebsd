@@ -27,8 +27,8 @@
 __FBSDID("$FreeBSD$");
 
 #include <stand.h>
-#include <sys/endian.h>
 #include <sys/param.h>
+#include <sys/boot.h>
 #include <fdt_platform.h>
 
 #include <machine/cpufunc.h>
@@ -76,6 +76,76 @@ kboot_getdev(void **vdev, const char *devspec, const char **path)
 	return (devparse(dev, devspec, path));
 }
 
+static int
+parse_args(int argc, const char **argv)
+{
+	int howto = 0;
+
+	/*
+	 * When run as init, sometimes argv[0] is a EFI-ESP path, other times
+	 * it's the name of the init program, and sometimes it's a placeholder
+	 * string, so we exclude it here. For the other args, look for DOS-like
+	 * and Unix-like absolte paths and exclude parsing it if we find that,
+	 * otherwise parse it as a command arg (so looking for '-X', 'foo' or
+	 * 'foo=bar'). This is a little different than EFI where it argv[0]
+	 * often times is the first argument passed in. There are cases when
+	 * linux-booting via EFI that we have the EFI path we used to run
+	 * bootXXX.efi as the arguments to init, so we need to exclude the paths
+	 * there as well.
+	 */
+	for (int i = 1; i < argc; i++) {
+		if (argv[i][0] != '\\' && argv[i][0] != '/') {
+			howto |= boot_parse_arg(argv[i]);
+		}
+	}
+
+	return (howto);
+}
+
+static vm_offset_t rsdp;
+
+static vm_offset_t
+kboot_rsdp_from_efi(void)
+{
+	char buffer[512 + 1];
+	char *walker, *ep;
+
+	if (!file2str("/sys/firmware/efi/systab", buffer, sizeof(buffer)))
+		return (0);	/* Not an EFI system */
+	ep = buffer + strlen(buffer);
+	walker = buffer;
+	while (walker < ep) {
+		if (strncmp("ACPI20=", walker, 7) == 0)
+			return((vm_offset_t)strtoull(walker + 7, NULL, 0));
+		if (strncmp("ACPI=", walker, 5) == 0)
+			return((vm_offset_t)strtoull(walker + 5, NULL, 0));
+		walker += strcspn(walker, "\n");
+	}
+	return (0);
+}
+
+static void
+find_acpi(void)
+{
+	rsdp = kboot_rsdp_from_efi();
+#if 0	/* maybe for amd64 */
+	if (rsdp == 0)
+		rsdp = find_rsdp_arch();
+#endif
+}
+
+vm_offset_t
+acpi_rsdp(void)
+{
+	return (rsdp);
+}
+
+bool
+has_acpi(void)
+{
+	return rsdp != 0;
+}
+
 int
 main(int argc, const char **argv)
 {
@@ -105,13 +175,11 @@ main(int argc, const char **argv)
 	 */
 	cons_probe();
 
-	/* Choose bootdev if provided */
-	if (argc > 1)
-		bootdev = argv[1];
-	else
-		bootdev = "";
-	if (argc > 2)
-		hostfs_root = argv[2];
+	/* Initialize all the devices */
+	devinit();
+
+	/* Parse the command line args -- ignoring for now the console selection */
+	parse_args(argc, argv);
 
 	printf("Boot device: %s with hostfs_root %s\n", bootdev, hostfs_root);
 
@@ -121,6 +189,11 @@ main(int argc, const char **argv)
 	setenv("loaddev", bootdev, 1);
 	setenv("LINES", "24", 1);
 	setenv("usefdt", "1", 1);
+
+	/*
+	 * Find acpi, if it exists
+	 */
+	find_acpi();
 
 	interact();			/* doesn't return */
 

@@ -38,7 +38,6 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
 #include "opt_kern_tls.h"
-#include "opt_tcpdebug.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -114,9 +113,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/tcp_fastopen.h>
 #ifdef TCPPCAP
 #include <netinet/tcp_pcap.h>
-#endif
-#ifdef TCPDEBUG
-#include <netinet/tcp_debug.h>
 #endif
 #ifdef TCP_OFFLOAD
 #include <netinet/tcp_offload.h>
@@ -1121,24 +1117,6 @@ tcp_default_fb_fini(struct tcpcb *tp, int tcb_is_purged)
 #define TCBHASHSIZE	0
 #endif
 
-/*
- * XXX
- * Callouts should be moved into struct tcp directly.  They are currently
- * separate because the tcpcb structure is exported to userland for sysctl
- * parsing purposes, which do not know about callouts.
- */
-struct tcpcb_mem {
-	struct	tcpcb		tcb;
-	struct	tcp_timer	tt;
-	struct	cc_var		ccv;
-#ifdef TCP_HHOOK
-	struct	osd		osd;
-#endif
-};
-
-VNET_DEFINE_STATIC(uma_zone_t, tcpcb_zone);
-#define	V_tcpcb_zone			VNET(tcpcb_zone)
-
 MALLOC_DEFINE(M_TCPLOG, "tcplog", "TCP address and flags print buffers");
 MALLOC_DEFINE(M_TCPFUNCTIONS, "tcpfunc", "TCP function set memory");
 
@@ -1148,7 +1126,7 @@ static struct mtx isn_mtx;
 #define	ISN_LOCK()	mtx_lock(&isn_mtx)
 #define	ISN_UNLOCK()	mtx_unlock(&isn_mtx)
 
-INPCBSTORAGE_DEFINE(tcpcbstor, inpcb, "tcpinp", "tcp_inpcb", "tcp", "tcphash");
+INPCBSTORAGE_DEFINE(tcpcbstor, tcpcb, "tcpinp", "tcp_inpcb", "tcp", "tcphash");
 
 /*
  * Take a value and get the next power of 2 that doesn't overflow.
@@ -1211,22 +1189,6 @@ register_tcp_functions_as_names(struct tcp_function_block *blk, int wait,
 		 */
 		*num_names = 0;
 		return (EINVAL);
-	}
-	if (blk->tfb_tcp_timer_stop_all ||
-	    blk->tfb_tcp_timer_activate ||
-	    blk->tfb_tcp_timer_active ||
-	    blk->tfb_tcp_timer_stop) {
-		/*
-		 * If you define one timer function you
-		 * must have them all.
-		 */
-		if ((blk->tfb_tcp_timer_stop_all == NULL) ||
-		    (blk->tfb_tcp_timer_activate == NULL) ||
-		    (blk->tfb_tcp_timer_active == NULL) ||
-		    (blk->tfb_tcp_timer_stop == NULL)) {
-			*num_names = 0;
-			return (EINVAL);
-		}
 	}
 
 	if (blk->tfb_flags & TCP_FUNC_BEING_REMOVED) {
@@ -1471,14 +1433,6 @@ tcp_vnet_init(void *arg __unused)
 	in_pcbinfo_init(&V_tcbinfo, &tcpcbstor, tcp_tcbhashsize,
 	    tcp_tcbhashsize);
 
-	/*
-	 * These have to be type stable for the benefit of the timers.
-	 */
-	V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),
-	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, 0);
-	uma_zone_set_max(V_tcpcb_zone, maxsockets);
-	uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached");
-
 	syncache_init();
 	tcp_hc_init();
 
@@ -1643,7 +1597,6 @@ tcp_destroy(void *unused __unused)
 	in_pcbinfo_destroy(&V_tcbinfo);
 	/* tcp_discardcb() clears the sack_holes up. */
 	uma_zdestroy(V_sack_hole_zone);
-	uma_zdestroy(V_tcpcb_zone);
 
 	/*
 	 * Cannot free the zone until all tcpcbs are released as we attach
@@ -2120,10 +2073,6 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 		}
 	}
 #endif /* INET */
-#ifdef TCPDEBUG
-	if (tp == NULL || (inp->inp_socket->so_options & SO_DEBUG))
-		tcp_trace(TA_OUTPUT, 0, tp, mtod(m, void *), th, 0);
-#endif
 	TCP_PROBE3(debug__output, tp, th, m);
 	if (flags & TH_RST)
 		TCP_PROBE5(accept__refused, NULL, NULL, m, tp, nth);
@@ -2198,29 +2147,28 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 }
 
 /*
- * Create a new TCP control block, making an
- * empty reassembly queue and hooking it to the argument
- * protocol control block.  The `inp' parameter must have
- * come from the zone allocator set up in tcp_init().
+ * Create a new TCP control block, making an empty reassembly queue and hooking
+ * it to the argument protocol control block.  The `inp' parameter must have
+ * come from the zone allocator set up by tcpcbstor declaration.
  */
 struct tcpcb *
 tcp_newtcpcb(struct inpcb *inp)
 {
-	struct tcpcb_mem *tm;
-	struct tcpcb *tp;
+	struct tcpcb *tp = intotcpcb(inp);
 #ifdef INET6
 	int isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
 #endif /* INET6 */
 
-	tm = uma_zalloc(V_tcpcb_zone, M_NOWAIT | M_ZERO);
-	if (tm == NULL)
-		return (NULL);
-	tp = &tm->tcb;
+	/*
+	 * Historically allocation was done with M_ZERO.  There is a lot of
+	 * code that rely on that.  For now take safe approach and zero whole
+	 * tcpcb.  This definitely can be optimized.
+	 */
+	bzero(&tp->t_start_zero, t_zero_size);
 
 	/* Initialise cc_var struct for this tcpcb. */
-	tp->ccv = &tm->ccv;
-	tp->ccv->type = IPPROTO_TCP;
-	tp->ccv->ccvc.tcp = tp;
+	tp->t_ccv.type = IPPROTO_TCP;
+	tp->t_ccv.ccvc.tcp = tp;
 	rw_rlock(&tcp_function_lock);
 	tp->t_fb = tcp_func_set_ptr;
 	refcount_acquire(&tp->t_fb->tfb_refcnt);
@@ -2230,37 +2178,24 @@ tcp_newtcpcb(struct inpcb *inp)
 	 */
 	cc_attach(tp, CC_DEFAULT_ALGO());
 
-	/*
-	 * The tcpcb will hold a reference on its inpcb until tcp_discardcb()
-	 * is called.
-	 */
-	in_pcbref(inp);	/* Reference for tcpcb */
-	tp->t_inpcb = inp;
-
 	if (CC_ALGO(tp)->cb_init != NULL)
-		if (CC_ALGO(tp)->cb_init(tp->ccv, NULL) > 0) {
+		if (CC_ALGO(tp)->cb_init(&tp->t_ccv, NULL) > 0) {
 			cc_detach(tp);
 			if (tp->t_fb->tfb_tcp_fb_fini)
 				(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
-			in_pcbrele_wlocked(inp);
 			refcount_release(&tp->t_fb->tfb_refcnt);
-			uma_zfree(V_tcpcb_zone, tm);
 			return (NULL);
 		}
 
 #ifdef TCP_HHOOK
-	tp->osd = &tm->osd;
-	if (khelp_init_osd(HELPER_CLASS_TCP, tp->osd)) {
+	if (khelp_init_osd(HELPER_CLASS_TCP, &tp->t_osd)) {
 		if (tp->t_fb->tfb_tcp_fb_fini)
 			(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
-		in_pcbrele_wlocked(inp);
 		refcount_release(&tp->t_fb->tfb_refcnt);
-		uma_zfree(V_tcpcb_zone, tm);
 		return (NULL);
 	}
 #endif
 
-	tp->t_timers = &tm->tt;
 	TAILQ_INIT(&tp->t_segq);
 	tp->t_maxseg =
 #ifdef INET6
@@ -2268,12 +2203,9 @@ tcp_newtcpcb(struct inpcb *inp)
 #endif /* INET6 */
 		V_tcp_mssdflt;
 
-	/* Set up our timeouts. */
-	callout_init(&tp->t_timers->tt_rexmt, 1);
-	callout_init(&tp->t_timers->tt_persist, 1);
-	callout_init(&tp->t_timers->tt_keep, 1);
-	callout_init(&tp->t_timers->tt_2msl, 1);
-	callout_init(&tp->t_timers->tt_delack, 1);
+	callout_init_rw(&tp->t_callout, &inp->inp_lock, CALLOUT_RETURNUNLOCKED);
+	for (int i = 0; i < TT_N; i++)
+		tp->t_timers[i] = SBT_MAX;
 
 	switch (V_tcp_do_rfc1323) {
 		case 0:
@@ -2311,7 +2243,6 @@ tcp_newtcpcb(struct inpcb *inp)
 	 * which may match an IPv4-mapped IPv6 address.
 	 */
 	inp->inp_ip_ttl = V_ip_defttl;
-	inp->inp_ppcb = tp;
 #ifdef TCPHPTS
 	/*
 	 * If using hpts lets drop a random number in so
@@ -2333,8 +2264,6 @@ tcp_newtcpcb(struct inpcb *inp)
 	if (tp->t_fb->tfb_tcp_fb_init) {
 		if ((*tp->t_fb->tfb_tcp_fb_init)(tp)) {
 			refcount_release(&tp->t_fb->tfb_refcnt);
-			in_pcbrele_wlocked(inp);
-			uma_zfree(V_tcpcb_zone, tm);
 			return (NULL);
 		}
 	}
@@ -2344,7 +2273,8 @@ tcp_newtcpcb(struct inpcb *inp)
 #endif
 	if (V_tcp_do_lrd)
 		tp->t_flags |= TF_LRD;
-	return (tp);		/* XXX */
+
+	return (tp);
 }
 
 /*
@@ -2377,32 +2307,15 @@ void
 tcp_discardcb(struct tcpcb *tp)
 {
 	struct inpcb *inp = tptoinpcb(tp);
+	struct socket *so = tptosocket(tp);
+#ifdef INET6
+	bool isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
+#endif
 
 	INP_WLOCK_ASSERT(inp);
 
-	/*
-	 * Make sure that all of our timers are stopped before we delete the
-	 * PCB.
-	 *
-	 * If stopping a timer fails, we schedule a discard function in same
-	 * callout, and the last discard function called will take care of
-	 * deleting the tcpcb.
-	 */
-	tp->t_timers->tt_draincnt = 0;
-	tcp_timer_stop(tp, TT_REXMT);
-	tcp_timer_stop(tp, TT_PERSIST);
-	tcp_timer_stop(tp, TT_KEEP);
-	tcp_timer_stop(tp, TT_2MSL);
-	tcp_timer_stop(tp, TT_DELACK);
+	tcp_timer_stop(tp);
 	if (tp->t_fb->tfb_tcp_timer_stop_all) {
-		/*
-		 * Call the stop-all function of the methods,
-		 * this function should call the tcp_timer_stop()
-		 * method with each of the function specific timeouts.
-		 * That stop will be called via the tfb_tcp_timer_stop()
-		 * which should use the async drain function of the
-		 * callout system (see tcp_var.h).
-		 */
 		tp->t_fb->tfb_tcp_timer_stop_all(tp);
 	}
 
@@ -2425,42 +2338,20 @@ tcp_discardcb(struct tcpcb *tp)
 
 	/* Allow the CC algorithm to clean up after itself. */
 	if (CC_ALGO(tp)->cb_destroy != NULL)
-		CC_ALGO(tp)->cb_destroy(tp->ccv);
+		CC_ALGO(tp)->cb_destroy(&tp->t_ccv);
 	CC_DATA(tp) = NULL;
 	/* Detach from the CC algorithm */
 	cc_detach(tp);
 
 #ifdef TCP_HHOOK
-	khelp_destroy_osd(tp->osd);
+	khelp_destroy_osd(&tp->t_osd);
 #endif
 #ifdef STATS
 	stats_blob_destroy(tp->t_stats);
 #endif
 
 	CC_ALGO(tp) = NULL;
-	inp->inp_ppcb = NULL;
-	if (tp->t_timers->tt_draincnt == 0) {
-		bool released __diagused;
 
-		released = tcp_freecb(tp);
-		KASSERT(!released, ("%s: inp %p should not have been released "
-		    "here", __func__, inp));
-	}
-}
-
-bool
-tcp_freecb(struct tcpcb *tp)
-{
-	struct inpcb *inp = tptoinpcb(tp);
-	struct socket *so = tptosocket(tp);
-#ifdef INET6
-	bool isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
-#endif
-
-	INP_WLOCK_ASSERT(inp);
-	MPASS(tp->t_timers->tt_draincnt == 0);
-
-	/* We own the last reference on tcpcb, let's free it. */
 #ifdef TCP_BLACKBOX
 	tcp_log_tcpcbfini(tp);
 #endif
@@ -2531,9 +2422,6 @@ tcp_freecb(struct tcpcb *tp)
 	}
 
 	refcount_release(&tp->t_fb->tfb_refcnt);
-	uma_zfree(V_tcpcb_zone, tp);
-
-	return (in_pcbrele_wlocked(inp));
 }
 
 /*
@@ -3983,18 +3871,17 @@ tcp_inptoxtp(const struct inpcb *inp, struct xtcpcb *xt)
 		     (tp->t_flags2 & TF2_ACE_PERMIT) ? 2 : 0;
 
 	now = getsbinuptime();
-#define	COPYTIMER(ttt)	do {					\
-	if (callout_active(&tp->t_timers->ttt))			\
-		xt->ttt = (tp->t_timers->ttt.c_time - now) /	\
-		    SBT_1MS;					\
-	else							\
-		xt->ttt = 0;					\
+#define	COPYTIMER(which,where)	do {					\
+	if (tp->t_timers[which] != SBT_MAX)				\
+		xt->where = (tp->t_timers[which] - now) / SBT_1MS;	\
+	else								\
+		xt->where = 0;						\
 } while (0)
-	COPYTIMER(tt_delack);
-	COPYTIMER(tt_rexmt);
-	COPYTIMER(tt_persist);
-	COPYTIMER(tt_keep);
-	COPYTIMER(tt_2msl);
+	COPYTIMER(TT_DELACK, tt_delack);
+	COPYTIMER(TT_REXMT, tt_rexmt);
+	COPYTIMER(TT_PERSIST, tt_persist);
+	COPYTIMER(TT_KEEP, tt_keep);
+	COPYTIMER(TT_2MSL, tt_2msl);
 #undef COPYTIMER
 	xt->t_rcvtime = 1000 * (ticks - tp->t_rcvtime) / hz;
 

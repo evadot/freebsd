@@ -30,6 +30,8 @@ CONFS=	DAEMON \
 	geli \
 	geli2 \
 	gptboot \
+	growfs \
+	growfs_fstab \
 	hostid \
 	hostid_save \
 	hostname \
@@ -47,6 +49,7 @@ CONFS=	DAEMON \
 	local \
 	localpkg \
 	lockd \
+	machine_id \
 	mixer \
 	motd \
 	mountcritlocal \

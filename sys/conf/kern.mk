@@ -45,6 +45,10 @@ CWARNEXTRA?=	-Wno-error=tautological-compare -Wno-error=empty-body \
 		-Wno-error=pointer-sign
 CWARNEXTRA+=	-Wno-error=shift-negative-value
 CWARNEXTRA+=	-Wno-address-of-packed-member
+.if ${COMPILER_VERSION} >= 150000
+CWARNEXTRA+=	-Wno-error=array-parameter
+CWARNEXTRA+=	-Wno-error=deprecated-non-prototype
+.endif
 .endif	# clang
 
 .if ${COMPILER_TYPE} == "gcc"
@@ -77,6 +81,13 @@ CWARNEXTRA+=	-Wno-error=packed-not-aligned
 .if ${COMPILER_VERSION} >= 90100
 CWARNEXTRA+=	-Wno-address-of-packed-member			\
 		-Wno-error=alloca-larger-than=
+.if ${COMPILER_VERSION} >= 120100
+CWARNEXTRA+=	-Wno-error=nonnull				\
+		-Wno-dangling-pointer				\
+		-Wno-zero-length-bounds
+NO_WINFINITE_RECURSION=	-Wno-infinite-recursion
+NO_WSTRINGOP_OVERREAD=	-Wno-stringop-overread
+.endif
 .endif
 
 # GCC produces false positives for functions that switch on an

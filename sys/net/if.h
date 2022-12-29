@@ -164,6 +164,7 @@ struct if_data {
 #define	IFF_DYING	0x200000	/* (n) interface is winding down */
 #define	IFF_RENAMING	0x400000	/* (n) interface is being renamed */
 #define	IFF_NOGROUP	0x800000	/* (n) interface is not part of any groups */
+#define	IFF_NETLINK_1	0x1000000	/* (n) used by netlink */
 
 /*
  * Old names for driver flags so that user space tools can continue to use
@@ -253,8 +254,9 @@ struct if_data {
 #define	IFCAP_VXLAN_HWTSO	0x40000000 /* can do IFCAP_TSO on VXLANs */
 #define	IFCAP_TXTLS_RTLMT	0x80000000 /* can do TLS with rate limiting */
 
-#define	IFCAP2_RXTLS4		0x00001
-#define	IFCAP2_RXTLS6		0x00002
+/* IFCAP2_* are integers, not bits. */
+#define	IFCAP2_RXTLS4		(0x00001ULL << 32)
+#define	IFCAP2_RXTLS6		(0x00002ULL << 32)
 
 #define IFCAP_HWCSUM_IPV6	(IFCAP_RXCSUM_IPV6 | IFCAP_TXCSUM_IPV6)
 

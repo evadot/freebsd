@@ -55,7 +55,6 @@ __FBSDID("$FreeBSD$");
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ipsec.h"
-#include "opt_tcpdebug.h"
 
 #include <sys/param.h>
 #include <sys/arb.h>
@@ -117,7 +116,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/tcp_pcap.h>
 #endif
 #include <netinet/tcp_syncache.h>
-#include <netinet/tcp_debug.h>
 #ifdef TCP_OFFLOAD
 #include <netinet/tcp_offload.h>
 #endif
@@ -283,7 +281,7 @@ hhook_run_tcp_est_in(struct tcpcb *tp, struct tcphdr *th, struct tcpopt *to)
 		hhook_data.to = to;
 
 		hhook_run_hooks(V_tcp_hhh[HHOOK_TCP_EST_IN], &hhook_data,
-		    tp->osd);
+		    &tp->t_osd);
 	}
 }
 #endif
@@ -301,14 +299,14 @@ cc_ack_received(struct tcpcb *tp, struct tcphdr *th, uint16_t nsegs,
 
 	INP_WLOCK_ASSERT(tptoinpcb(tp));
 
-	tp->ccv->nsegs = nsegs;
-	tp->ccv->bytes_this_ack = BYTES_THIS_ACK(tp, th);
+	tp->t_ccv.nsegs = nsegs;
+	tp->t_ccv.bytes_this_ack = BYTES_THIS_ACK(tp, th);
 	if ((!V_tcp_do_newcwv && (tp->snd_cwnd <= tp->snd_wnd)) ||
 	    (V_tcp_do_newcwv && (tp->snd_cwnd <= tp->snd_wnd) &&
 	     (tp->snd_cwnd < (tcp_compute_pipe(tp) * 2))))
-		tp->ccv->flags |= CCF_CWND_LIMITED;
+		tp->t_ccv.flags |= CCF_CWND_LIMITED;
 	else
-		tp->ccv->flags &= ~CCF_CWND_LIMITED;
+		tp->t_ccv.flags &= ~CCF_CWND_LIMITED;
 
 	if (type == CC_ACK) {
 #ifdef STATS
@@ -316,7 +314,7 @@ cc_ack_received(struct tcpcb *tp, struct tcphdr *th, uint16_t nsegs,
 		    ((int32_t)tp->snd_cwnd) - tp->snd_wnd);
 		if (!IN_RECOVERY(tp->t_flags))
 			stats_voi_update_abs_u32(tp->t_stats, VOI_TCP_ACKLEN,
-			   tp->ccv->bytes_this_ack / (tcp_maxseg(tp) * nsegs));
+			   tp->t_ccv.bytes_this_ack / (tcp_maxseg(tp) * nsegs));
 		if ((tp->t_flags & TF_GPUTINPROG) &&
 		    SEQ_GEQ(th->th_ack, tp->gput_ack)) {
 			/*
@@ -341,21 +339,21 @@ cc_ack_received(struct tcpcb *tp, struct tcphdr *th, uint16_t nsegs,
 		}
 #endif /* STATS */
 		if (tp->snd_cwnd > tp->snd_ssthresh) {
-			tp->t_bytes_acked += tp->ccv->bytes_this_ack;
+			tp->t_bytes_acked += tp->t_ccv.bytes_this_ack;
 			if (tp->t_bytes_acked >= tp->snd_cwnd) {
 				tp->t_bytes_acked -= tp->snd_cwnd;
-				tp->ccv->flags |= CCF_ABC_SENTAWND;
+				tp->t_ccv.flags |= CCF_ABC_SENTAWND;
 			}
 		} else {
-				tp->ccv->flags &= ~CCF_ABC_SENTAWND;
+				tp->t_ccv.flags &= ~CCF_ABC_SENTAWND;
 				tp->t_bytes_acked = 0;
 		}
 	}
 
 	if (CC_ALGO(tp)->ack_received != NULL) {
 		/* XXXLAS: Find a way to live without this */
-		tp->ccv->curack = th->th_ack;
-		CC_ALGO(tp)->ack_received(tp->ccv, type);
+		tp->t_ccv.curack = th->th_ack;
+		CC_ALGO(tp)->ack_received(&tp->t_ccv, type);
 	}
 #ifdef STATS
 	stats_voi_update_abs_ulong(tp->t_stats, VOI_TCP_LCWIN, tp->snd_cwnd);
@@ -414,7 +412,7 @@ cc_conn_init(struct tcpcb *tp)
 		tp->snd_cwnd = tcp_compute_initwnd(maxseg);
 
 	if (CC_ALGO(tp)->conn_init != NULL)
-		CC_ALGO(tp)->conn_init(tp->ccv);
+		CC_ALGO(tp)->conn_init(&tp->t_ccv);
 }
 
 void inline
@@ -473,8 +471,8 @@ cc_cong_signal(struct tcpcb *tp, struct tcphdr *th, uint32_t type)
 
 	if (CC_ALGO(tp)->cong_signal != NULL) {
 		if (th != NULL)
-			tp->ccv->curack = th->th_ack;
-		CC_ALGO(tp)->cong_signal(tp->ccv, type);
+			tp->t_ccv.curack = th->th_ack;
+		CC_ALGO(tp)->cong_signal(&tp->t_ccv, type);
 	}
 }
 
@@ -486,8 +484,8 @@ cc_post_recovery(struct tcpcb *tp, struct tcphdr *th)
 	/* XXXLAS: KASSERT that we're in recovery? */
 
 	if (CC_ALGO(tp)->post_recovery != NULL) {
-		tp->ccv->curack = th->th_ack;
-		CC_ALGO(tp)->post_recovery(tp->ccv);
+		tp->t_ccv.curack = th->th_ack;
+		CC_ALGO(tp)->post_recovery(&tp->t_ccv);
 	}
 	/* XXXLAS: EXIT_RECOVERY ? */
 	tp->t_bytes_acked = 0;
@@ -518,25 +516,25 @@ cc_ecnpkt_handler_flags(struct tcpcb *tp, uint16_t flags, uint8_t iptos)
 	if (CC_ALGO(tp)->ecnpkt_handler != NULL) {
 		switch (iptos & IPTOS_ECN_MASK) {
 		case IPTOS_ECN_CE:
-			tp->ccv->flags |= CCF_IPHDR_CE;
+			tp->t_ccv.flags |= CCF_IPHDR_CE;
 			break;
 		case IPTOS_ECN_ECT0:
 			/* FALLTHROUGH */
 		case IPTOS_ECN_ECT1:
 			/* FALLTHROUGH */
 		case IPTOS_ECN_NOTECT:
-			tp->ccv->flags &= ~CCF_IPHDR_CE;
+			tp->t_ccv.flags &= ~CCF_IPHDR_CE;
 			break;
 		}
 
 		if (flags & TH_CWR)
-			tp->ccv->flags |= CCF_TCPHDR_CWR;
+			tp->t_ccv.flags |= CCF_TCPHDR_CWR;
 		else
-			tp->ccv->flags &= ~CCF_TCPHDR_CWR;
+			tp->t_ccv.flags &= ~CCF_TCPHDR_CWR;
 
-		CC_ALGO(tp)->ecnpkt_handler(tp->ccv);
+		CC_ALGO(tp)->ecnpkt_handler(&tp->t_ccv);
 
-		if (tp->ccv->flags & CCF_ACKNOW) {
+		if (tp->t_ccv.flags & CCF_ACKNOW) {
 			tcp_timer_activate(tp, TT_DELACK, tcp_delacktime);
 			tp->t_flags |= TF_ACKNOW;
 		}
@@ -632,15 +630,6 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 #endif /* INET6 */
 	struct tcpopt to;		/* options in this segment */
 	char *s = NULL;			/* address and port logging */
-#ifdef TCPDEBUG
-	/*
-	 * The size of tcp_saveipgen must be the size of the max ip header,
-	 * now IPv6.
-	 */
-	u_char tcp_saveipgen[IP6_HDR_LEN];
-	struct tcphdr tcp_savetcp;
-	short ostate = 0;
-#endif
 
 	NET_EPOCH_ASSERT();
 
@@ -1021,18 +1010,6 @@ findpcb:
 #endif
 	so = inp->inp_socket;
 	KASSERT(so != NULL, ("%s: so == NULL", __func__));
-#ifdef TCPDEBUG
-	if (so->so_options & SO_DEBUG) {
-		ostate = tp->t_state;
-#ifdef INET6
-		if (isipv6) {
-			bcopy((char *)ip6, (char *)tcp_saveipgen, sizeof(*ip6));
-		} else
-#endif
-			bcopy((char *)ip, (char *)tcp_saveipgen, sizeof(*ip));
-		tcp_savetcp = *th;
-	}
-#endif /* TCPDEBUG */
 	/*
 	 * When the socket is accepting connections (the INPCB is in LISTEN
 	 * state) we look into the SYN cache if this is a new connection
@@ -1344,11 +1321,6 @@ tfo_socket_result:
 		 * SYN appears to be valid.  Create compressed TCP state
 		 * for syncache.
 		 */
-#ifdef TCPDEBUG
-		if (so->so_options & SO_DEBUG)
-			tcp_trace(TA_INPUT, ostate, tp,
-			    (void *)tcp_saveipgen, &tcp_savetcp, 0);
-#endif
 		TCP_PROBE3(debug__input, tp, th, m);
 		tcp_dooptions(&to, optp, optlen, TO_SYN);
 		if ((so = syncache_add(&inc, &to, th, inp, so, m, NULL, NULL,
@@ -1528,15 +1500,6 @@ tcp_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 	int tfo_syn;
 	u_int maxseg;
 
-#ifdef TCPDEBUG
-	/*
-	 * The size of tcp_saveipgen must be the size of the max ip header,
-	 * now IPv6.
-	 */
-	u_char tcp_saveipgen[IP6_HDR_LEN];
-	struct tcphdr tcp_savetcp;
-	short ostate = 0;
-#endif
 	thflags = tcp_get_flags(th);
 	tp->sackhint.last_sack_ack = 0;
 	sack_changed = 0;
@@ -1856,12 +1819,6 @@ tcp_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 				 * are ready to send, let tcp_output
 				 * decide between more output or persist.
 				 */
-#ifdef TCPDEBUG
-				if (so->so_options & SO_DEBUG)
-					tcp_trace(TA_INPUT, ostate, tp,
-					    (void *)tcp_saveipgen,
-					    &tcp_savetcp, 0);
-#endif
 				TCP_PROBE3(debug__input, tp, th, m);
 				/*
 				 * Clear t_acktime if remote side has ACKd
@@ -1918,11 +1875,6 @@ tcp_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 			tp->rcv_up = tp->rcv_nxt;
 			TCPSTAT_ADD(tcps_rcvpack, nsegs);
 			TCPSTAT_ADD(tcps_rcvbyte, tlen);
-#ifdef TCPDEBUG
-			if (so->so_options & SO_DEBUG)
-				tcp_trace(TA_INPUT, ostate, tp,
-				    (void *)tcp_saveipgen, &tcp_savetcp, 0);
-#endif
 			TCP_PROBE3(debug__input, tp, th, m);
 
 			newsize = tcp_autorcvbuf(m, th, so, tp, tlen);
@@ -3298,11 +3250,6 @@ dodata:							/* XXX */
 			return;
 		}
 	}
-#ifdef TCPDEBUG
-	if (so->so_options & SO_DEBUG)
-		tcp_trace(TA_INPUT, ostate, tp, (void *)tcp_saveipgen,
-			  &tcp_savetcp, 0);
-#endif
 	TCP_PROBE3(debug__input, tp, th, m);
 
 	/*
@@ -3344,11 +3291,6 @@ dropafterack:
 		tcp_log_end_status(tp, TCP_EI_STATUS_RST_IN_FRONT);
 		goto dropwithreset;
 	}
-#ifdef TCPDEBUG
-	if (so->so_options & SO_DEBUG)
-		tcp_trace(TA_DROP, ostate, tp, (void *)tcp_saveipgen,
-			  &tcp_savetcp, 0);
-#endif
 	TCP_PROBE3(debug__input, tp, th, m);
 	tp->t_flags |= TF_ACKNOW;
 	(void) tcp_output(tp);
@@ -3368,11 +3310,6 @@ drop:
 	/*
 	 * Drop space held by incoming segment and return.
 	 */
-#ifdef TCPDEBUG
-	if (tp == NULL || (inp->inp_socket->so_options & SO_DEBUG))
-		tcp_trace(TA_DROP, ostate, tp, (void *)tcp_saveipgen,
-			  &tcp_savetcp, 0);
-#endif
 	TCP_PROBE3(debug__input, tp, th, m);
 	if (tp != NULL) {
 		INP_WUNLOCK(inp);
