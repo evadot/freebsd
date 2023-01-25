@@ -86,6 +86,7 @@
 #include <net/if_var.h>
 #include <net/if_media.h>
 #include <net/if_mib.h>
+#include <net/if_private.h>
 #include <net/if_vlan_var.h>
 #include <net/radix.h>
 #include <net/route.h>
@@ -4211,8 +4212,8 @@ if_setcapabilities(if_t ifp, int capabilities)
 int
 if_setcapabilitiesbit(if_t ifp, int setbit, int clearbit)
 {
-	((struct ifnet *)ifp)->if_capabilities |= setbit;
 	((struct ifnet *)ifp)->if_capabilities &= ~clearbit;
+	((struct ifnet *)ifp)->if_capabilities |= setbit;
 
 	return (0);
 }
@@ -4233,10 +4234,10 @@ if_setcapenable(if_t ifp, int capabilities)
 int 
 if_setcapenablebit(if_t ifp, int setcap, int clearcap)
 {
-	if(setcap) 
-		((struct ifnet *)ifp)->if_capenable |= setcap;
 	if(clearcap)
 		((struct ifnet *)ifp)->if_capenable &= ~clearcap;
+	if(setcap) 
+		((struct ifnet *)ifp)->if_capenable |= setcap;
 
 	return (0);
 }
@@ -4339,8 +4340,8 @@ if_setdev(if_t ifp, void *dev)
 int
 if_setdrvflagbits(if_t ifp, int set_flags, int clear_flags)
 {
-	((struct ifnet *)ifp)->if_drv_flags |= set_flags;
 	((struct ifnet *)ifp)->if_drv_flags &= ~clear_flags;
+	((struct ifnet *)ifp)->if_drv_flags |= set_flags;
 
 	return (0);
 }
@@ -4369,8 +4370,8 @@ if_setflags(if_t ifp, int flags)
 int
 if_setflagbits(if_t ifp, int set, int clear)
 {
-	((struct ifnet *)ifp)->if_flags |= set;
 	((struct ifnet *)ifp)->if_flags &= ~clear;
+	((struct ifnet *)ifp)->if_flags |= set;
 
 	return (0);
 }
@@ -4391,8 +4392,8 @@ if_clearhwassist(if_t ifp)
 int
 if_sethwassistbits(if_t ifp, int toset, int toclear)
 {
-	((struct ifnet *)ifp)->if_hwassist |= toset;
 	((struct ifnet *)ifp)->if_hwassist &= ~toclear;
+	((struct ifnet *)ifp)->if_hwassist |= toset;
 
 	return (0);
 }
@@ -4622,9 +4623,9 @@ if_vlantrunkinuse(if_t ifp)
 }
 
 int
-if_init(if_t ifp)
+if_init(if_t ifp, void *ctx)
 {
-	(*((struct ifnet *)ifp)->if_init)((struct ifnet *)ifp);
+	(*((struct ifnet *)ifp)->if_init)(ctx);
 	return (0);
 }
 
@@ -4800,6 +4801,12 @@ if_setgetcounterfn(if_t ifp, if_get_counter_t fn)
 {
 
 	ifp->if_get_counter = fn;
+}
+
+void
+if_setdebugnet_methods(if_t ifp, struct debugnet_methods *m)
+{
+	ifp->if_debugnet_methods = m;
 }
 
 #ifdef DDB
