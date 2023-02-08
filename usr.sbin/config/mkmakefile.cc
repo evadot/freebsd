@@ -42,6 +42,7 @@ static const char rcsid[] =
  * the information in the files files and the
  * additional files for the machine being compiled to.
  */
+#include <sys/param.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -49,12 +50,14 @@ static const char rcsid[] =
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/cnv.h>
-#include <sys/nv.h>
-#include <sys/param.h>
+#include <string>
+#include <unordered_map>
+
 #include "y.tab.h"
 #include "config.h"
 #include "configvers.h"
+
+typedef std::unordered_map<std::string, std::string>	env_map;
 
 static char *tail(char *);
 static void do_clean(FILE *);
@@ -66,8 +69,8 @@ static void read_files(void);
 static void sanitize_envline(char *result, const char *src);
 static bool preprocess(char *line, char *result);
 static void process_into_file(char *line, FILE *ofp);
-static void process_into_nvlist(char *line, nvlist_t *nvl);
-static void dump_nvlist(nvlist_t *nvl, FILE *ofp);
+static void process_into_map(char *line, env_map &emap);
+static void dump_map(env_map &emap, FILE *ofp);
 
 static void errout(const char *fmt, ...)
 {
@@ -267,35 +270,24 @@ process_into_file(char *line, FILE *ofp)
 }
 
 static void
-process_into_nvlist(char *line, nvlist_t *nvl)
+process_into_map(char *line, env_map &emap)
 {
 	char result[BUFSIZ], *s;
 
 	if (preprocess(line, result)) {
 		s = strchr(result, '=');
 		*s = '\0';
-		if (nvlist_exists(nvl, result))
-			nvlist_free(nvl, result);
-		nvlist_add_string(nvl, result, s + 1);
+		emap[result] = s + 1;
 	}
 }
 
 static void
-dump_nvlist(nvlist_t *nvl, FILE *ofp)
+dump_map(env_map &emap, FILE *ofp)
 {
-	const char *name;
-	void *cookie;
 
-	if (nvl == NULL)
-		return;
-
-	while (!nvlist_empty(nvl)) {
-		cookie = NULL;
-		name = nvlist_next(nvl, NULL, &cookie);
-		fprintf(ofp, "\"%s=%s\\0\"\n", name,
-		     cnvlist_get_string(cookie));
-
-		cnvlist_free_string(cookie);
+	for (auto iter : emap) {
+		fprintf(ofp, "\"%s=%s\\0\"\n", iter.first.c_str(),
+		    iter.second.c_str());
 	}
 }
 
@@ -306,7 +298,7 @@ void
 makehints(void)
 {
 	FILE *ifp, *ofp;
-	nvlist_t *nvl;
+	env_map emap;
 	char line[BUFSIZ];
 	struct hint *hint;
 
@@ -324,17 +316,15 @@ makehints(void)
 		fprintf(ofp, "int hintmode = %d;\n",
 			!STAILQ_EMPTY(&hints) ? 1 : 0);
 	fprintf(ofp, "char static_hints[] = {\n");
-	nvl = nvlist_create(0);
 	STAILQ_FOREACH(hint, &hints, hint_next) {
 		ifp = fopen(hint->hint_name, "r");
 		if (ifp == NULL)
 			err(1, "%s", hint->hint_name);
 		while (fgets(line, BUFSIZ, ifp) != NULL)
-			process_into_nvlist(line, nvl);
-		dump_nvlist(nvl, ofp);
+			process_into_map(line, emap);
+		dump_map(emap, ofp);
 		fclose(ifp);
 	}
-	nvlist_destroy(nvl);
 	fprintf(ofp, "\"\\0\"\n};\n");
 	fclose(ofp);
 	moveifchanged(path("hints.c.new"), path("hints.c"));
@@ -347,7 +337,7 @@ void
 makeenv(void)
 {
 	FILE *ifp, *ofp;
-	nvlist_t *nvl;
+	env_map emap;
 	char line[BUFSIZ];
 	struct envvar *envvar;
 
@@ -365,20 +355,18 @@ makeenv(void)
 		fprintf(ofp, "int envmode = %d;\n",
 			!STAILQ_EMPTY(&envvars) ? 1 : 0);
 	fprintf(ofp, "char static_env[] = {\n");
-	nvl = nvlist_create(0);
 	STAILQ_FOREACH(envvar, &envvars, envvar_next) {
 		if (envvar->env_is_file) {
 			ifp = fopen(envvar->env_str, "r");
 			if (ifp == NULL)
 				err(1, "%s", envvar->env_str);
 			while (fgets(line, BUFSIZ, ifp) != NULL)
-				process_into_nvlist(line, nvl);
-			dump_nvlist(nvl, ofp);
+				process_into_map(line, emap);
+			dump_map(emap, ofp);
 			fclose(ifp);
 		} else
 			process_into_file(envvar->env_str, ofp);
 	}
-	nvlist_destroy(nvl);
 	fprintf(ofp, "\"\\0\"\n};\n");
 	fclose(ofp);
 	moveifchanged(path("env.c.new"), path("env.c"));
@@ -392,9 +380,9 @@ read_file(char *fname)
 	struct file_list *tp;
 	struct device *dp;
 	struct opt *op;
-	char *wd, *this, *compilewith, *depends, *clean, *warning;
+	char *wd, *rfile, *compilewith, *depends, *clean, *warning;
 	const char *objprefix;
-	int compile, match, nreqs, std, filetype, not,
+	int compile, match, nreqs, std, filetype, negate,
 	    imp_rule, no_ctfconvert, no_obj, before_depend, nowerror;
 
 	fp = fopen(fname, "r");
@@ -434,13 +422,13 @@ next:
 			;
 		goto next;
 	}
-	this = ns(wd);
+	rfile = ns(wd);
 	wd = get_word(fp);
 	if (wd == (char *)EOF)
 		return;
 	if (wd == NULL)
-		errout("%s: No type for %s.\n", fname, this);
-	tp = fl_lookup(this);
+		errout("%s: No type for %s.\n", fname, rfile);
+	tp = fl_lookup(rfile);
 	compile = 0;
 	match = 1;
 	nreqs = 0;
@@ -454,25 +442,25 @@ next:
 	no_obj = 0;
 	before_depend = 0;
 	nowerror = 0;
-	not = 0;
+	negate = 0;
 	filetype = NORMAL;
 	objprefix = "";
 	if (eq(wd, "standard"))
 		std = 1;
 	else if (!eq(wd, "optional"))
 		errout("%s: \"%s\" %s must be optional or standard\n",
-		    fname, wd, this);
+		    fname, wd, rfile);
 	for (wd = get_word(fp); wd; wd = get_word(fp)) {
 		if (wd == (char *)EOF)
 			return;
 		if (eq(wd, "!")) {
-			not = 1;
+			negate = 1;
 			continue;
 		}
 		if (eq(wd, "|")) {
 			if (nreqs == 0)
 				errout("%s: syntax error describing %s\n",
-				       fname, this);
+				       fname, rfile);
 			compile += match;
 			match = 1;
 			nreqs = 0;
@@ -491,7 +479,7 @@ next:
 				errout("%s: alternate rule required when "
 				       "\"no-implicit-rule\" is specified for"
 				       " %s.\n",
-				       fname, this);
+				       fname, rfile);
 			imp_rule++;
 			continue;
 		}
@@ -503,7 +491,7 @@ next:
 			wd = get_quoted_word(fp);
 			if (wd == (char *)EOF || wd == NULL)
 				errout("%s: %s missing dependency string.\n",
-				       fname, this);
+				       fname, rfile);
 			depends = ns(wd);
 			continue;
 		}
@@ -511,7 +499,7 @@ next:
 			wd = get_quoted_word(fp);
 			if (wd == (char *)EOF || wd == NULL)
 				errout("%s: %s missing clean file list.\n",
-				       fname, this);
+				       fname, rfile);
 			clean = ns(wd);
 			continue;
 		}
@@ -519,7 +507,7 @@ next:
 			wd = get_quoted_word(fp);
 			if (wd == (char *)EOF || wd == NULL)
 				errout("%s: %s missing compile command string.\n",
-				       fname, this);
+				       fname, rfile);
 			compilewith = ns(wd);
 			continue;
 		}
@@ -527,7 +515,7 @@ next:
 			wd = get_quoted_word(fp);
 			if (wd == (char *)EOF || wd == NULL)
 				errout("%s: %s missing warning text string.\n",
-				       fname, this);
+				       fname, rfile);
 			warning = ns(wd);
 			continue;
 		}
@@ -535,7 +523,7 @@ next:
 			wd = get_quoted_word(fp);
 			if (wd == (char *)EOF || wd == NULL)
 				errout("%s: %s missing object prefix string.\n",
-				       fname, this);
+				       fname, rfile);
 			objprefix = ns(wd);
 			continue;
 		}
@@ -554,10 +542,10 @@ next:
 		nreqs++;
 		if (std)
 			errout("standard entry %s has optional inclusion specifier %s!\n",
-			       this, wd);
+			       rfile, wd);
 		STAILQ_FOREACH(dp, &dtab, d_next)
 			if (eq(dp->d_name, wd)) {
-				if (not)
+				if (negate)
 					match = 0;
 				else
 					dp->d_done |= DEVDONE;
@@ -566,21 +554,21 @@ next:
 		SLIST_FOREACH(op, &opt, op_next)
 			if (op->op_value == 0 &&
 			    strcasecmp(op->op_name, wd) == 0) {
-				if (not)
+				if (negate)
 					match = 0;
 				goto nextparam;
 			}
-		match &= not;
+		match &= negate;
 nextparam:;
-		not = 0;
+		negate = 0;
 	}
 	compile += match;
 	if (compile && tp == NULL) {
 		if (std == 0 && nreqs == 0)
 			errout("%s: what is %s optional on?\n",
-			       fname, this);
+			       fname, rfile);
 		tp = new_fent();
-		tp->f_fn = this;
+		tp->f_fn = rfile;
 		tp->f_type = filetype;
 		if (filetype == LOCAL)
 			tp->f_srcprefix = "";
