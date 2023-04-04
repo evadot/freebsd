@@ -3,7 +3,7 @@
 #
 # Warning flags for compiling the kernel and components of the kernel:
 #
-CWARNFLAGS?=	-Wall -Wnested-externs -Wstrict-prototypes \
+CWARNFLAGS?=	-Wall -Wstrict-prototypes \
 		-Wmissing-prototypes -Wpointer-arith -Wcast-qual \
 		-Wundef -Wno-pointer-sign ${FORMAT_EXTENSIONS} \
 		-Wmissing-include-dirs -fdiagnostics-show-option \
@@ -74,6 +74,7 @@ CWARNEXTRA?=	-Wno-error=address				\
 		-Wno-error=sequence-point			\
 		-Wno-error=shift-overflow			\
 		-Wno-error=tautological-compare			\
+		-Wno-error=unused-function			\
 		-Wno-unused-but-set-variable
 .if ${COMPILER_VERSION} >= 70100
 CWARNEXTRA+=	-Wno-error=stringop-overflow

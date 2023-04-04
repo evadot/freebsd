@@ -2056,7 +2056,7 @@ ifaof_ifpforaddr(const struct sockaddr *addr, struct ifnet *ifp)
 			continue;
 		}
 		if (ifp->if_flags & IFF_POINTOPOINT) {
-			if (sa_equal(addr, ifa->ifa_dstaddr))
+			if (ifa->ifa_dstaddr && sa_equal(addr, ifa->ifa_dstaddr))
 				goto done;
 		} else {
 			cp = addr->sa_data;
@@ -2425,7 +2425,7 @@ const struct ifcap_nv_bit_name ifcap_nv_bit_names[] = {
 	CAPNV(TXTLS_RTLMT),
 	{0, NULL}
 };
-#define CAP2NV(x) {.cap_bit = IFCAP2_##x, \
+#define CAP2NV(x) {.cap_bit = IFCAP2_BIT(IFCAP2_##x), \
     .cap_name = __CONCAT(IFCAP2_, __CONCAT(x, _NAME)) }
 const struct ifcap_nv_bit_name ifcap2_nv_bit_names[] = {
 	CAP2NV(RXTLS4),
@@ -4598,6 +4598,42 @@ if_foreach_sleep(if_foreach_match_t match_cb, void *match_arg, if_foreach_cb_t c
 	}
 
 	return (error);
+}
+
+
+/*
+ * Uses just 1 pointer of the 4 available in the public struct.
+ */
+if_t
+if_iter_start(struct if_iter *iter)
+{
+	if_t ifp;
+
+	NET_EPOCH_ASSERT();
+
+	bzero(iter, sizeof(*iter));
+	ifp = CK_STAILQ_FIRST(&V_ifnet);
+	if (ifp != NULL)
+		iter->context[0] = CK_STAILQ_NEXT(ifp, if_link);
+	else
+		iter->context[0] = NULL;
+	return (ifp);
+}
+
+if_t
+if_iter_next(struct if_iter *iter)
+{
+	if_t cur_ifp = iter->context[0];
+
+	if (cur_ifp != NULL)
+		iter->context[0] = CK_STAILQ_NEXT(cur_ifp, if_link);
+	return (cur_ifp);
+}
+
+void
+if_iter_finish(struct if_iter *iter)
+{
+	/* Nothing to do here for now. */
 }
 
 u_int
