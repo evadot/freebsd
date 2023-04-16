@@ -511,8 +511,7 @@ static void
 bbr_log_pacing_delay_calc(struct tcp_bbr *bbr, uint16_t gain, uint32_t len,
 			  uint32_t cts, uint32_t usecs, uint64_t bw,
 			  uint32_t override, int mod);
-static int
-bbr_ctloutput(struct inpcb *inp, struct sockopt *sopt);
+static int bbr_ctloutput(struct tcpcb *tp, struct sockopt *sopt);
 
 static inline uint8_t
 bbr_state_val(struct tcp_bbr *bbr)
@@ -2991,13 +2990,6 @@ use_initial_window:
 		bw = bbr->r_ctl.red_bw;
 	else
 		bw = get_filter_value(&bbr->r_ctl.rc_delrate);
-	if (bbr->rc_tp->t_peakrate_thr && (bbr->rc_use_google == 0)) {
-		/*
-		 * Enforce user set rate limit, keep in mind that
-		 * t_peakrate_thr is in B/s already
-		 */
-		bw = uqmin((uint64_t)bbr->rc_tp->t_peakrate_thr, bw);
-	}
 	if (bw == 0) {
 		/* We should not be at 0, go to the initial window then  */
 		goto use_initial_window;
@@ -9862,6 +9854,9 @@ bbr_stop_all_timers(struct tcpcb *tp, struct tcp_bbr *bbr)
 		/* We enter in persists, set the flag appropriately */
 		bbr->rc_in_persist = 1;
 	}
+	if (tcp_in_hpts(bbr->rc_inp)) {
+		tcp_hpts_remove(bbr->rc_inp);
+	}
 }
 
 static void
@@ -10071,9 +10066,6 @@ bbr_init(struct tcpcb *tp, void **ptr)
 	bbr->r_ctl.rc_initial_hptsi_bw = bbr_initial_bw_bps;
 	if (bbr_resends_use_tso)
 		bbr->rc_resends_use_tso = 1;
-#ifdef NETFLIX_PEAKRATE
-	tp->t_peakrate_thr = tp->t_maxpeakrate;
-#endif
 	if (tp->snd_una != tp->snd_max) {
 		/* Create a send map for the current outstanding data */
 		struct bbr_sendmap *rsm;
@@ -11271,11 +11263,12 @@ bbr_check_bbr_for_state(struct tcp_bbr *bbr, uint32_t cts, int32_t line, uint32_
 }
 
 static int
-bbr_do_segment_nounlock(struct mbuf *m, struct tcphdr *th, struct socket *so,
-    struct tcpcb *tp, int32_t drop_hdrlen, int32_t tlen, uint8_t iptos,
-    int32_t nxt_pkt, struct timeval *tv)
+bbr_do_segment_nounlock(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
+    int32_t drop_hdrlen, int32_t tlen, uint8_t iptos, int32_t nxt_pkt,
+    struct timeval *tv)
 {
 	struct inpcb *inp = tptoinpcb(tp);
+	struct socket *so = tptosocket(tp);
 	int32_t thflags, retval;
 	uint32_t cts, lcts;
 	uint32_t tiwin;
@@ -11438,7 +11431,7 @@ bbr_do_segment_nounlock(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		if ((tp->t_flags & TF_SACK_PERMIT) == 0) {
 			/* Bail */
 			tcp_switch_back_to_default(tp);
-			(*tp->t_fb->tfb_tcp_do_segment) (m, th, so, tp, drop_hdrlen,
+			(*tp->t_fb->tfb_tcp_do_segment)(tp, m, th, drop_hdrlen,
 			    tlen, iptos);
 			return (1);
 		}
@@ -11600,15 +11593,15 @@ done_with_input:
 }
 
 static void
-bbr_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
-    struct tcpcb *tp, int32_t drop_hdrlen, int32_t tlen, uint8_t iptos)
+bbr_do_segment(struct tcpcb *tp, struct mbuf *m, struct tcphdr *th,
+    int32_t drop_hdrlen, int32_t tlen, uint8_t iptos)
 {
 	struct timeval tv;
 	int retval;
 
 	/* First lets see if we have old packets */
 	if (tp->t_in_pkt) {
-		if (ctf_do_queued_segments(so, tp, 1)) {
+		if (ctf_do_queued_segments(tp, 1)) {
 			m_freem(m);
 			return;
 		}
@@ -11619,8 +11612,8 @@ bbr_do_segment(struct mbuf *m, struct tcphdr *th, struct socket *so,
 		/* Should not be should we kassert instead? */
 		tcp_get_usecs(&tv);
 	}
-	retval = bbr_do_segment_nounlock(m, th, so, tp,
-					 drop_hdrlen, tlen, iptos, 0, &tv);
+	retval = bbr_do_segment_nounlock(tp, m, th, drop_hdrlen, tlen, iptos,
+	    0, &tv);
 	if (retval == 0) {
 		INP_WUNLOCK(tptoinpcb(tp));
 	}
@@ -11669,19 +11662,9 @@ bbr_what_can_we_send(struct tcpcb *tp, struct tcp_bbr *bbr, uint32_t sendwin,
 }
 
 static inline void
-bbr_do_error_accounting(struct tcpcb *tp, struct tcp_bbr *bbr, struct bbr_sendmap *rsm, int32_t len, int32_t error)
-{
-#ifdef NETFLIX_STATS
-	KMOD_TCPSTAT_INC(tcps_sndpack_error);
-	KMOD_TCPSTAT_ADD(tcps_sndbyte_error, len);
-#endif
-}
-
-static inline void
 bbr_do_send_accounting(struct tcpcb *tp, struct tcp_bbr *bbr, struct bbr_sendmap *rsm, int32_t len, int32_t error)
 {
 	if (error) {
-		bbr_do_error_accounting(tp, bbr, rsm, len, error);
 		return;
 	}
 	if (rsm) {
@@ -11690,10 +11673,8 @@ bbr_do_send_accounting(struct tcpcb *tp, struct tcp_bbr *bbr, struct bbr_sendmap
 			 * TLP should not count in retran count, but in its
 			 * own bin
 			 */
-#ifdef NETFLIX_STATS
 			KMOD_TCPSTAT_INC(tcps_tlpresends);
 			KMOD_TCPSTAT_ADD(tcps_tlpresend_bytes, len);
-#endif
 		} else {
 			/* Retransmit */
 			tp->t_sndrexmitpack++;
@@ -14155,17 +14136,17 @@ struct tcp_function_block __tcp_bbr = {
  * option.
  */
 static int
-bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
+bbr_set_sockopt(struct tcpcb *tp, struct sockopt *sopt)
 {
 	struct epoch_tracker et;
-	struct tcpcb *tp;
+	struct inpcb *inp = tptoinpcb(tp);
 	struct tcp_bbr *bbr;
 	int32_t error = 0, optval;
 
 	switch (sopt->sopt_level) {
 	case IPPROTO_IPV6:
 	case IPPROTO_IP:
-		return (tcp_default_ctloutput(inp, sopt));
+		return (tcp_default_ctloutput(tp, sopt));
 	}
 
 	switch (sopt->sopt_name) {
@@ -14206,15 +14187,12 @@ bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
 	case TCP_BBR_PACE_SEG_MIN:
 	case TCP_BBR_PACE_CROSS:
 	case TCP_BBR_PACE_OH:
-#ifdef NETFLIX_PEAKRATE
-	case TCP_MAXPEAKRATE:
-#endif
 	case TCP_BBR_TMR_PACE_OH:
 	case TCP_BBR_RACK_RTT_USE:
 	case TCP_BBR_RETRAN_WTSO:
 		break;
 	default:
-		return (tcp_default_ctloutput(inp, sopt));
+		return (tcp_default_ctloutput(tp, sopt));
 		break;
 	}
 	INP_WUNLOCK(inp);
@@ -14226,7 +14204,6 @@ bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
 		INP_WUNLOCK(inp);
 		return (ECONNRESET);
 	}
-	tp = intotcpcb(inp);
 	if (tp->t_fb != &__tcp_bbr) {
 		INP_WUNLOCK(inp);
 		return (ENOPROTOOPT);
@@ -14474,14 +14451,7 @@ bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
 		BBR_OPTS_INC(tcp_rack_pkt_delay);
 		bbr->r_ctl.rc_pkt_delay = optval;
 		break;
-#ifdef NETFLIX_PEAKRATE
-	case TCP_MAXPEAKRATE:
-		BBR_OPTS_INC(tcp_maxpeak);
-		error = tcp_set_maxpeakrate(tp, optval);
-		if (!error)
-			tp->t_peakrate_thr = tp->t_maxpeakrate;
-		break;
-#endif
+
 	case TCP_BBR_RETRAN_WTSO:
 		BBR_OPTS_INC(tcp_retran_wtso);
 		if (optval)
@@ -14550,12 +14520,10 @@ bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
 		}
 		break;
 	default:
-		return (tcp_default_ctloutput(inp, sopt));
+		return (tcp_default_ctloutput(tp, sopt));
 		break;
 	}
-#ifdef NETFLIX_STATS
 	tcp_log_socket_option(tp, sopt->sopt_name, optval, error);
-#endif
 	INP_WUNLOCK(inp);
 	return (error);
 }
@@ -14564,13 +14532,12 @@ bbr_set_sockopt(struct inpcb *inp, struct sockopt *sopt)
  * return 0 on success, error-num on failure
  */
 static int
-bbr_get_sockopt(struct inpcb *inp, struct sockopt *sopt)
+bbr_get_sockopt(struct tcpcb *tp, struct sockopt *sopt)
 {
-	struct tcpcb *tp;
+	struct inpcb *inp = tptoinpcb(tp);
 	struct tcp_bbr *bbr;
 	int32_t error, optval;
 
-	tp = intotcpcb(inp);
 	bbr = (struct tcp_bbr *)tp->t_fb_ptr;
 	if (bbr == NULL) {
 		INP_WUNLOCK(inp);
@@ -14709,7 +14676,7 @@ bbr_get_sockopt(struct inpcb *inp, struct sockopt *sopt)
 			optval |= BBR_INCL_ENET_OH;
 		break;
 	default:
-		return (tcp_default_ctloutput(inp, sopt));
+		return (tcp_default_ctloutput(tp, sopt));
 		break;
 	}
 	INP_WUNLOCK(inp);
@@ -14721,12 +14688,12 @@ bbr_get_sockopt(struct inpcb *inp, struct sockopt *sopt)
  * return 0 on success, error-num on failure
  */
 static int
-bbr_ctloutput(struct inpcb *inp, struct sockopt *sopt)
+bbr_ctloutput(struct tcpcb *tp, struct sockopt *sopt)
 {
 	if (sopt->sopt_dir == SOPT_SET) {
-		return (bbr_set_sockopt(inp, sopt));
+		return (bbr_set_sockopt(tp, sopt));
 	} else if (sopt->sopt_dir == SOPT_GET) {
-		return (bbr_get_sockopt(inp, sopt));
+		return (bbr_get_sockopt(tp, sopt));
 	} else {
 		panic("%s: sopt_dir $%d", __func__, sopt->sopt_dir);
 	}

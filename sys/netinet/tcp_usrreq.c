@@ -1710,7 +1710,6 @@ tcp_ctloutput_set(struct inpcb *inp, struct sockopt *sopt)
 		 * Ensure the new stack takes ownership with a
 		 * clean slate on peak rate threshold.
 		 */
-		tp->t_peakrate_thr = 0;
 #ifdef TCPHPTS
 		/* Assure that we are not on any hpts */
 		tcp_hpts_remove(tptoinpcb(tp));
@@ -1771,7 +1770,7 @@ err_out:
 	}
 
 	/* Pass in the INP locked, callee must unlock it. */
-	return (tp->t_fb->tfb_tcp_ctloutput(inp, sopt));
+	return (tp->t_fb->tfb_tcp_ctloutput(tp, sopt));
 }
 
 static int
@@ -1821,7 +1820,7 @@ tcp_ctloutput_get(struct inpcb *inp, struct sockopt *sopt)
 	}
 
 	/* Pass in the INP locked, callee must unlock it. */
-	return (tp->t_fb->tfb_tcp_ctloutput(inp, sopt));
+	return (tp->t_fb->tfb_tcp_ctloutput(tp, sopt));
 }
 
 int
@@ -2001,9 +2000,9 @@ no_mem_needed:
 }
 
 int
-tcp_default_ctloutput(struct inpcb *inp, struct sockopt *sopt)
+tcp_default_ctloutput(struct tcpcb *tp, struct sockopt *sopt)
 {
-	struct tcpcb *tp = intotcpcb(inp);
+	struct inpcb *inp = tptoinpcb(tp);
 	int	error, opt, optval;
 	u_int	ui;
 	struct	tcp_info ti;

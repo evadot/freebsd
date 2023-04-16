@@ -332,7 +332,6 @@ struct tcpcb {
 	tcp_seq snd_up;			/* send urgent pointer */
 	uint32_t snd_wnd;		/* send window */
 	uint32_t snd_cwnd;		/* congestion-controlled window */
-	uint32_t t_peakrate_thr; 	/* pre-calculated peak rate threshold */
 	uint32_t ts_offset;		/* our timestamp offset */
 	uint32_t rfbuf_ts;		/* recv buffer autoscaling timestamp */
 	int	rcv_numsacks;		/* # distinct sack blks present */
@@ -595,19 +594,12 @@ struct tcptemp {
 struct tcp_function_block {
 	char tfb_tcp_block_name[TCP_FUNCTION_NAME_LEN_MAX];
 	int	(*tfb_tcp_output)(struct tcpcb *);
-	void	(*tfb_tcp_do_segment)(struct mbuf *, struct tcphdr *,
-			    struct socket *, struct tcpcb *,
-		        int, int, uint8_t);
-	int     (*tfb_do_queued_segments)(struct socket *, struct tcpcb *, int);
-	int      (*tfb_do_segment_nounlock)(struct mbuf *, struct tcphdr *,
-			    struct socket *, struct tcpcb *,
-			    int, int, uint8_t,
-			    int, struct timeval *);
-	void	(*tfb_tcp_hpts_do_segment)(struct mbuf *, struct tcphdr *,
-			    struct socket *, struct tcpcb *,
-			    int, int, uint8_t,
-			    int, struct timeval *);
-	int     (*tfb_tcp_ctloutput)(struct inpcb *inp, struct sockopt *sopt);
+	void	(*tfb_tcp_do_segment)(struct tcpcb *, struct mbuf *,
+		    struct tcphdr *, int, int, uint8_t);
+	int      (*tfb_do_segment_nounlock)(struct tcpcb *, struct mbuf *,
+		    struct tcphdr *, int, int, uint8_t, int, struct timeval *);
+	int     (*tfb_do_queued_segments)(struct tcpcb *, int);
+	int     (*tfb_tcp_ctloutput)(struct tcpcb *, struct sockopt *);
 	/* Optional memory allocation/free routine */
 	int	(*tfb_tcp_fb_init)(struct tcpcb *, void **);
 	void	(*tfb_tcp_fb_fini)(struct tcpcb *, int);
@@ -1086,6 +1078,16 @@ struct	tcpstat {
 	uint64_t tcps_ecn_sndect0;		/* ECN Capable Transport */
 	uint64_t tcps_ecn_sndect1;		/* ECN Capable Transport */
 
+	/*
+	 * BBR and Rack implement TLP's these values count TLP bytes in
+	 * two catagories, bytes that were retransmitted and bytes that
+	 * were newly transmited. Both types can serve as TLP's but they
+	 * are accounted differently.
+	 */
+	uint64_t tcps_tlpresends;	/* number of tlp resends */
+	uint64_t tcps_tlpresend_bytes;	/* number of bytes resent by tlp */
+
+
 	uint64_t _pad[4];		/* 4 TBD placeholder for STABLE */
 };
 
@@ -1373,8 +1375,8 @@ int	 tcp_input(struct mbuf **, int *, int);
 int	 tcp_autorcvbuf(struct mbuf *, struct tcphdr *, struct socket *,
 	    struct tcpcb *, int);
 int	 tcp_input_with_port(struct mbuf **, int *, int, uint16_t);
-void	 tcp_do_segment(struct mbuf *, struct tcphdr *,
-			struct socket *, struct tcpcb *, int, int, uint8_t);
+void	tcp_do_segment(struct tcpcb *, struct mbuf *, struct tcphdr *, int,
+    int, uint8_t);
 
 int register_tcp_functions(struct tcp_function_block *blk, int wait);
 int register_tcp_functions_as_names(struct tcp_function_block *blk,
@@ -1388,8 +1390,11 @@ int find_tcp_function_alias(struct tcp_function_block *blk, struct tcp_function_
 void tcp_switch_back_to_default(struct tcpcb *tp);
 struct tcp_function_block *
 find_and_ref_tcp_fb(struct tcp_function_block *fs);
-int tcp_default_ctloutput(struct inpcb *inp, struct sockopt *sopt);
+int tcp_default_ctloutput(struct tcpcb *tp, struct sockopt *sopt);
 int tcp_ctloutput_set(struct inpcb *inp, struct sockopt *sopt);
+void tcp_log_socket_option(struct tcpcb *tp, uint32_t option_num,
+    uint32_t option_val, int err);
+
 
 extern counter_u64_t tcp_inp_lro_direct_queue;
 extern counter_u64_t tcp_inp_lro_wokeup_queue;
@@ -1401,7 +1406,7 @@ extern counter_u64_t tcp_comp_total;
 extern counter_u64_t tcp_uncomp_total;
 extern counter_u64_t tcp_bad_csums;
 
-#ifdef NETFLIX_EXP_DETECTION
+#ifdef TCP_SAD_DETECTION
 /* Various SACK attack thresholds */
 extern int32_t tcp_force_detection;
 extern int32_t tcp_sad_limit;

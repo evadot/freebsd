@@ -1800,6 +1800,7 @@ getnewvnode(const char *tag, struct mount *mp, struct vop_vector *vops,
 
 	KASSERT(vops->registered,
 	    ("%s: not registered vector op %p\n", __func__, vops));
+	cache_validate_vop_vector(mp, vops);
 
 	td = curthread;
 	if (td->td_vp_reserved != NULL) {
@@ -4211,7 +4212,8 @@ vn_printf(struct vnode *vp, const char *fmt, ...)
 	vprintf(fmt, ap);
 	va_end(ap);
 	printf("%p: ", (void *)vp);
-	printf("type %s state %s\n", vtypename[vp->v_type], vstatename[vp->v_state]);
+	printf("type %s state %s op %p\n", vtypename[vp->v_type],
+	    vstatename[vp->v_state], vp->v_op);
 	holdcnt = atomic_load_int(&vp->v_holdcnt);
 	printf("    usecount %d, writecount %d, refcount %d seqc users %d",
 	    vp->v_usecount, vp->v_writecount, holdcnt & ~VHOLD_ALL_FLAGS,
@@ -4979,14 +4981,16 @@ static int	sync_reclaim(struct  vop_reclaim_args *);
 
 static struct vop_vector sync_vnodeops = {
 	.vop_bypass =	VOP_EOPNOTSUPP,
-	.vop_close =	sync_close,		/* close */
-	.vop_fsync =	sync_fsync,		/* fsync */
-	.vop_inactive =	sync_inactive,	/* inactive */
-	.vop_need_inactive = vop_stdneed_inactive, /* need_inactive */
-	.vop_reclaim =	sync_reclaim,	/* reclaim */
-	.vop_lock1 =	vop_stdlock,	/* lock */
-	.vop_unlock =	vop_stdunlock,	/* unlock */
-	.vop_islocked =	vop_stdislocked,	/* islocked */
+	.vop_close =	sync_close,
+	.vop_fsync =	sync_fsync,
+	.vop_inactive =	sync_inactive,
+	.vop_need_inactive = vop_stdneed_inactive,
+	.vop_reclaim =	sync_reclaim,
+	.vop_lock1 =	vop_stdlock,
+	.vop_unlock =	vop_stdunlock,
+	.vop_islocked =	vop_stdislocked,
+	.vop_fplookup_vexec = VOP_EAGAIN,
+	.vop_fplookup_symlink = VOP_EAGAIN,
 };
 VFS_VOP_VECTOR_REGISTER(sync_vnodeops);
 
@@ -5448,13 +5452,16 @@ assert_vi_unlocked(struct vnode *vp, const char *str)
 void
 assert_vop_locked(struct vnode *vp, const char *str)
 {
-	int locked;
-
 	if (KERNEL_PANICKED() || vp == NULL)
 		return;
 
-	locked = VOP_ISLOCKED(vp);
+#ifdef WITNESS
+	if ((vp->v_irflag & VIRF_CROSSMP) == 0 &&
+	    witness_is_owned(&vp->v_vnlock->lock_object) == -1)
+#else
+	int locked = VOP_ISLOCKED(vp);
 	if (locked == 0 || locked == LK_EXCLOTHER)
+#endif
 		vfs_badlock("is not locked but should be", str, vp);
 }
 
@@ -5464,7 +5471,12 @@ assert_vop_unlocked(struct vnode *vp, const char *str)
 	if (KERNEL_PANICKED() || vp == NULL)
 		return;
 
+#ifdef WITNESS
+	if ((vp->v_irflag & VIRF_CROSSMP) == 0 &&
+	    witness_is_owned(&vp->v_vnlock->lock_object) == 1)
+#else
 	if (VOP_ISLOCKED(vp) == LK_EXCLUSIVE)
+#endif
 		vfs_badlock("is locked but should not be", str, vp);
 }
 
@@ -5543,10 +5555,17 @@ vop_fplookup_vexec_debugpre(void *ap __unused)
 }
 
 void
-vop_fplookup_vexec_debugpost(void *ap __unused, int rc __unused)
+vop_fplookup_vexec_debugpost(void *ap, int rc)
 {
+	struct vop_fplookup_vexec_args *a;
+	struct vnode *vp;
+
+	a = ap;
+	vp = a->a_vp;
 
 	VFS_SMR_ASSERT_ENTERED();
+	if (rc == EOPNOTSUPP)
+		VNPASS(VN_IS_DOOMED(vp), vp);
 }
 
 void
