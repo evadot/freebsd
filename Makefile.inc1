@@ -1888,11 +1888,7 @@ packagekernel: .PHONY
 .endif
 
 stagekernel: .PHONY
-.if ${BUILDKERNELS:[#]} == 1
-	${_+_}${MAKE} -C ${.CURDIR} ${.MAKEFLAGS} distributekernel INSTKERNNAME=kernel.${KERNCONF}
-.else
 	${_+_}${MAKE} -C ${.CURDIR} ${.MAKEFLAGS} distributekernel
-.endif
 
 PORTSDIR?=	/usr/ports
 WSTAGEDIR?=	${OBJTOP}/worldstage
@@ -2067,7 +2063,7 @@ create-kernel-packages-flavor${flavor:C,^""$,${_default_flavor},}: _pkgbootstrap
 		-v kernel=yes -v _kernconf=${INSTALLKERNEL} ; \
 	sed -e "s/%VERSION%/${PKG_VERSION}/" \
 		-e "s/%PKGNAME%/kernel-${INSTALLKERNEL:tl}${flavor}/" \
-		-e "s/%KERNELDIR%/kernel.${INSTALLKERNEL}/" \
+		-e "s/%KERNELDIR%/kernel/" \
 		-e "s/%COMMENT%/FreeBSD ${INSTALLKERNEL} kernel ${flavor}/" \
 		-e "s/%DESC%/FreeBSD ${INSTALLKERNEL} kernel ${flavor}/" \
 		-e "s/ %VCS_REVISION%/${VCS_REVISION}/" \
