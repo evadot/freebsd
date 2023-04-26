@@ -107,6 +107,4 @@ if [ "${DRY_RUN}" = "y" ]; then
 	exit 0
 fi
 
-for package in ${packages}; do
-	pkg install -q "${package}"
-done
+pkg install -q ${package}
