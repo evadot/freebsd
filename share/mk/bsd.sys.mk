@@ -95,7 +95,6 @@ CWARNFLAGS.clang+=	-Wno-unused-const-variable
 CWARNFLAGS.clang+=	-Wno-error=unused-but-set-variable
 .endif
 .if ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} >= 150000
-CWARNFLAGS.clang+=	-Wno-error=deprecated-non-prototype
 CWARNFLAGS.clang+=	-Wno-error=unused-but-set-parameter
 .endif
 .endif # WARNS <= 6
@@ -149,7 +148,7 @@ WFORMAT=	1
 .if ${WFORMAT} > 0
 #CWARNFLAGS+=	-Wformat-nonliteral -Wformat-security -Wno-format-extra-args
 CWARNFLAGS+=	-Wformat=2 -Wno-format-extra-args
-.if ${WARNS} <= 3
+.if ${WARNS:U0} <= 3
 CWARNFLAGS.clang+=	-Wno-format-nonliteral
 .endif # WARNS <= 3
 .if ${MK_WERROR} != "no" && ${MK_WERROR.${COMPILER_TYPE}:Uyes} != "no"
@@ -435,6 +434,14 @@ stage_as.ldscript: ${SHLIB_LINK:R}.ld
 STAGE_DIR.ldscript = ${STAGE_LIBDIR}
 STAGE_AS_${SHLIB_LINK:R}.ld:= ${SHLIB_LINK}
 NO_SHLIB_LINKS=
+.endif
+
+.if defined(STATIC_LDSCRIPT) && target(lib${LIB}.ald)
+STAGE_AS_SETS+= ald
+STAGE_DIR.ald = ${STAGE_LIBDIR}
+STAGE_AS.ald+= lib${LIB}.ald
+STAGE_AS_lib${LIB}.ald = lib${LIB}.a
+stage_as.ald: lib${LIB}.ald
 .endif
 
 .if target(stage_files.shlib)

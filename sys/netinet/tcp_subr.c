@@ -1073,7 +1073,7 @@ tcp_default_fb_init(struct tcpcb *tp, void **ptr)
 
 	/* Make sure we get no interesting mbuf queuing behavior */
 	/* All mbuf queue/ack compress flags should be off */
-	tcp_lro_features_off(tptoinpcb(tp));
+	tcp_lro_features_off(tp);
 
 	/* Cancel the GP measurement in progress */
 	tp->t_flags &= ~TF_GPUTINPROG;
@@ -2148,7 +2148,7 @@ tcp_respond(struct tcpcb *tp, void *ipgen, struct tcphdr *th, struct mbuf *m,
 			struct timeval tv;
 
 			memset(&log.u_bbr, 0, sizeof(log.u_bbr));
-			log.u_bbr.inhpts = inp->inp_in_hpts;
+			log.u_bbr.inhpts = tcp_in_hpts(tp);
 			log.u_bbr.flex8 = 4;
 			log.u_bbr.pkts_out = tp->t_maxseg;
 			log.u_bbr.timeStamp = tcp_get_usecs(&tv);
@@ -2262,6 +2262,7 @@ tcp_newtcpcb(struct inpcb *inp)
 #endif
 
 	TAILQ_INIT(&tp->t_segq);
+	STAILQ_INIT(&tp->t_inqueue);
 	tp->t_maxseg =
 #ifdef INET6
 		isipv6 ? V_tcp_v6mssdflt :
@@ -2269,7 +2270,7 @@ tcp_newtcpcb(struct inpcb *inp)
 		V_tcp_mssdflt;
 
 	/* All mbuf queue/ack compress flags should be off */
-	tcp_lro_features_off(tptoinpcb(tp));
+	tcp_lro_features_off(tp);
 
 	callout_init_rw(&tp->t_callout, &inp->inp_lock, CALLOUT_RETURNUNLOCKED);
 	for (int i = 0; i < TT_N; i++)
@@ -2314,11 +2315,7 @@ tcp_newtcpcb(struct inpcb *inp)
 	 */
 	inp->inp_ip_ttl = V_ip_defttl;
 #ifdef TCPHPTS
-	/*
-	 * If using hpts lets drop a random number in so
-	 * not all new connections fall on the same CPU.
-	 */
-	inp->inp_hpts_cpu = hpts_random_cpu(inp);
+	tcp_hpts_init(tp);
 #endif
 #ifdef TCPPCAP
 	/*
@@ -2378,6 +2375,7 @@ tcp_discardcb(struct tcpcb *tp)
 {
 	struct inpcb *inp = tptoinpcb(tp);
 	struct socket *so = tptosocket(tp);
+	struct mbuf *m;
 #ifdef INET6
 	bool isipv6 = (inp->inp_vflag & INP_IPV6) != 0;
 #endif
@@ -2421,24 +2419,21 @@ tcp_discardcb(struct tcpcb *tp)
 #endif
 
 	CC_ALGO(tp) = NULL;
+	if ((m = STAILQ_FIRST(&tp->t_inqueue)) != NULL) {
+		struct mbuf *prev;
 
+		STAILQ_INIT(&tp->t_inqueue);
+		STAILQ_FOREACH_FROM_SAFE(m, &tp->t_inqueue, m_stailqpkt, prev)
+			m_freem(m);
+	}
+	TCPSTATES_DEC(tp->t_state);
+
+	if (tp->t_fb->tfb_tcp_fb_fini)
+		(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
+	MPASS(!tcp_in_hpts(tp));
 #ifdef TCP_BLACKBOX
 	tcp_log_tcpcbfini(tp);
 #endif
-	if (tp->t_in_pkt) {
-		struct mbuf *m, *n;
-
-		m = tp->t_in_pkt;
-		tp->t_in_pkt = tp->t_tail_pkt = NULL;
-		while (m) {
-			n = m->m_nextpkt;
-			m_freem(m);
-			m = n;
-		}
-	}
-	TCPSTATES_DEC(tp->t_state);
-	if (tp->t_fb->tfb_tcp_fb_fini)
-		(*tp->t_fb->tfb_tcp_fb_fini)(tp, 1);
 
 	/*
 	 * If we got enough samples through the srtt filter,
@@ -2531,7 +2526,7 @@ tcp_close(struct tcpcb *tp)
 		tp->t_tfo_pending = NULL;
 	}
 #ifdef TCPHPTS
-	tcp_hpts_remove(inp);
+	tcp_hpts_remove(tp);
 #endif
 	in_pcbdrop(inp);
 	TCPSTAT_INC(tcps_closed);
@@ -3976,6 +3971,13 @@ tcp_inptoxtp(const struct inpcb *inp, struct xtcpcb *xt)
 
 	xt->xt_len = sizeof(struct xtcpcb);
 	in_pcbtoxinpcb(inp, &xt->xt_inp);
+	/*
+	 * TCP doesn't use inp_ppcb pointer, we embed inpcb into tcpcb.
+	 * Fixup the pointer that in_pcbtoxinpcb() has set.  When printing
+	 * TCP netstat(1) used to use this pointer, so this fixup needs to
+	 * stay for stable/14.
+	 */
+	xt->xt_inp.inp_ppcb = (uintptr_t)tp;
 }
 
 void
@@ -4049,14 +4051,14 @@ tcp_default_switch_failed(struct tcpcb *tp)
 	/*
 	 * If a switch fails we only need to
 	 * care about two things:
-	 * a) The inp_flags2
+	 * a) The t_flags2
 	 * and
 	 * b) The timer granularity.
 	 * Timeouts, at least for now, don't use the
 	 * old callout system in the other stacks so
 	 * those are hopefully safe.
 	 */
-	tcp_lro_features_off(tptoinpcb(tp));
+	tcp_lro_features_off(tp);
 	tcp_change_time_units(tp, TCP_TMR_GRANULARITY_TICKS);
 }
 
@@ -4234,15 +4236,16 @@ tcp_handle_orphaned_packets(struct tcpcb *tp)
 	/*
 	 * Called when a stack switch is occuring from the fini()
 	 * of the old stack. We assue the init() as already been
-	 * run of the new stack and it has set the inp_flags2 to
+	 * run of the new stack and it has set the t_flags2 to
 	 * what it supports. This function will then deal with any
 	 * differences i.e. cleanup packets that maybe queued that
 	 * the newstack does not support.
 	 */
 
-	if (tptoinpcb(tp)->inp_flags2 & INP_MBUF_L_ACKS)
+	if (tp->t_flags2 & TF2_MBUF_L_ACKS)
 		return;
-	if ((tptoinpcb(tp)->inp_flags2 & INP_SUPPORTS_MBUFQ) == 0) {
+	if ((tp->t_flags2 & TF2_SUPPORTS_MBUFQ) == 0 &&
+	    !STAILQ_EMPTY(&tp->t_inqueue)) {
 		/*
 		 * It is unsafe to process the packets since a
 		 * reset may be lurking in them (its rare but it
@@ -4253,44 +4256,27 @@ tcp_handle_orphaned_packets(struct tcpcb *tp)
 		 * This new stack does not do any fancy LRO features
 		 * so all we can do is toss the packets.
 		 */
-		m = tp->t_in_pkt;
-		tp->t_in_pkt = NULL;
-		tp->t_tail_pkt = NULL;
-		while (m) {
-			save = m->m_nextpkt;
-			m->m_nextpkt = NULL;
+		m = STAILQ_FIRST(&tp->t_inqueue);
+		STAILQ_INIT(&tp->t_inqueue);
+		STAILQ_FOREACH_FROM_SAFE(m, &tp->t_inqueue, m_stailqpkt, save)
 			m_freem(m);
-			m = save;
-		}
 	} else {
 		/*
 		 * Here we have a stack that does mbuf queuing but
 		 * does not support compressed ack's. We must
 		 * walk all the mbufs and discard any compressed acks.
 		 */
-		m = tp->t_in_pkt;
-		prev = NULL;
-		while (m) {
+		STAILQ_FOREACH_SAFE(m, &tp->t_inqueue, m_stailqpkt, save) {
 			if (m->m_flags & M_ACKCMP) {
-				/* We must toss this packet */
-				if (tp->t_tail_pkt == m)
-					tp->t_tail_pkt = prev;
-				if (prev)
-					prev->m_nextpkt = m->m_nextpkt;
+				if (m == STAILQ_FIRST(&tp->t_inqueue))
+					STAILQ_REMOVE_HEAD(&tp->t_inqueue,
+					    m_stailqpkt);
 				else
-					tp->t_in_pkt =  m->m_nextpkt;
-				m->m_nextpkt = NULL;
+					STAILQ_REMOVE_AFTER(&tp->t_inqueue,
+					    prev, m_stailqpkt);
 				m_freem(m);
-				/* move forward */
-				if (prev)
-					m = prev->m_nextpkt;
-				else
-					m = tp->t_in_pkt;
-			} else {
-				/* this one is ok */
+			} else
 				prev = m;
-				m = m->m_nextpkt;
-			}
 		}
 	}
 }
