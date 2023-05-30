@@ -124,6 +124,23 @@ LINUX_VDSO_SYM_INTPTR(kern_timekeep_base);
 LINUX_VDSO_SYM_INTPTR(kern_tsc_selector);
 LINUX_VDSO_SYM_INTPTR(kern_cpu_selector);
 
+/*
+ * According to the Intel x86 ISA 64-bit syscall
+ * saves %rip to %rcx and rflags to %r11. Registers on syscall entry:
+ * %rax  system call number
+ * %rcx  return address
+ * %r11  saved rflags
+ * %rdi  arg1
+ * %rsi  arg2
+ * %rdx  arg3
+ * %r10  arg4
+ * %r8   arg5
+ * %r9   arg6
+ *
+ * Then FreeBSD fast_syscall() move registers:
+ * %rcx -> trapframe.tf_rip
+ * %r10 -> trapframe.tf_rcx
+ */
 static int
 linux_fetch_syscall_args(struct thread *td)
 {
@@ -150,6 +167,11 @@ linux_fetch_syscall_args(struct thread *td)
 	else
 		sa->callp = &p->p_sysent->sv_table[sa->code];
 
+	/* Restore r10 earlier to avoid doing this multiply times. */
+	frame->tf_r10 = frame->tf_rcx;
+	/* Restore %rcx for machine context. */
+	frame->tf_rcx = frame->tf_rip;
+
 	td->td_retval[0] = 0;
 	return (0);
 }
@@ -164,7 +186,6 @@ linux_set_syscall_retval(struct thread *td, int error)
 	switch (error) {
 	case 0:
 		frame->tf_rax = td->td_retval[0];
-		frame->tf_r10 = frame->tf_rcx;
 		break;
 
 	case ERESTART:
@@ -175,7 +196,6 @@ linux_set_syscall_retval(struct thread *td, int error)
 		 *
 		 */
 		frame->tf_rip -= frame->tf_err;
-		frame->tf_r10 = frame->tf_rcx;
 		break;
 
 	case EJUSTRETURN:
@@ -183,7 +203,6 @@ linux_set_syscall_retval(struct thread *td, int error)
 
 	default:
 		frame->tf_rax = bsd_to_linux_errno(error);
-		frame->tf_r10 = frame->tf_rcx;
 		break;
 	}
 
@@ -192,9 +211,6 @@ linux_set_syscall_retval(struct thread *td, int error)
 	 * and %r11 values are not preserved across the syscall.
 	 * Require full context restore to get all registers except
 	 * those two restored at return to usermode.
-	 *
-	 * XXX: Would be great to be able to avoid PCB_FULL_IRET
-	 *      for the error == 0 case.
 	 */
 	set_pcb_flags(td->td_pcb, PCB_FULL_IRET);
 }
@@ -577,7 +593,6 @@ struct sysentvec elf_linux_sysvec = {
 	.sv_elf_core_osabi = ELFOSABI_NONE,
 	.sv_elf_core_abi_vendor = LINUX_ABI_VENDOR,
 	.sv_elf_core_prepare_notes = linux64_prepare_notes,
-	.sv_imgact_try	= linux_exec_imgact_try,
 	.sv_minsigstksz	= LINUX_MINSIGSTKSZ,
 	.sv_minuser	= VM_MIN_ADDRESS,
 	.sv_maxuser	= VM_MAXUSER_ADDRESS_LA48,
@@ -617,7 +632,7 @@ linux_on_exec_vmspace(struct proc *p, struct image_params *imgp)
 	error = linux_map_vdso(p, linux_vdso_obj, linux_vdso_base,
 	    LINUX_VDSOPAGE_SIZE, imgp);
 	if (error == 0)
-		linux_on_exec(p, imgp);
+		error = linux_on_exec(p, imgp);
 	return (error);
 }
 
@@ -759,7 +774,6 @@ static Elf64_Brandinfo linux_glibc2brand = {
 	.brand		= ELFOSABI_LINUX,
 	.machine	= EM_X86_64,
 	.compat_3_brand	= "Linux",
-	.emul_path	= linux_emul_path,
 	.interp_path	= "/lib64/ld-linux-x86-64.so.2",
 	.sysvec		= &elf_linux_sysvec,
 	.interp_newpath	= NULL,
@@ -771,7 +785,6 @@ static Elf64_Brandinfo linux_glibc2brandshort = {
 	.brand		= ELFOSABI_LINUX,
 	.machine	= EM_X86_64,
 	.compat_3_brand	= "Linux",
-	.emul_path	= linux_emul_path,
 	.interp_path	= "/lib64/ld-linux.so.2",
 	.sysvec		= &elf_linux_sysvec,
 	.interp_newpath	= NULL,
@@ -783,7 +796,6 @@ static Elf64_Brandinfo linux_muslbrand = {
 	.brand		= ELFOSABI_LINUX,
 	.machine	= EM_X86_64,
 	.compat_3_brand	= "Linux",
-	.emul_path	= linux_emul_path,
 	.interp_path	= "/lib/ld-musl-x86_64.so.1",
 	.sysvec		= &elf_linux_sysvec,
 	.interp_newpath	= NULL,

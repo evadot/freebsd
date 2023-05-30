@@ -145,6 +145,7 @@ __DEFAULT_YES_OPTIONS = \
     MLX5TOOL \
     NETCAT \
     NETGRAPH \
+    NETLINK \
     NETLINK_SUPPORT \
     NLS_CATALOGS \
     NS_CACHING \
@@ -296,8 +297,8 @@ __DEFAULT_YES_OPTIONS+=LIB32
 .else
 BROKEN_OPTIONS+=LIB32
 .endif
-# EFI doesn't exist on powerpc (well, officially)
-.if ${__T:Mpowerpc*}
+# EFI doesn't exist on powerpc (well, officially) and doesn't work on i386
+.if ${__T:Mpowerpc*} || ${__T} == "i386"
 BROKEN_OPTIONS+=EFI
 .endif
 # OFW is only for powerpc, exclude others
@@ -459,7 +460,6 @@ MK_LLD_BOOTSTRAP:= no
 
 .if ${MK_TOOLCHAIN} == "no"
 MK_CLANG:=	no
-MK_INCLUDES:=	no
 MK_LLD:=	no
 MK_LLDB:=	no
 MK_LLVM_BINUTILS:=	no

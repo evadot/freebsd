@@ -3322,13 +3322,22 @@ dump_znode_sa_xattr(sa_handle_t *hdl)
 	(void) printf("\tSA xattrs: %d bytes, %d entries\n\n",
 	    sa_xattr_size, sa_xattr_entries);
 	while ((elem = nvlist_next_nvpair(sa_xattr, elem)) != NULL) {
+		boolean_t can_print = !dump_opt['P'];
 		uchar_t *value;
 		uint_t cnt, idx;
 
 		(void) printf("\t\t%s = ", nvpair_name(elem));
 		nvpair_value_byte_array(elem, &value, &cnt);
+
 		for (idx = 0; idx < cnt; ++idx) {
-			if (isprint(value[idx]))
+			if (!isprint(value[idx])) {
+				can_print = B_FALSE;
+				break;
+			}
+		}
+
+		for (idx = 0; idx < cnt; ++idx) {
+			if (can_print)
 				(void) putchar(value[idx]);
 			else
 				(void) printf("\\%3.3o", value[idx]);
@@ -6812,12 +6821,15 @@ dump_block_stats(spa_t *spa)
 
 	if (dump_opt['b'] >= 2) {
 		int l, t, level;
+		char csize[32], lsize[32], psize[32], asize[32];
+		char avg[32], gang[32];
 		(void) printf("\nBlocks\tLSIZE\tPSIZE\tASIZE"
 		    "\t  avg\t comp\t%%Total\tType\n");
 
+		zfs_blkstat_t *mdstats = umem_zalloc(sizeof (zfs_blkstat_t),
+		    UMEM_NOFAIL);
+
 		for (t = 0; t <= ZDB_OT_TOTAL; t++) {
-			char csize[32], lsize[32], psize[32], asize[32];
-			char avg[32], gang[32];
 			const char *typename;
 
 			/* make sure nicenum has enough space */
@@ -6859,6 +6871,15 @@ dump_block_stats(spa_t *spa)
 
 				if (zb->zb_asize == 0)
 					continue;
+
+				if (level != ZB_TOTAL && t < DMU_OT_NUMTYPES &&
+				    (level > 0 || DMU_OT_IS_METADATA(t))) {
+					mdstats->zb_count += zb->zb_count;
+					mdstats->zb_lsize += zb->zb_lsize;
+					mdstats->zb_psize += zb->zb_psize;
+					mdstats->zb_asize += zb->zb_asize;
+					mdstats->zb_gangs += zb->zb_gangs;
+				}
 
 				if (dump_opt['b'] < 3 && level != ZB_TOTAL)
 					continue;
@@ -6905,11 +6926,31 @@ dump_block_stats(spa_t *spa)
 				}
 			}
 		}
+		zdb_nicenum(mdstats->zb_count, csize,
+		    sizeof (csize));
+		zdb_nicenum(mdstats->zb_lsize, lsize,
+		    sizeof (lsize));
+		zdb_nicenum(mdstats->zb_psize, psize,
+		    sizeof (psize));
+		zdb_nicenum(mdstats->zb_asize, asize,
+		    sizeof (asize));
+		zdb_nicenum(mdstats->zb_asize / mdstats->zb_count, avg,
+		    sizeof (avg));
+		zdb_nicenum(mdstats->zb_gangs, gang, sizeof (gang));
+
+		(void) printf("%6s\t%5s\t%5s\t%5s\t%5s"
+		    "\t%5.2f\t%6.2f\t",
+		    csize, lsize, psize, asize, avg,
+		    (double)mdstats->zb_lsize / mdstats->zb_psize,
+		    100.0 * mdstats->zb_asize / tzb->zb_asize);
+		(void) printf("%s\n", "Metadata Total");
 
 		/* Output a table summarizing block sizes in the pool */
 		if (dump_opt['b'] >= 2) {
 			dump_size_histograms(zcb);
 		}
+
+		umem_free(mdstats, sizeof (zfs_blkstat_t));
 	}
 
 	(void) printf("\n");
@@ -7629,6 +7670,9 @@ mos_leak_vdev(vdev_t *vd)
 		metaslab_t *ms = vd->vdev_ms[m];
 		mos_obj_refd(space_map_object(ms->ms_sm));
 	}
+
+	if (vd->vdev_root_zap != 0)
+		mos_obj_refd(vd->vdev_root_zap);
 
 	if (vd->vdev_top_zap != 0) {
 		mos_obj_refd(vd->vdev_top_zap);
@@ -8455,8 +8499,8 @@ zdb_read_block(char *thing, spa_t *spa)
 	    !(flags & ZDB_FLAG_DECOMPRESS)) {
 		const blkptr_t *b = (const blkptr_t *)(void *)
 		    ((uintptr_t)buf + (uintptr_t)blkptr_offset);
-		if (zfs_blkptr_verify(spa, b, B_FALSE, BLK_VERIFY_ONLY) ==
-		    B_FALSE) {
+		if (zfs_blkptr_verify(spa, b,
+		    BLK_CONFIG_NEEDED, BLK_VERIFY_ONLY) == B_FALSE) {
 			abd_return_buf_copy(pabd, buf, lsize);
 			borrowed = B_FALSE;
 			buf = lbuf;
@@ -8464,8 +8508,8 @@ zdb_read_block(char *thing, spa_t *spa)
 			    lbuf, lsize, psize, flags);
 			b = (const blkptr_t *)(void *)
 			    ((uintptr_t)buf + (uintptr_t)blkptr_offset);
-			if (failed || zfs_blkptr_verify(spa, b, B_FALSE,
-			    BLK_VERIFY_LOG) == B_FALSE) {
+			if (failed || zfs_blkptr_verify(spa, b,
+			    BLK_CONFIG_NEEDED, BLK_VERIFY_LOG) == B_FALSE) {
 				printf("invalid block pointer at this DVA\n");
 				goto out;
 			}

@@ -357,7 +357,10 @@ and the allocation can't actually be satisfied
 When a vdev is added, target this number of metaslabs per top-level vdev.
 .
 .It Sy zfs_vdev_default_ms_shift Ns = Ns Sy 29 Po 512 MiB Pc Pq uint
-Default limit for metaslab size.
+Default lower limit for metaslab size.
+.
+.It Sy zfs_vdev_max_ms_shift Ns = Ns Sy 34 Po 16 GiB Pc Pq uint
+Default upper limit for metaslab size.
 .
 .It Sy zfs_vdev_max_auto_ashift Ns = Ns Sy 14 Pq uint
 Maximum ashift used when optimizing for logical \[->] physical sector size on
@@ -1292,6 +1295,11 @@ as fuller devices will tend to be slower than empty devices.
 Also see
 .Sy zio_dva_throttle_enabled .
 .
+.It Sy zfs_vdev_def_queue_depth Ns = Ns Sy 32 Pq uint
+Default queue depth for each vdev IO allocator.
+Higher values allow for better coalescing of sequential writes before sending
+them to the disk, but can increase transaction commit times.
+.
 .It Sy zfs_vdev_failfast_mask Ns = Ns Sy 1 Pq uint
 Defines if the driver should retire on a given error type.
 The following options may be bitwise-ored together:
@@ -1755,6 +1763,9 @@ stop resilvering when the pool is next imported.
 Scrubs are processed by the sync thread.
 While scrubbing, it will spend at least this much time
 working on a scrub between TXG flushes.
+.
+.It Sy zfs_scrub_error_blocks_per_txg Ns = Ns Sy 4096 Pq uint
+Error blocks to be scrubbed in one txg.
 .
 .It Sy zfs_scan_checkpoint_intval Ns = Ns Sy 7200 Ns s Po 2 hour Pc Pq uint
 To preserve progress across reboots, the sequential scan algorithm periodically

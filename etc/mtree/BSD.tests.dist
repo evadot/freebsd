@@ -750,6 +750,8 @@
                 ..
             ..
         ..
+        compat32
+        ..
         devrandom
         ..
         dtrace
@@ -1034,6 +1036,8 @@
         ..
         du
         ..
+        factor
+        ..
         file2c
         ..
         file
@@ -1115,6 +1119,8 @@
         tr
         ..
         truncate
+        ..
+        tsort
         ..
         units
         ..

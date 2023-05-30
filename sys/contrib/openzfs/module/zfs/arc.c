@@ -4465,7 +4465,7 @@ arc_evict(void)
 	 */
 	int64_t prune = 0;
 	int64_t dn = wmsum_value(&arc_sums.arcstat_dnode_size);
-	w = wt * (arc_meta >> 16) >> 16;
+	w = wt * (int64_t)(arc_meta >> 16) >> 16;
 	if (zfs_refcount_count(&arc_mru->arcs_size[ARC_BUFC_METADATA]) +
 	    zfs_refcount_count(&arc_mfu->arcs_size[ARC_BUFC_METADATA]) -
 	    zfs_refcount_count(&arc_mru->arcs_esize[ARC_BUFC_METADATA]) -
@@ -4481,7 +4481,7 @@ arc_evict(void)
 		arc_prune_async(prune);
 
 	/* Evict MRU metadata. */
-	w = wt * (arc_meta * arc_pm >> 48) >> 16;
+	w = wt * (int64_t)(arc_meta * arc_pm >> 48) >> 16;
 	e = MIN((int64_t)(asize - arc_c), (int64_t)(mrum - w));
 	bytes = arc_evict_impl(arc_mru, ARC_BUFC_METADATA, e);
 	total_evicted += bytes;
@@ -4489,7 +4489,7 @@ arc_evict(void)
 	asize -= bytes;
 
 	/* Evict MFU metadata. */
-	w = wt * (arc_meta >> 16) >> 16;
+	w = wt * (int64_t)(arc_meta >> 16) >> 16;
 	e = MIN((int64_t)(asize - arc_c), (int64_t)(m - w));
 	bytes = arc_evict_impl(arc_mfu, ARC_BUFC_METADATA, e);
 	total_evicted += bytes;
@@ -4498,7 +4498,7 @@ arc_evict(void)
 
 	/* Evict MRU data. */
 	wt -= m - total_evicted;
-	w = wt * (arc_pd >> 16) >> 16;
+	w = wt * (int64_t)(arc_pd >> 16) >> 16;
 	e = MIN((int64_t)(asize - arc_c), (int64_t)(mrud - w));
 	bytes = arc_evict_impl(arc_mru, ARC_BUFC_DATA, e);
 	total_evicted += bytes;
@@ -5696,8 +5696,8 @@ top:
 	 * and treat it as a checksum error.  This allows an alternate blkptr
 	 * to be tried when one is available (e.g. ditto blocks).
 	 */
-	if (!zfs_blkptr_verify(spa, bp, zio_flags & ZIO_FLAG_CONFIG_WRITER,
-	    BLK_VERIFY_LOG)) {
+	if (!zfs_blkptr_verify(spa, bp, (zio_flags & ZIO_FLAG_CONFIG_WRITER) ?
+	    BLK_CONFIG_HELD : BLK_CONFIG_NEEDED, BLK_VERIFY_LOG)) {
 		rc = SET_ERROR(ECKSUM);
 		goto done;
 	}
@@ -8198,10 +8198,17 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 * iteration can occur.
 	 */
 	dev_size = dev->l2ad_end - dev->l2ad_start;
+
+	/* We need to add in the worst case scenario of log block overhead. */
 	tsize = size + l2arc_log_blk_overhead(size, dev);
-	if (dev->l2ad_vdev->vdev_has_trim && l2arc_trim_ahead > 0)
+	if (dev->l2ad_vdev->vdev_has_trim && l2arc_trim_ahead > 0) {
+		/*
+		 * Trim ahead of the write size 64MB or (l2arc_trim_ahead/100)
+		 * times the writesize, whichever is greater.
+		 */
 		tsize += MAX(64 * 1024 * 1024,
 		    (tsize * l2arc_trim_ahead) / 100);
+	}
 
 	if (tsize >= dev_size) {
 		cmn_err(CE_NOTE, "l2arc_write_max or l2arc_write_boost "
@@ -8835,19 +8842,6 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	boolean_t rerun;
 
 	buflist = &dev->l2ad_buflist;
-
-	/*
-	 * We need to add in the worst case scenario of log block overhead.
-	 */
-	distance += l2arc_log_blk_overhead(distance, dev);
-	if (vd->vdev_has_trim && l2arc_trim_ahead > 0) {
-		/*
-		 * Trim ahead of the write size 64MB or (l2arc_trim_ahead/100)
-		 * times the write size, whichever is greater.
-		 */
-		distance += MAX(64 * 1024 * 1024,
-		    (distance * l2arc_trim_ahead) / 100);
-	}
 
 top:
 	rerun = B_FALSE;
