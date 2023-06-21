@@ -75,16 +75,14 @@ get_val(const char *cp, u_long *valp)
 static int
 do_cmd(if_ctx *ctx, u_long op, void *arg, size_t argsize, int set)
 {
-	struct ifdrv ifd;
+	struct ifdrv ifd = {};
 
-	bzero(&ifd, sizeof(ifd));
-
-	strlcpy(ifd.ifd_name, ifr.ifr_name, sizeof(ifd.ifd_name));
+	strlcpy(ifd.ifd_name, ctx->ifname, sizeof(ifd.ifd_name));
 	ifd.ifd_cmd = op;
 	ifd.ifd_len = argsize;
 	ifd.ifd_data = arg;
 
-	return (ioctl(ctx->io_s, set ? SIOCSDRVSPEC : SIOCGDRVSPEC, &ifd));
+	return (ioctl_ctx(ctx, set ? SIOCSDRVSPEC : SIOCGDRVSPEC, &ifd));
 }
 
 static int
@@ -141,7 +139,7 @@ vxlan_status(if_ctx *ctx)
 	printf(" %s %s%s%s:%s", mc ? "group" : "remote", ipv6 ? "[" : "",
 	    dst, ipv6 ? "]" : "", dstport);
 
-	if (verbose) {
+	if (ctx->args->verbose) {
 		printf("\n\t\tconfig: ");
 		printf("%slearning portrange %d-%d ttl %d",
 		    cfg.vxlc_learn ? "" : "no", cfg.vxlc_port_min,
@@ -179,19 +177,13 @@ vxlan_check_params(void)
 #undef _REMOTE_ADDR46
 
 static void
-vxlan_cb(int s, void *arg)
-{
-
-}
-
-static void
-vxlan_create(int s, struct ifreq *ifr)
+vxlan_create(if_ctx *ctx, struct ifreq *ifr)
 {
 
 	vxlan_check_params();
 
 	ifr->ifr_data = (caddr_t) &params;
-	ioctl_ifcreate(s, ifr);
+	ifcreate_ioctl(ctx, ifr);
 }
 
 static void
@@ -554,7 +546,7 @@ setvxlan_ttl(if_ctx *ctx, const char *arg, int dummy __unused)
 }
 
 static void
-setvxlan_learn(if_ctx *ctx, const char *arg, int d)
+setvxlan_learn(if_ctx *ctx, const char *arg __unused, int d)
 {
 	struct ifvxlancmd cmd;
 
@@ -621,9 +613,9 @@ static struct cmd vxlan_cmds[] = {
 	DEF_CMD("vxlanflushall", 1,		setvxlan_flush),
 
 	DEF_CMD("vxlanhwcsum",	IFCAP_VXLAN_HWCSUM,	setifcap),
-	DEF_CMD("-vxlanhwcsum",	-IFCAP_VXLAN_HWCSUM,	setifcap),
+	DEF_CMD("-vxlanhwcsum",	IFCAP_VXLAN_HWCSUM,	clearifcap),
 	DEF_CMD("vxlanhwtso",	IFCAP_VXLAN_HWTSO,	setifcap),
-	DEF_CMD("-vxlanhwtso",	-IFCAP_VXLAN_HWTSO,	setifcap),
+	DEF_CMD("-vxlanhwtso",	IFCAP_VXLAN_HWTSO,	clearifcap),
 };
 
 static struct afswtch af_vxlan = {
@@ -640,6 +632,5 @@ vxlan_ctor(void)
 	for (i = 0; i < nitems(vxlan_cmds); i++)
 		cmd_register(&vxlan_cmds[i]);
 	af_register(&af_vxlan);
-	callback_register(vxlan_cb, NULL);
 	clone_setdefcallback_prefix("vxlan", vxlan_create);
 }

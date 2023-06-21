@@ -195,6 +195,12 @@ static MALLOC_DEFINE(M_PFRULE, "pf_rule", "pf(4) rules");
 #error PF_QNAME_SIZE must be equal to PF_TAG_NAME_SIZE
 #endif
 
+VNET_DEFINE_STATIC(bool, pf_filter_local) = false;
+#define V_pf_filter_local	VNET(pf_filter_local)
+SYSCTL_BOOL(_net_pf, OID_AUTO, filter_local, CTLFLAG_VNET | CTLFLAG_RW,
+    &VNET_NAME(pf_filter_local), false,
+    "Enable filtering for packets delivered to local network stack");
+
 static void		 pf_init_tagset(struct pf_tagset *, unsigned int *,
 			    unsigned int);
 static void		 pf_cleanup_tagset(struct pf_tagset *);
@@ -843,6 +849,12 @@ pf_eth_calc_skip_steps(struct pf_keth_ruleq *rules)
 			PF_SET_SKIP_STEPS(PFE_SKIP_SRC_ADDR);
 		if (memcmp(&cur->dst, &prev->dst, sizeof(cur->dst)) != 0)
 			PF_SET_SKIP_STEPS(PFE_SKIP_DST_ADDR);
+		if (cur->ipsrc.neg != prev->ipsrc.neg ||
+		    pf_addr_wrap_neq(&cur->ipsrc.addr, &prev->ipsrc.addr))
+			PF_SET_SKIP_STEPS(PFE_SKIP_SRC_IP_ADDR);
+		if (cur->ipdst.neg != prev->ipdst.neg ||
+		    pf_addr_wrap_neq(&cur->ipdst.addr, &prev->ipdst.addr))
+			PF_SET_SKIP_STEPS(PFE_SKIP_DST_IP_ADDR);
 
 		prev = cur;
 		cur = TAILQ_NEXT(cur, entries);
@@ -6534,7 +6546,7 @@ pf_check_in(struct mbuf **m, struct ifnet *ifp, int flags,
 {
 	int chk;
 
-	chk = pf_test(PF_IN, flags, ifp, m, inp);
+	chk = pf_test(PF_IN, flags, ifp, m, inp, NULL);
 
 	return (pf_check_return(chk, m));
 }
@@ -6545,7 +6557,7 @@ pf_check_out(struct mbuf **m, struct ifnet *ifp, int flags,
 {
 	int chk;
 
-	chk = pf_test(PF_OUT, flags, ifp, m, inp);
+	chk = pf_test(PF_OUT, flags, ifp, m, inp, NULL);
 
 	return (pf_check_return(chk, m));
 }
@@ -6564,7 +6576,8 @@ pf_check6_in(struct mbuf **m, struct ifnet *ifp, int flags,
 	 * filtering we have change this to lo0 as it is the case in IPv4.
 	 */
 	CURVNET_SET(ifp->if_vnet);
-	chk = pf_test6(PF_IN, flags, (*m)->m_flags & M_LOOP ? V_loif : ifp, m, inp);
+	chk = pf_test6(PF_IN, flags, (*m)->m_flags & M_LOOP ? V_loif : ifp,
+	    m, inp, NULL);
 	CURVNET_RESTORE();
 
 	return (pf_check_return(chk, m));
@@ -6577,7 +6590,7 @@ pf_check6_out(struct mbuf **m, struct ifnet *ifp, int flags,
 	int chk;
 
 	CURVNET_SET(ifp->if_vnet);
-	chk = pf_test6(PF_OUT, flags, ifp, m, inp);
+	chk = pf_test6(PF_OUT, flags, ifp, m, inp, NULL);
 	CURVNET_RESTORE();
 
 	return (pf_check_return(chk, m));
@@ -6675,6 +6688,13 @@ hook_pf(void)
 	pla.pa_hook = V_pf_ip4_out_hook;
 	ret = pfil_link(&pla);
 	MPASS(ret == 0);
+	if (V_pf_filter_local) {
+		pla.pa_flags = PFIL_OUT | PFIL_HEADPTR | PFIL_HOOKPTR;
+		pla.pa_head = V_inet_local_pfil_head;
+		pla.pa_hook = V_pf_ip4_out_hook;
+		ret = pfil_link(&pla);
+		MPASS(ret == 0);
+	}
 #endif
 #ifdef INET6
 	pha.pa_type = PFIL_TYPE_IP6;
@@ -6696,6 +6716,13 @@ hook_pf(void)
 	pla.pa_hook = V_pf_ip6_out_hook;
 	ret = pfil_link(&pla);
 	MPASS(ret == 0);
+	if (V_pf_filter_local) {
+		pla.pa_flags = PFIL_OUT | PFIL_HEADPTR | PFIL_HOOKPTR;
+		pla.pa_head = V_inet6_local_pfil_head;
+		pla.pa_hook = V_pf_ip6_out_hook;
+		ret = pfil_link(&pla);
+		MPASS(ret == 0);
+	}
 #endif
 
 	atomic_store_bool(&V_pf_pfil_hooked, true);

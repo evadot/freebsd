@@ -451,6 +451,22 @@
 /* ICC_SRE_EL1 */
 #define	ICC_SRE_EL1_SRE		(1U << 0)
 
+/* ID_AA64AFR0_EL1 */
+#define	ID_AA64AFR0_EL1			MRS_REG(ID_AA64AFR0_EL1)
+#define	ID_AA64AFR0_EL1_op0		3
+#define	ID_AA64AFR0_EL1_op1		0
+#define	ID_AA64AFR0_EL1_CRn		0
+#define	ID_AA64AFR0_EL1_CRm		5
+#define	ID_AA64AFR0_EL1_op2		4
+
+/* ID_AA64AFR1_EL1 */
+#define	ID_AA64AFR1_EL1			MRS_REG(ID_AA64AFR1_EL1)
+#define	ID_AA64AFR1_EL1_op0		3
+#define	ID_AA64AFR1_EL1_op1		0
+#define	ID_AA64AFR1_EL1_CRn		0
+#define	ID_AA64AFR1_EL1_CRm		5
+#define	ID_AA64AFR1_EL1_op2		5
+
 /* ID_AA64DFR0_EL1 */
 #define	ID_AA64DFR0_EL1			MRS_REG(ID_AA64DFR0_EL1)
 #define	ID_AA64DFR0_EL1_op0		0x3
@@ -509,7 +525,7 @@
 #define	 ID_AA64DFR0_TraceFilt_8_4	(UL(0x1) << ID_AA64DFR0_TraceFilt_SHIFT)
 
 /* ID_AA64DFR1_EL1 */
-#define	ID_AA64DFR1_EL1			MRS_REG(ID_AA64DFR0_EL1)
+#define	ID_AA64DFR1_EL1			MRS_REG(ID_AA64DFR1_EL1)
 #define	ID_AA64DFR1_EL1_op0		3
 #define	ID_AA64DFR1_EL1_op1		0
 #define	ID_AA64DFR1_EL1_CRn		0
@@ -1206,6 +1222,14 @@
 #define	MDSCR_MDE_SHIFT			15
 #define	MDSCR_MDE			(UL(0x1) << MDSCR_MDE_SHIFT)
 
+/* MIDR_EL1 - Main ID Register */
+#define	MIDR_EL1			MRS_REG(MIDR_EL1)
+#define	MIDR_EL1_op0			3
+#define	MIDR_EL1_op1			0
+#define	MIDR_EL1_CRn			0
+#define	MIDR_EL1_CRm			0
+#define	MIDR_EL1_op2			0
+
 /* MPIDR_EL1 - Multiprocessor Affinity Register */
 #define	MPIDR_EL1			MRS_REG(MPIDR_EL1)
 #define	MPIDR_EL1_op0			3
@@ -1844,6 +1868,14 @@
 /* PSR fields that can be set from 32-bit and 64-bit processes */
 #define	PSR_SETTABLE_32	PSR_FLAGS
 #define	PSR_SETTABLE_64	(PSR_FLAGS | PSR_SS)
+
+/* REVIDR_EL1 - Revision ID Register */
+#define	REVIDR_EL1			MRS_REG(REVIDR_EL1)
+#define	REVIDR_EL1_op0			3
+#define	REVIDR_EL1_op1			0
+#define	REVIDR_EL1_CRn			0
+#define	REVIDR_EL1_CRm			0
+#define	REVIDR_EL1_op2			6
 
 /* TCR_EL1 - Translation Control Register */
 /* Bits 63:59 are reserved */

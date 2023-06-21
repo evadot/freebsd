@@ -60,7 +60,7 @@
 
 static const char *carp_states[] = { CARP_STATES };
 
-static void setcarp_callback(int, void *);
+static void setcarp_callback(if_ctx *, void *);
 
 static int carpr_vhid = -1;
 static int carpr_advskew = -1;
@@ -71,19 +71,19 @@ static struct in6_addr carp_addr6;
 static unsigned char const *carpr_key;
 
 static void
-carp_status(if_ctx *ctx __unused)
+carp_status(if_ctx *ctx)
 {
 	struct ifconfig_carp carpr[CARP_MAXVHID];
 	char addr_buf[NI_MAXHOST];
 
-	if (ifconfig_carp_get_info(lifh, name, carpr, CARP_MAXVHID) == -1)
+	if (ifconfig_carp_get_info(lifh, ctx->ifname, carpr, CARP_MAXVHID) == -1)
 		return;
 
 	for (size_t i = 0; i < carpr[0].carpr_count; i++) {
 		printf("\tcarp: %s vhid %d advbase %d advskew %d",
 		    carp_states[carpr[i].carpr_state], carpr[i].carpr_vhid,
 		    carpr[i].carpr_advbase, carpr[i].carpr_advskew);
-		if (printkeys && carpr[i].carpr_key[0] != '\0')
+		if (ctx->args->printkeys && carpr[i].carpr_key[0] != '\0')
 			printf(" key \"%s\"\n", carpr[i].carpr_key);
 		else
 			printf("\n");
@@ -114,11 +114,11 @@ setcarp_vhid(if_ctx *ctx, const char *val, int dummy __unused)
 }
 
 static void
-setcarp_callback(int s, void *arg __unused)
+setcarp_callback(if_ctx *ctx, void *arg __unused)
 {
 	struct ifconfig_carp carpr = { };
 
-	if (ifconfig_carp_get_vhid(lifh, name, &carpr, carpr_vhid) == -1) {
+	if (ifconfig_carp_get_vhid(lifh, ctx->ifname, &carpr, carpr_vhid) == -1) {
 		if (ifconfig_err_errno(lifh) != ENOENT)
 			return;
 	}
@@ -139,7 +139,7 @@ setcarp_callback(int s, void *arg __unused)
 		memcpy(&carpr.carpr_addr6, &carp_addr6,
 		    sizeof(carp_addr6));
 
-	if (ifconfig_carp_set_info(lifh, name, &carpr))
+	if (ifconfig_carp_set_info(lifh, ctx->ifname, &carpr))
 		err(1, "SIOCSVH");
 }
 
@@ -214,8 +214,7 @@ setcarp_peer6(if_ctx *ctx __unused, const char *val, int dummy __unused)
 	if (getaddrinfo(val, NULL, &hints, &res) != 0)
 		errx(1, "Invalid IPv6 address %s", val);
 
-	memcpy(&carp_addr6, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr,
-	    sizeof(carp_addr6));
+	memcpy(&carp_addr6, &(satosin6(res->ai_addr))->sin6_addr, sizeof(carp_addr6));
 	freeaddrinfo(res);
 }
 
