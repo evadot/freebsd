@@ -156,18 +156,11 @@ pctrie_slot(uint64_t index, uint16_t level)
 	return ((index >> (level * PCTRIE_WIDTH)) & PCTRIE_MASK);
 }
 
-/* Trims the key after the specified level. */
+/* Computes the key (index) with the low-order 'level' radix-digits zeroed. */
 static __inline uint64_t
 pctrie_trimkey(uint64_t index, uint16_t level)
 {
-	uint64_t ret;
-
-	ret = index;
-	if (level > 0) {
-		ret >>= level * PCTRIE_WIDTH;
-		ret <<= level * PCTRIE_WIDTH;
-	}
-	return (ret);
+	return (index & -PCTRIE_UNITLEVEL(level));
 }
 
 /*
@@ -567,8 +560,9 @@ ascend:
 				    NULL, PCTRIE_LOCKED);
 				if (pctrie_isleaf(child)) {
 					m = pctrie_toval(child);
-					if (*m >= index)
-						return (m);
+					KASSERT(*m >= index,
+					    ("pctrie_lookup_ge: leaf < index"));
+					return (m);
 				} else if (child != NULL)
 					goto descend;
 			} while (slot < (PCTRIE_COUNT - 1));
@@ -684,8 +678,9 @@ ascend:
 				    NULL, PCTRIE_LOCKED);
 				if (pctrie_isleaf(child)) {
 					m = pctrie_toval(child);
-					if (*m <= index)
-						return (m);
+					KASSERT(*m <= index,
+					    ("pctrie_lookup_le: leaf > index"));
+					return (m);
 				} else if (child != NULL)
 					goto descend;
 			} while (slot > 0);
@@ -749,7 +744,7 @@ pctrie_remove(struct pctrie *ptree, uint64_t index, pctrie_free_t freefn)
 				if (tmp != NULL)
 					break;
 			}
-			KASSERT(i != PCTRIE_COUNT,
+			KASSERT(tmp != NULL,
 			    ("%s: invalid node configuration", __func__));
 			if (parent == NULL)
 				pctrie_root_store(ptree, tmp, PCTRIE_LOCKED);

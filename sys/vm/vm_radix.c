@@ -181,18 +181,11 @@ vm_radix_slot(vm_pindex_t index, uint16_t level)
 	return ((index >> (level * VM_RADIX_WIDTH)) & VM_RADIX_MASK);
 }
 
-/* Trims the key after the specified level. */
+/* Computes the key (index) with the low-order 'level' radix-digits zeroed. */
 static __inline vm_pindex_t
 vm_radix_trimkey(vm_pindex_t index, uint16_t level)
 {
-	vm_pindex_t ret;
-
-	ret = index;
-	if (level > 0) {
-		ret >>= level * VM_RADIX_WIDTH;
-		ret <<= level * VM_RADIX_WIDTH;
-	}
-	return (ret);
+	return (index & -VM_RADIX_UNITLEVEL(level));
 }
 
 /*
@@ -602,8 +595,9 @@ ascend:
 				    LOCKED);
 				if (vm_radix_isleaf(child)) {
 					m = vm_radix_topage(child);
-					if (m->pindex >= index)
-						return (m);
+					KASSERT(m->pindex >= index,
+					    ("vm_radix_lookup_ge: leaf<index"));
+					return (m);
 				} else if (child != NULL)
 					goto descend;
 			} while (slot < (VM_RADIX_COUNT - 1));
@@ -716,8 +710,9 @@ ascend:
 				    LOCKED);
 				if (vm_radix_isleaf(child)) {
 					m = vm_radix_topage(child);
-					if (m->pindex <= index)
-						return (m);
+					KASSERT(m->pindex <= index,
+					    ("vm_radix_lookup_le: leaf>index"));
+					return (m);
 				} else if (child != NULL)
 					goto descend;
 			} while (slot > 0);
@@ -773,13 +768,14 @@ vm_radix_remove(struct vm_radix *rtree, vm_pindex_t index)
 			rnode->rn_count--;
 			if (rnode->rn_count > 1)
 				return (m);
-			for (i = 0; i < VM_RADIX_COUNT; i++)
-				if (vm_radix_node_load(&rnode->rn_child[i],
-				    LOCKED) != NULL)
+			for (i = 0; i < VM_RADIX_COUNT; i++) {
+				tmp = vm_radix_node_load(&rnode->rn_child[i],
+				    LOCKED);
+				if (tmp != NULL)
 					break;
-			KASSERT(i != VM_RADIX_COUNT,
+			}
+			KASSERT(tmp != NULL,
 			    ("%s: invalid node configuration", __func__));
-			tmp = vm_radix_node_load(&rnode->rn_child[i], LOCKED);
 			if (parent == NULL)
 				vm_radix_root_store(rtree, tmp, LOCKED);
 			else {
