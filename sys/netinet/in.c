@@ -77,6 +77,10 @@ __FBSDID("$FreeBSD$");
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 
+#ifdef MAC
+#include <security/mac/mac_framework.h>
+#endif
+
 static int in_aifaddr_ioctl(u_long, caddr_t, struct ifnet *, struct ucred *);
 static int in_difaddr_ioctl(u_long, caddr_t, struct ifnet *, struct ucred *);
 static int in_gifaddr_ioctl(u_long, caddr_t, struct ifnet *, struct ucred *);
@@ -325,8 +329,8 @@ in_socktrim(struct sockaddr_in *ap)
  * Generic internet control operations (ioctl's).
  */
 int
-in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp,
-    struct thread *td)
+in_control_ioctl(u_long cmd, void *data, struct ifnet *ifp,
+    struct ucred *cred)
 {
 	struct ifreq *ifr = (struct ifreq *)data;
 	struct sockaddr_in *addr = (struct sockaddr_in *)&ifr->ifr_addr;
@@ -337,8 +341,6 @@ in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp,
 
 	if (ifp == NULL)
 		return (EADDRNOTAVAIL);
-
-	struct ucred *cred = (td != NULL) ? td->td_ucred : NULL;
 
 	/*
 	 * Filter out 4 ioctls we implement directly.  Forward the rest
@@ -441,6 +443,13 @@ in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp,
 	return (error);
 }
 
+int
+in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp,
+    struct thread *td)
+{
+	return (in_control_ioctl(cmd, data, ifp, td ? td->td_ucred : NULL));
+}
+
 static int
 in_aifaddr_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp, struct ucred *cred)
 {
@@ -481,6 +490,13 @@ in_aifaddr_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp, struct ucred *cred
 		return (EDESTADDRREQ);
 	if (vhid != 0 && carp_attach_p == NULL)
 		return (EPROTONOSUPPORT);
+
+#ifdef MAC
+	/* Check if a MAC policy disallows setting the IPv4 address. */
+	error = mac_inet_check_add_addr(cred, &addr->sin_addr, ifp);
+	if (error != 0)
+		return (error);
+#endif
 
 	/*
 	 * See whether address already exist.

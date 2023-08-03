@@ -161,7 +161,7 @@ struct faultstate {
  * Return codes for internal fault routines.
  */
 enum fault_status {
-	FAULT_SUCCESS = 1,	/* Return success to user. */
+	FAULT_SUCCESS = 10000,	/* Return success to user. */
 	FAULT_FAILURE,		/* Return failure to user. */
 	FAULT_CONTINUE,		/* Continue faulting. */
 	FAULT_RESTART,		/* Restart fault. */
@@ -539,8 +539,7 @@ vm_fault_populate(struct faultstate *fs)
 	MPASS(pager_last < fs->first_object->size);
 
 	vm_fault_restore_map_lock(fs);
-	bdry_idx = (fs->entry->eflags & MAP_ENTRY_SPLIT_BOUNDARY_MASK) >>
-	    MAP_ENTRY_SPLIT_BOUNDARY_SHIFT;
+	bdry_idx = MAP_ENTRY_SPLIT_BOUNDARY_INDEX(fs->entry);
 	if (fs->map->timestamp != fs->map_generation) {
 		if (bdry_idx == 0) {
 			vm_fault_populate_cleanup(fs->first_object, pager_first,

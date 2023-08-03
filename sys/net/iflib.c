@@ -1650,7 +1650,8 @@ iflib_fast_intr_ctx(void *arg)
 			return (result);
 	}
 
-	GROUPTASK_ENQUEUE(gtask);
+	if (gtask->gt_taskqueue != NULL)
+		GROUPTASK_ENQUEUE(gtask);
 	return (FILTER_HANDLED);
 }
 
@@ -5386,7 +5387,13 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 		goto fail_queues;
 	}
 
+	/*
+	 * It prevents a double-locking panic with iflib_media_status when
+	 * the driver loads.
+	 */
+	CTX_UNLOCK(ctx);
 	ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac.octet);
+	CTX_LOCK(ctx);
 
 	if ((err = IFDI_ATTACH_POST(ctx)) != 0) {
 		device_printf(dev, "IFDI_ATTACH_POST failed %d\n", err);

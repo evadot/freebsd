@@ -135,6 +135,8 @@
                     ..
                     json
                     ..
+                    kinst
+                    ..
                     lexer
                     ..
                     llquantize
@@ -254,8 +256,6 @@
                 ..
                 amd64
                     arrays
-                    ..
-                    kinst
                     ..
                 ..
             ..
@@ -814,6 +814,8 @@
         ..
         mac
             bsdextended
+            ..
+            ipacl
             ..
             portacl
             ..

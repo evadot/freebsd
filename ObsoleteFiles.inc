@@ -52,16 +52,38 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20230802: Remove a copy of libdtrace.so installed to the wrong path
+OLD_FILES+=usr/lib/libdtrace.so.2
+
+# 20230726: Removal of support for the VTOC8 partitioning scheme
+OLD_FILES+=usr/include/sys/disk/vtoc.h
+OLD_FILES+=usr/include/sys/vtoc.h
+
+# 20230724: Remove unneeded arm headers
+.if ${TARGET_ARCH} == "arm"
+OLD_FILES+=usr/include/machine/atomic-v6.h
+OLD_FILES+=usr/include/machine/cpu-v6.h
+OLD_FILES+=usr/include/machine/pmap-v6.h
+OLD_FILES+=usr/include/machine/pte-v6.h
+OLD_FILES+=usr/include/machine/swi.h
+.endif
+
+# 20230714: gsignal
+OLD_FILES+=usr/share/man/man9/gsignal.9.gz
+
 # 20230626: Only install sys/dev/nvme/nvme.h to /usr/include
 OLD_FILES+=usr/include/dev/nvme/nvme_private.h
 
 # 20230623: OpenSSL 3.0.9
 OLD_LIBS+=lib/libcrypto.so.111
 OLD_FILES+=usr/include/openssl/rand_drbg.h
-OLD_FILES+=usr/lib/engines/capi.so
-OLD_FILES+=usr/lib/engines/padlock.so
+OLD_LIBS+=usr/lib/engines/capi.so
+OLD_LIBS+=usr/lib/engines/padlock.so
 OLD_LIBS+=usr/lib/libssl.so.111
 OLD_DIRS+=usr/lib/engines
+.for libcompat in ${_ALL_libcompats}
+OLD_DIRS+=usr/lib${libcompat}/engines
+.endfor
 OLD_FILES+=usr/share/man/man1/list.1
 OLD_FILES+=usr/share/man/man1/openssl-tsget.1
 OLD_FILES+=usr/share/man/man3/ECDH_get_ex_data.3
@@ -8427,6 +8449,8 @@ OLD_DIRS+=usr/include/c++/4.2/debug
 OLD_DIRS+=usr/include/c++/4.2/bits
 OLD_DIRS+=usr/include/c++/4.2/backward
 OLD_DIRS+=usr/include/c++/4.2
+OLD_DIRS+=usr/include/gcc/4.2
+OLD_DIRS+=usr/include/gcc
 
 # 20200220: Upgrade of ncurses, shlib bumped to version 9
 OLD_LIBS+=lib/libncurses.so.8
@@ -9631,22 +9655,17 @@ OLD_FILES+=usr/share/openssl/man/man3/RAND_SSLeay.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/RSA_PKCS1_SSLeay.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/RSA_null_method.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL.3.gz
-OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_get_ex_new_index.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_need_tmp_rsa.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_set_custom_cli_ext.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_set_default_read_ahead.3.gz
-OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_set_ecdh_auto.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_set_tmp_rsa.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_CTX_set_tmp_rsa_callback.3.gz
-OLD_FILES+=usr/share/openssl/man/man3/SSL_SESSION_get_ex_new_index.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_add_session.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_flush_sessions.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_get_accept_state.3.gz
-OLD_FILES+=usr/share/openssl/man/man3/SSL_get_ex_new_index.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_get_msg_callback_arg.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_need_tmp_rsa.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_remove_session.3.gz
-OLD_FILES+=usr/share/openssl/man/man3/SSL_set_ecdh_auto.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_set_tmp_rsa.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSL_set_tmp_rsa_callback.3.gz
 OLD_FILES+=usr/share/openssl/man/man3/SSLeay.3.gz
@@ -16678,7 +16697,6 @@ OLD_FILES+=usr/share/man/man3/SSL_get_current_cipher.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_default_timeout.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_error.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_ex_data_X509_STORE_CTX_idx.3.gz
-OLD_FILES+=usr/share/man/man3/SSL_get_ex_new_index.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_fd.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_peer_cert_chain.3.gz
 OLD_FILES+=usr/share/man/man3/SSL_get_peer_certificate.3.gz

@@ -1,7 +1,11 @@
 /*
  * SPDX-License-Identifier: CDDL 1.0
  *
- * Copyright 2022 Christos Margiolis <christos@FreeBSD.org>
+ * Copyright (c) 2022 Christos Margiolis <christos@FreeBSD.org>
+ * Copyright (c) 2023 The FreeBSD Foundation
+ *
+ * Portions of this software were developed by Christos Margiolis
+ * <christos@FreeBSD.org> under sponsorship from the FreeBSD Foundation.
  */
 
 #include <sys/param.h>
@@ -90,6 +94,13 @@ bool
 kinst_excluded(const char *name)
 {
 	if (kinst_md_excluded(name))
+		return (true);
+
+	/*
+	 * cpu_switch() can cause a crash if it modifies the value of curthread
+	 * while in probe context.
+	 */
+	if (strcmp(name, "cpu_switch") == 0)
 		return (true);
 
 	/*
@@ -217,6 +228,9 @@ kinst_destroy(void *arg, dtrace_id_t id, void *parg)
 	struct kinst_probe *kp = parg;
 
 	LIST_REMOVE(kp, kp_hashnext);
+#ifndef __amd64__
+	kinst_trampoline_dealloc(kp->kp_tramp);
+#endif
 	free(kp, M_KINST);
 }
 
