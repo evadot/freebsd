@@ -51,6 +51,16 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20230927: Man pages renamed to match the actual functions
+OLD_FILES+=usr/share/man/man9/cr_seeothergids.9.gz
+OLD_FILES+=usr/share/man/man9/cr_seeotheruids.9.gz
+
+# 20230925
+OLD_FILES+=usr/share/examples/diskless/ME
+OLD_FILES+=usr/share/examples/diskless/README.BOOTP
+OLD_FILES+=usr/share/examples/diskless/README.TEMPLATING
+OLD_FILES+=usr/share/examples/diskless/clone_root
+
 # 20230905
 OLD_FILES+=usr/share/doc/legal/realtek_rtw88_firmware.LICENCE
 
@@ -448,8 +458,6 @@ OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-i386.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-powerpc.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-powerpc64.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-powerpc64le.a
-OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-powerpc64le.a
-OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-powerpc64lele.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-riscv64.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.profile-x86_64.a
 OLD_FILES+=usr/lib/clang/15.0.7/lib/freebsd/libclang_rt.safestack-aarch64.a
@@ -17655,11 +17663,6 @@ OLD_FILES+=usr/share/man/man3/setrunelocale.3.gz
 OLD_FILES+=usr/share/man/man5/usbd.conf.5.gz
 .if ${TARGET_ARCH} != "i386" && ${TARGET_ARCH} != "amd64"
 OLD_FILES+=usr/share/man/man8/boot_i386.8.gz
-.endif
-.if ${TARGET_ARCH} != "aarch64" && ${TARGET} != "arm" && \
-    ${TARGET_ARCH} != "powerpc" && ${TARGET_ARCH} != "powerpc64" && \
-    ${TARGET_ARCH} != "sparc64" && ${TARGET} != "mips"
-OLD_FILES+=usr/share/man/man8/ofwdump.8.gz
 .endif
 OLD_FILES+=usr/share/man/man8/mount_reiserfs.8.gz
 OLD_FILES+=usr/share/man/man9/VFS_START.9.gz

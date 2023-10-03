@@ -26,7 +26,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd August 28, 2023
+.Dd September 22, 2023
 .Dt PF 4
 .Os
 .Sh NAME
@@ -87,6 +87,10 @@ Default value is 131072.
 Size of hash table that store source nodes.
 Should be power of 2.
 Default value is 32768.
+.It Va net.pf.default_to_drop
+This value overrides
+.Cd "options PF_DEFAULT_TO_DROP"
+from kernel configuration file.
 .El
 .Pp
 Read only
@@ -1224,6 +1228,9 @@ and then
 .Pp
 This implementation is derived from
 .Ox 4.5 .
+A number of individual features, improvements, bug fixes and security fixes
+have been ported from later versions of
+.Ox .
 It has been heavily modified to be capable of running in multithreaded
 .Fx
 kernel and scale its performance on multiple CPUs.
