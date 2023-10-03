@@ -1,18 +1,13 @@
 
 .PATH:	${SRCTOP}/sys/dev/iicbus/rtc
-KMOD	= rtc8583
-SRCS	= rtc8583.c 
+KMOD=	rv3032
+SRCS=	rv3032.c
 
-# Generated files...
-SRCS+=	\
-	bus_if.h \
+SRCS+=	bus_if.h \
 	clock_if.h \
 	device_if.h \
 	iicbus_if.h \
 	opt_platform.h \
-
-.if !empty(OPT_FDT)
-SRCS+=	ofw_bus_if.h
-.endif
+	ofw_bus_if.h
 
 .include <bsd.kmod.mk>
