@@ -3,7 +3,7 @@ BLACKLIST_DIR=${SRCTOP}/contrib/blacklist
 
 .PATH: ${BLACKLIST_DIR}/lib ${BLACKLIST_DIR}/include
 
-PACKAGE=	blacklist
+PACKAGE=	blocklist
 LIB=	blacklist
 SHLIB_MAJOR= 0
 

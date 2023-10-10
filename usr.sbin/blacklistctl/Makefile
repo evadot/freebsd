@@ -2,7 +2,7 @@
 BLACKLIST_DIR=${SRCTOP}/contrib/blacklist
 .PATH: ${BLACKLIST_DIR}/bin ${BLACKLIST_DIR}/port
 
-PACKAGE=	blacklist
+PACKAGE=	blocklist
 
 PROG=	blacklistctl
 SRCS=	blacklistctl.c conf.c state.c support.c internal.c \
