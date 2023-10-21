@@ -51,6 +51,22 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20231018: pmc.k7(3) removed
+OLD_FILES+=usr/share/man/man3/pmc.k7.3.gz
+
+# 20231018: Remove misspelled man page link
+OLD_FILES+=usr/share/man/man3/dbm_dirnfo.3.gz
+
+# 20231006: rename tcp6_v4unmapped_bind_test
+OLD_FILES+=usr/tests/sys/netinet/tcp6_v4unmapped_bind_test
+
+# 20231005: Remove man page link for now gone net80211 function.
+OLD_FILES+=usr/share/man/man9/ieee80211_unref_node.9.gz
+
+# 20231005: bsdconfig remove support for floppy and ftp
+OLD_FILES+=usr/share/bsdconfig/media/floppy.subr
+OLD_FILES+=usr/share/bsdconfig/media/ftp.subr
+
 # 20230927: Man pages renamed to match the actual functions
 OLD_FILES+=usr/share/man/man9/cr_seeothergids.9.gz
 OLD_FILES+=usr/share/man/man9/cr_seeotheruids.9.gz
@@ -2762,6 +2778,11 @@ OLD_FILES+=usr/share/man/man4/ng_h4.4.gz
 
 # 20210923: rename boot(9) to kern_reboot(9)
 OLD_FILES+=usr/share/man/man9/boot.9.gz
+
+# 20210922: Old mixer(8) tests removed
+OLD_FILES+=usr/tests/usr.sbin/mixer/Kyuafile
+OLD_FILES+=usr/tests/usr.sbin/mixer/mixer_test
+OLD_DIRS+=usr/tests/usr.sbin/mixer
 
 # 20210921: remove cloudabi
 OLD_FILES+=usr/share/man/man4/cloudabi.4.gz

@@ -83,6 +83,7 @@
 #include <netinet/ip_var.h>
 #include <netinet6/ip6_var.h>
 #include <netinet/ip_icmp.h>
+#include <netpfil/pf/pf_nl.h>
 #include <netpfil/pf/pf_nv.h>
 
 #ifdef INET6
@@ -2336,6 +2337,49 @@ relock_DIOCKILLSTATES:
 	return (killed);
 }
 
+int
+pf_start(void)
+{
+	int error = 0;
+
+	sx_xlock(&V_pf_ioctl_lock);
+	if (V_pf_status.running)
+		error = EEXIST;
+	else {
+		hook_pf();
+		if (! TAILQ_EMPTY(V_pf_keth->active.rules))
+			hook_pf_eth();
+		V_pf_status.running = 1;
+		V_pf_status.since = time_second;
+		new_unrhdr64(&V_pf_stateid, time_second);
+
+		DPFPRINTF(PF_DEBUG_MISC, ("pf: started\n"));
+	}
+	sx_xunlock(&V_pf_ioctl_lock);
+
+	return (error);
+}
+
+int
+pf_stop(void)
+{
+	int error = 0;
+
+	sx_xlock(&V_pf_ioctl_lock);
+	if (!V_pf_status.running)
+		error = ENOENT;
+	else {
+		V_pf_status.running = 0;
+		dehook_pf();
+		dehook_pf_eth();
+		V_pf_status.since = time_second;
+		DPFPRINTF(PF_DEBUG_MISC, ("pf: stopped\n"));
+	}
+	sx_xunlock(&V_pf_ioctl_lock);
+
+	return (error);
+}
+
 static int
 pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td)
 {
@@ -2364,8 +2408,10 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 		case DIOCCLRSTATUS:
 		case DIOCNATLOOK:
 		case DIOCSETDEBUG:
+#ifdef COMPAT_FREEBSD14
 		case DIOCGETSTATES:
 		case DIOCGETSTATESV2:
+#endif
 		case DIOCGETTIMEOUT:
 		case DIOCCLRRULECTRS:
 		case DIOCGETLIMIT:
@@ -2422,8 +2468,10 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 		case DIOCGETSTATE:
 		case DIOCGETSTATENV:
 		case DIOCGETSTATUSNV:
+#ifdef COMPAT_FREEBSD14
 		case DIOCGETSTATES:
 		case DIOCGETSTATESV2:
+#endif
 		case DIOCGETTIMEOUT:
 		case DIOCGETLIMIT:
 		case DIOCGETALTQSV0:
@@ -2474,34 +2522,15 @@ pfioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags, struct thread *td
 	CURVNET_SET(TD_TO_VNET(td));
 
 	switch (cmd) {
+#ifdef COMPAT_FREEBSD14
 	case DIOCSTART:
-		sx_xlock(&V_pf_ioctl_lock);
-		if (V_pf_status.running)
-			error = EEXIST;
-		else {
-			hook_pf();
-			if (! TAILQ_EMPTY(V_pf_keth->active.rules))
-				hook_pf_eth();
-			V_pf_status.running = 1;
-			V_pf_status.since = time_second;
-			new_unrhdr64(&V_pf_stateid, time_second);
-
-			DPFPRINTF(PF_DEBUG_MISC, ("pf: started\n"));
-		}
+		error = pf_start();
 		break;
 
 	case DIOCSTOP:
-		sx_xlock(&V_pf_ioctl_lock);
-		if (!V_pf_status.running)
-			error = ENOENT;
-		else {
-			V_pf_status.running = 0;
-			dehook_pf();
-			dehook_pf_eth();
-			V_pf_status.since = time_second;
-			DPFPRINTF(PF_DEBUG_MISC, ("pf: stopped\n"));
-		}
+		error = pf_stop();
 		break;
+#endif
 
 	case DIOCGETETHRULES: {
 		struct pfioc_nv		*nv = (struct pfioc_nv *)addr;
@@ -3545,6 +3574,7 @@ DIOCCHANGERULE_error:
 		break;
 	}
 
+#ifdef COMPAT_FREEBSD14
 	case DIOCGETSTATES: {
 		struct pfioc_states	*ps = (struct pfioc_states *)addr;
 		struct pf_kstate	*s;
@@ -3696,7 +3726,7 @@ DIOCGETSTATESV2_full:
 
 		break;
 	}
-
+#endif
 	case DIOCGETSTATUSNV: {
 		error = pf_getstatus((struct pfioc_nv *)addr);
 		break;
@@ -5410,8 +5440,6 @@ DIOCCHANGEADDR_error:
 		break;
 	}
 fail:
-	if (sx_xlocked(&V_pf_ioctl_lock))
-		sx_xunlock(&V_pf_ioctl_lock);
 	CURVNET_RESTORE();
 
 #undef ERROUT_IOCTL
@@ -6648,6 +6676,8 @@ pf_unload(void)
 	}
 	sx_xunlock(&pf_end_lock);
 
+	pf_nl_unregister();
+
 	if (pf_dev != NULL)
 		destroy_dev(pf_dev);
 
@@ -6683,6 +6713,7 @@ pf_modevent(module_t mod, int type, void *data)
 	switch(type) {
 	case MOD_LOAD:
 		error = pf_load();
+		pf_nl_register();
 		break;
 	case MOD_UNLOAD:
 		/* Handled in SYSUNINIT(pf_unload) to ensure it's done after
@@ -6703,4 +6734,5 @@ static moduledata_t pf_mod = {
 };
 
 DECLARE_MODULE(pf, pf_mod, SI_SUB_PROTO_FIREWALL, SI_ORDER_SECOND);
+MODULE_DEPEND(pf, netlink, 1, 1, 1);
 MODULE_VERSION(pf, PF_MODVER);

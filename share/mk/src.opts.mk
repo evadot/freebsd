@@ -86,7 +86,6 @@ __DEFAULT_YES_OPTIONS = \
     CRYPT \
     CUSE \
     CXGBETOOL \
-    DIALOG \
     DICT \
     DMAGENT \
     DTRACE \
@@ -197,6 +196,7 @@ __DEFAULT_NO_OPTIONS = \
     BHYVE_SNAPSHOT \
     CLANG_EXTRAS \
     CLANG_FORMAT \
+    DIALOG \
     DETECT_TZ_CHANGES \
     DISK_IMAGE_TOOLS_BOOTSTRAP \
     DTRACE_ASAN \
@@ -402,10 +402,6 @@ MK_OPENSSL:=	no
 MK_OPENSSH:=	no
 MK_KERBEROS:=	no
 MK_KERBEROS_SUPPORT:=	no
-.endif
-
-.if ${MK_DIALOG} == "no"
-MK_BSDINSTALL:=	no
 .endif
 
 .if ${MK_DTRACE} == "no"

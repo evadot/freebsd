@@ -998,7 +998,7 @@ __CONCAT(PMTYPE, init)(void)
 	 */
 	TUNABLE_INT_FETCH("vm.pmap.shpgperproc", &shpgperproc);
 	pv_entry_max = shpgperproc * maxproc + vm_cnt.v_page_count;
-	TUNABLE_INT_FETCH("vm.pmap.pv_entries", &pv_entry_max);
+	TUNABLE_INT_FETCH("vm.pmap.pv_entry_max", &pv_entry_max);
 	pv_entry_max = roundup(pv_entry_max, _NPCPV);
 	pv_entry_high_water = 9 * (pv_entry_max / 10);
 
@@ -2519,7 +2519,7 @@ get_pv_entry(pmap_t pmap, boolean_t try)
 		if (ratecheck(&lastprint, &printinterval))
 			printf("Approaching the limit on PV entries, consider "
 			    "increasing either the vm.pmap.shpgperproc or the "
-			    "vm.pmap.pv_entries tunable.\n");
+			    "vm.pmap.pv_entry_max tunable.\n");
 retry:
 	pc = TAILQ_FIRST(&pmap->pm_pvchunk);
 	if (pc != NULL) {
@@ -3973,12 +3973,11 @@ pmap_enter_pde(pmap_t pmap, vm_offset_t va, pd_entry_t newpde, u_int flags,
 	struct spglist free;
 	pd_entry_t oldpde, *pde;
 	vm_page_t mt;
+	vm_page_t uwptpg;
 
 	rw_assert(&pvh_global_lock, RA_WLOCKED);
 	KASSERT((newpde & (PG_M | PG_RW)) != PG_RW,
 	    ("pmap_enter_pde: newpde is missing PG_M"));
-	KASSERT(pmap == kernel_pmap || (newpde & PG_W) == 0,
-	    ("pmap_enter_pde: cannot create wired user mapping"));
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
 	pde = pmap_pde(pmap, va);
 	oldpde = *pde;
@@ -4028,11 +4027,40 @@ pmap_enter_pde(pmap_t pmap, vm_offset_t va, pd_entry_t newpde, u_int flags,
 				panic("pmap_enter_pde: trie insert failed");
 		}
 	}
+
+	/*
+	 * Allocate a leaf ptpage for wired userspace pages.
+	 */
+	uwptpg = NULL;
+	if ((newpde & PG_W) != 0 && pmap != kernel_pmap) {
+		uwptpg = vm_page_alloc_noobj(VM_ALLOC_WIRED);
+		if (uwptpg == NULL) {
+			return (KERN_RESOURCE_SHORTAGE);
+		}
+		uwptpg->pindex = va >> PDRSHIFT;
+		if (pmap_insert_pt_page(pmap, uwptpg, true, false)) {
+			vm_page_unwire_noq(uwptpg);
+			vm_page_free(uwptpg);
+			return (KERN_RESOURCE_SHORTAGE);
+		}
+		pmap->pm_stats.resident_count++;
+		uwptpg->ref_count = NPTEPG;
+	}
 	if ((newpde & PG_MANAGED) != 0) {
 		/*
 		 * Abort this mapping if its PV entry could not be created.
 		 */
 		if (!pmap_pv_insert_pde(pmap, va, newpde, flags)) {
+			if (uwptpg != NULL) {
+				mt = pmap_remove_pt_page(pmap, va);
+				KASSERT(mt == uwptpg,
+				    ("removed pt page %p, expected %p", mt,
+				    uwptpg));
+				pmap->pm_stats.resident_count--;
+				uwptpg->ref_count = 1;
+				vm_page_unwire_noq(uwptpg);
+				vm_page_free(uwptpg);
+			}
 			CTR2(KTR_PMAP, "pmap_enter_pde: failure for va %#lx"
 			    " in pmap %p", va, pmap);
 			return (KERN_RESOURCE_SHORTAGE);

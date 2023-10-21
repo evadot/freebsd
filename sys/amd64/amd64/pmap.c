@@ -2342,7 +2342,10 @@ pmap_allow_2m_x_ept_recalculate(void)
 	    CPUID_TO_MODEL(cpu_id) == 0x57 ||	/* Knights */
 	    CPUID_TO_MODEL(cpu_id) == 0x85))))
 		pmap_allow_2m_x_ept = 1;
+#ifndef BURN_BRIDGES
 	TUNABLE_INT_FETCH("hw.allow_2m_x_ept", &pmap_allow_2m_x_ept);
+#endif
+	TUNABLE_INT_FETCH("vm.pmap.allow_2m_x_ept", &pmap_allow_2m_x_ept);
 }
 
 static bool
@@ -3846,7 +3849,7 @@ pmap_flush_cache_phys_range(vm_paddr_t spa, vm_paddr_t epa, vm_memattr_t mattr)
  *		Extract the physical page address associated
  *		with the given map/virtual_address pair.
  */
-vm_paddr_t 
+vm_paddr_t
 pmap_extract(pmap_t pmap, vm_offset_t va)
 {
 	pdp_entry_t *pdpe;
@@ -3933,6 +3936,12 @@ out:
 	return (m);
 }
 
+/*
+ *	Routine:	pmap_kextract
+ *	Function:
+ *		Extract the physical page address associated with the given kernel
+ *		virtual address.
+ */
 vm_paddr_t
 pmap_kextract(vm_offset_t va)
 {

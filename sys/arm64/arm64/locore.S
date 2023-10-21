@@ -107,11 +107,12 @@ ENTRY(_start)
 	br	x15
 
 virtdone:
+	BTI_J
+
 	/* Set up the stack */
 	adrp	x25, initstack_end
 	add	x25, x25, :lo12:initstack_end
-	mov	sp, x25
-	sub	sp, sp, #PCB_SIZE
+	sub	sp, x25, #PCB_SIZE
 
 	/* Zero the BSS */
 	ldr	x15, .Lbss
@@ -134,7 +135,7 @@ virtdone:
 	sub	sp, sp, #BOOTPARAMS_SIZE
 	mov	x0, sp
 
-	/* Degate the delda so it is VA -> PA */
+	/* Negate the delta so it is VA -> PA */
 	neg	x29, x29
 
 	str	x1,  [x0, #BP_MODULEP]
@@ -223,6 +224,8 @@ ENTRY(mpentry)
 	br	x15
 
 mp_virtdone:
+	BTI_J
+
 	/* Start using the AP boot stack */
 	ldr	x4, =bootstack
 	ldr	x4, [x4]
