@@ -609,7 +609,8 @@ nfsrpc_openrpc(struct nfsmount *nmp, vnode_t vp, u_int8_t *nfhp, int fhlen,
 	if (error)
 		return (error);
 	NFSCL_INCRSEQID(op->nfso_own->nfsow_seqid, nd);
-	if (!nd->nd_repstat) {
+	if (nd->nd_repstat == 0 || (nd->nd_repstat == NFSERR_DELAY &&
+	    reclaim != 0 && (nd->nd_flag & ND_NOMOREDATA) == 0)) {
 		NFSM_DISSECT(tl, u_int32_t *, NFSX_STATEID +
 		    6 * NFSX_UNSIGNED);
 		op->nfso_stateid.seqid = *tl++;
@@ -681,16 +682,29 @@ nfsrpc_openrpc(struct nfsmount *nmp, vnode_t vp, u_int8_t *nfhp, int fhlen,
 			goto nfsmout;
 		}
 		NFSM_DISSECT(tl, u_int32_t *, 2 * NFSX_UNSIGNED);
-		error = nfsv4_loadattr(nd, NULL, &nfsva, NULL,
-		    NULL, 0, NULL, NULL, NULL, NULL, NULL, 0,
-		    NULL, NULL, NULL, p, cred);
-		if (error)
-			goto nfsmout;
-		if (ndp != NULL) {
-			ndp->nfsdl_change = nfsva.na_filerev;
-			ndp->nfsdl_modtime = nfsva.na_mtime;
-			ndp->nfsdl_flags |= NFSCLDL_MODTIMESET;
+		/* If the 2nd element == NFS_OK, the Getattr succeeded. */
+		if (*++tl == 0) {
+			KASSERT(nd->nd_repstat == 0,
+			    ("nfsrpc_openrpc: Getattr repstat"));
+			error = nfsv4_loadattr(nd, NULL, &nfsva, NULL,
+			    NULL, 0, NULL, NULL, NULL, NULL, NULL, 0,
+			    NULL, NULL, NULL, p, cred);
+			if (error)
+				goto nfsmout;
 		}
+		if (ndp != NULL) {
+			if (reclaim != 0 && dp != NULL) {
+				ndp->nfsdl_change = dp->nfsdl_change;
+				ndp->nfsdl_modtime = dp->nfsdl_modtime;
+				ndp->nfsdl_flags |= NFSCLDL_MODTIMESET;
+			} else if (nd->nd_repstat == 0) {
+				ndp->nfsdl_change = nfsva.na_filerev;
+				ndp->nfsdl_modtime = nfsva.na_mtime;
+				ndp->nfsdl_flags |= NFSCLDL_MODTIMESET;
+			} else
+				ndp->nfsdl_flags |= NFSCLDL_RECALL;
+		}
+		nd->nd_repstat = 0;
 		if (!reclaim && (rflags & NFSV4OPEN_RESULTCONFIRM)) {
 		    do {
 			ret = nfsrpc_openconfirm(vp, newfhp, newfhlen, op,
@@ -6000,7 +6014,27 @@ nfsrpc_fillsa(struct nfsmount *nmp, struct sockaddr_in *sin,
 		sad->sin_family = AF_INET;
 		sad->sin_port = sin->sin_port;
 		sad->sin_addr.s_addr = sin->sin_addr.s_addr;
-		nrp = malloc(sizeof(*nrp), M_NFSSOCKREQ, M_WAITOK | M_ZERO);
+		if (NFSHASPNFS(nmp) && NFSHASKERB(nmp)) {
+			/* For pNFS, a separate server principal is needed. */
+			nrp = malloc(sizeof(*nrp) + NI_MAXSERV + NI_MAXHOST,
+			    M_NFSSOCKREQ, M_WAITOK | M_ZERO);
+			/*
+			 * Use the latter part of nr_srvprinc as a temporary
+			 * buffer for the IP address.
+			 */
+			inet_ntoa_r(sad->sin_addr,
+			    &nrp->nr_srvprinc[NI_MAXSERV]);
+			NFSCL_DEBUG(1, "nfsrpc_fillsa: DS IP=%s\n",
+			    &nrp->nr_srvprinc[NI_MAXSERV]);
+			if (!rpc_gss_ip_to_srv_principal_call(
+			    &nrp->nr_srvprinc[NI_MAXSERV], "nfs",
+			    nrp->nr_srvprinc))
+				nrp->nr_srvprinc[0] = '\0';
+			NFSCL_DEBUG(1, "nfsrpc_fillsa: srv principal=%s\n",
+			    nrp->nr_srvprinc);
+		} else
+			nrp = malloc(sizeof(*nrp), M_NFSSOCKREQ,
+			    M_WAITOK | M_ZERO);
 		nrp->nr_nam = (struct sockaddr *)sad;
 	} else if (af == AF_INET6) {
 		NFSLOCKMNT(nmp);
@@ -6039,7 +6073,27 @@ nfsrpc_fillsa(struct nfsmount *nmp, struct sockaddr_in *sin,
 		sad6->sin6_port = sin6->sin6_port;
 		NFSBCOPY(&sin6->sin6_addr, &sad6->sin6_addr,
 		    sizeof(struct in6_addr));
-		nrp = malloc(sizeof(*nrp), M_NFSSOCKREQ, M_WAITOK | M_ZERO);
+		if (NFSHASPNFS(nmp) && NFSHASKERB(nmp)) {
+			/* For pNFS, a separate server principal is needed. */
+			nrp = malloc(sizeof(*nrp) + NI_MAXSERV + NI_MAXHOST,
+			    M_NFSSOCKREQ, M_WAITOK | M_ZERO);
+			/*
+			 * Use the latter part of nr_srvprinc as a temporary
+			 * buffer for the IP address.
+			 */
+			inet_ntop(AF_INET6, &sad6->sin6_addr,
+			    &nrp->nr_srvprinc[NI_MAXSERV], NI_MAXHOST);
+			NFSCL_DEBUG(1, "nfsrpc_fillsa: DS IP=%s\n",
+			    &nrp->nr_srvprinc[NI_MAXSERV]);
+			if (!rpc_gss_ip_to_srv_principal_call(
+			    &nrp->nr_srvprinc[NI_MAXSERV], "nfs",
+			    nrp->nr_srvprinc))
+				nrp->nr_srvprinc[0] = '\0';
+			NFSCL_DEBUG(1, "nfsrpc_fillsa: srv principal=%s\n",
+			    nrp->nr_srvprinc);
+		} else
+			nrp = malloc(sizeof(*nrp), M_NFSSOCKREQ,
+			    M_WAITOK | M_ZERO);
 		nrp->nr_nam = (struct sockaddr *)sad6;
 	} else
 		return (EPERM);

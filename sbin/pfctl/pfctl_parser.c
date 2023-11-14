@@ -192,6 +192,11 @@ const struct pf_timeout pf_timeouts[] = {
 	{ "tcp.finwait",	PFTM_TCP_FIN_WAIT },
 	{ "tcp.closed",		PFTM_TCP_CLOSED },
 	{ "tcp.tsdiff",		PFTM_TS_DIFF },
+	{ "sctp.first",		PFTM_SCTP_FIRST_PACKET },
+	{ "sctp.opening",	PFTM_SCTP_OPENING },
+	{ "sctp.established",	PFTM_SCTP_ESTABLISHED },
+	{ "sctp.closing",	PFTM_SCTP_CLOSING },
+	{ "sctp.closed",	PFTM_SCTP_CLOSED },
 	{ "udp.first",		PFTM_UDP_FIRST_PACKET },
 	{ "udp.single",		PFTM_UDP_SINGLE },
 	{ "udp.multiple",	PFTM_UDP_MULTIPLE },
@@ -623,6 +628,11 @@ print_status(struct pfctl_status *s, struct pfctl_syncookies *cookies, int opts)
 		    PFCTL_SYNCOOKIES_MODE_NAMES[cookies->mode]);
 		printf("  %-25s %s\n", "active",
 		    s->syncookies_active ? "active" : "inactive");
+		if (opts & PF_OPT_VERBOSE2) {
+			printf("  %-25s %d %%\n", "highwater", cookies->highwater);
+			printf("  %-25s %d %%\n", "lowwater", cookies->lowwater);
+			printf("  %-25s %d\n", "halfopen states", cookies->halfopen_states);
+		}
 		printf("Reassemble %24s %s\n",
 		    s->reass & PF_REASS_ENABLED ? "yes" : "no",
 		    s->reass & PF_REASS_NODF ? "no-df" : ""
