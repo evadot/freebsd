@@ -2715,6 +2715,37 @@ resource_init_map_request_impl(struct resource_map_request *args, size_t sz)
 	args->memattr = VM_MEMATTR_DEVICE;
 }
 
+int
+resource_validate_map_request(struct resource *r,
+    struct resource_map_request *in, struct resource_map_request *out,
+    rman_res_t *startp, rman_res_t *lengthp)
+{
+	rman_res_t end, length, start;
+
+	/*
+	 * This assumes that any callers of this function are compiled
+	 * into the kernel and use the same version of the structure
+	 * as this file.
+	 */
+	MPASS(out->size == sizeof(struct resource_map_request));
+
+	if (in != NULL)
+		bcopy(in, out, imin(in->size, out->size));
+	start = rman_get_start(r) + out->offset;
+	if (out->length == 0)
+		length = rman_get_size(r);
+	else
+		length = out->length;
+	end = start + length - 1;
+	if (start > rman_get_end(r) || start < rman_get_start(r))
+		return (EINVAL);
+	if (end > rman_get_end(r) || end < start)
+		return (EINVAL);
+	*lengthp = length;
+	*startp = start;
+	return (0);
+}
+
 /**
  * @brief Initialise a resource list.
  *
@@ -5332,7 +5363,7 @@ device_get_path(device_t dev, const char *locator, struct sbuf *sb)
 	KASSERT(sb != NULL, ("sb is NULL"));
 	parent = device_get_parent(dev);
 	if (parent == NULL) {
-		error = sbuf_printf(sb, "/");
+		error = sbuf_putc(sb, '/');
 	} else {
 		error = BUS_GET_DEVICE_PATH(parent, dev, locator, sb);
 		if (error == 0) {

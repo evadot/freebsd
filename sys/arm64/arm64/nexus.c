@@ -112,7 +112,7 @@ static bus_deactivate_resource_t nexus_deactivate_resource;
 static bus_get_resource_list_t	nexus_get_reslist;
 static bus_map_resource_t	nexus_map_resource;
 static bus_release_resource_t	nexus_release_resource;
-static bus_set_resource_t	nexus_set_resource;
+static bus_unmap_resource_t	nexus_unmap_resource;
 
 #ifdef SMP
 static bus_bind_intr_t		nexus_bind_intr;
@@ -141,7 +141,8 @@ static device_method_t nexus_methods[] = {
 	DEVMETHOD(bus_get_resource_list, nexus_get_reslist),
 	DEVMETHOD(bus_map_resource,	nexus_map_resource),
 	DEVMETHOD(bus_release_resource,	nexus_release_resource),
-	DEVMETHOD(bus_set_resource,	nexus_set_resource),
+	DEVMETHOD(bus_set_resource,	bus_generic_rl_set_resource),
+	DEVMETHOD(bus_unmap_resource,	nexus_unmap_resource),
 #ifdef SMP
 	DEVMETHOD(bus_bind_intr,	nexus_bind_intr),
 #endif
@@ -436,19 +437,6 @@ nexus_get_reslist(device_t dev, device_t child)
 }
 
 static int
-nexus_set_resource(device_t dev, device_t child, int type, int rid,
-    rman_res_t start, rman_res_t count)
-{
-	struct nexus_device	*ndev = DEVTONX(child);
-	struct resource_list	*rl = &ndev->nx_resources;
-
-	/* XXX this should return a success/failure indicator */
-	resource_list_add(rl, type, rid, start, start + count - 1, count);
-
-	return (0);
-}
-
-static int
 nexus_deactivate_resource(device_t bus, device_t child, int type, int rid,
     struct resource *r)
 {
@@ -476,7 +464,8 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
     struct resource_map_request *argsp, struct resource_map *map)
 {
 	struct resource_map_request args;
-	rman_res_t end, length, start;
+	rman_res_t length, start;
+	int error;
 
 	/* Resources must be active to be mapped. */
 	if ((rman_get_flags(r) & RF_ACTIVE) == 0)
@@ -492,18 +481,9 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	}
 
 	resource_init_map_request(&args);
-	if (argsp != NULL)
-		bcopy(argsp, &args, imin(argsp->size, args.size));
-	start = rman_get_start(r) + args.offset;
-	if (args.length == 0)
-		length = rman_get_size(r);
-	else
-		length = args.length;
-	end = start + length - 1;
-	if (start > rman_get_end(r) || start < rman_get_start(r))
-		return (EINVAL);
-	if (end > rman_get_end(r) || end < start)
-		return (EINVAL);
+	error = resource_validate_map_request(r, argsp, &args, &start, &length);
+	if (error)
+		return (error);
 
 	map->r_vaddr = pmap_mapdev_attr(start, length, args.memattr);
 	map->r_bustag = &memmap_bus;
@@ -514,6 +494,21 @@ nexus_map_resource(device_t bus, device_t child, int type, struct resource *r,
 	 */
 	map->r_bushandle = (bus_space_handle_t)map->r_vaddr;
 	return (0);
+}
+
+static int
+nexus_unmap_resource(device_t bus, device_t child, int type, struct resource *r,
+    struct resource_map *map)
+{
+
+	switch (type) {
+	case SYS_RES_MEMORY:
+	case SYS_RES_IOPORT:
+		pmap_unmapdev(map->r_vaddr, map->r_size);
+		return (0);
+	default:
+		return (EINVAL);
+	}
 }
 
 #ifdef FDT
