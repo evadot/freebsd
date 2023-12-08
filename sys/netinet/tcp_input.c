@@ -162,11 +162,6 @@ SYSCTL_INT(_net_inet_tcp, OID_AUTO, do_prr, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_do_prr), 1,
     "Enable Proportional Rate Reduction per RFC 6937");
 
-VNET_DEFINE(int, tcp_do_lrd) = 0;
-SYSCTL_INT(_net_inet_tcp, OID_AUTO, do_lrd, CTLFLAG_VNET | CTLFLAG_RW,
-    &VNET_NAME(tcp_do_lrd), 1,
-    "Perform Lost Retransmission Detection");
-
 VNET_DEFINE(int, tcp_do_newcwv) = 0;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, newcwv, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_do_newcwv), 0,
@@ -3975,7 +3970,7 @@ tcp_do_prr_ack(struct tcpcb *tp, struct tcphdr *th, struct tcpopt *to, sackstatu
 			    imax(1, tp->snd_nxt - tp->snd_una);
 		snd_cnt = howmany((long)tp->sackhint.prr_delivered *
 			    tp->snd_ssthresh, tp->sackhint.recover_fs) -
-			    tp->sackhint.prr_out;
+			    tp->sackhint.prr_out + maxseg - 1;
 	} else {
 		/*
 		 * PRR 6937bis heuristic:
