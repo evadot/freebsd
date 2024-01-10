@@ -1,9 +1,7 @@
-#!/bin/sh
-
 #
 # SPDX-License-Identifier: BSD-2-Clause
 #
-# Copyright (c) 2019 Dell EMC Isilon
+# Copyright (c) 2023 Rubicon Communications, LLC (Netgate)
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -25,17 +23,63 @@
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
-#
 
-# "0xFFFFFFFFFFFFFFFF in vmstat output" seen.
+. $(atf_get_srcdir)/utils.subr
 
-(cd ../testcases/swap; ./swap -t 2m -i 20 -h -l 100 &)
-sleep .5
-s=0
-while pgrep -q swap; do
-	vmstat -z | awk '{if (length($4) > 11) { print $0; exit 1}}' ||
-	    { pkill swap; s=1; }
-        sleep 2
-done
-wait
-exit $s
+common_dir=$(atf_get_srcdir)/../common
+
+atf_test_case "malformed" "cleanup"
+malformed_head()
+{
+	atf_set descr 'Test that we do not log malformed packets as passing'
+	atf_set require.user root
+	atf_set require.progs scapy
+}
+
+malformed_body()
+{
+	pflog_init
+
+	epair=$(vnet_mkepair)
+
+	vnet_mkjail srv ${epair}b
+	jexec srv ifconfig ${epair}b 192.0.2.1/24 up
+
+	vnet_mkjail cl ${epair}a
+	jexec cl ifconfig ${epair}a 192.0.2.2/24 up
+
+	jexec cl pfctl -e
+	jexec cl ifconfig pflog0 up
+	pft_set_rules cl \
+		"pass log keep state"
+
+	# Not required, but the 'pf: dropping packet with ip options' kernel log can
+	# help when debugging the test.
+	jexec cl pfctl -x loud
+
+	jexec cl tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> pflog.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	# Sanity check
+	atf_check -s exit:0 -o ignore \
+	    jexec srv ping -c 1 192.0.2.2
+
+	jexec srv ${common_dir}/pft_ping.py  \
+	    --sendif ${epair}b \
+	    --to 192.0.2.2 \
+	    --send-nop \
+	    --recvif ${epair}b
+
+	atf_check -o match:".*rule 0/8\(ip-option\): block in on ${epair}a: 192.0.2.1 > 192.0.2.2: ICMP echo request.*" \
+	    cat pflog.txt
+}
+
+malformed_cleanup()
+{
+	pft_cleanup
+}
+
+atf_init_test_cases()
+{
+	atf_add_test_case "malformed"
+}
