@@ -211,7 +211,7 @@ struct socket {
 #define	SS_ISDISCONNECTING	0x0008	/* in process of disconnecting */
 #define	SS_NBIO			0x0100	/* non-blocking ops */
 #define	SS_ASYNC		0x0200	/* async i/o notify */
-#define	SS_ISCONFIRMING		0x0400	/* deciding to accept connection req */
+/* was	SS_ISCONFIRMING		0x0400	*/
 #define	SS_ISDISCONNECTED	0x2000	/* socket disconnected from peer */
 
 #ifdef _KERNEL
@@ -501,6 +501,7 @@ int	soreceive_generic(struct socket *so, struct sockaddr **paddr,
 void	sorele_locked(struct socket *so);
 void	sodealloc(struct socket *);
 int	soreserve(struct socket *so, u_long sndcc, u_long rcvcc);
+void	sorflush(struct socket *so);
 int	sosend(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	    struct mbuf *top, struct mbuf *control, int flags,
 	    struct thread *td);

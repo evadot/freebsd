@@ -95,9 +95,9 @@
  *
  * NOTE: With regard to VNETs the general rule is that callers do not set
  * curvnet. Exceptions to this rule include soabort(), sodisconnect(),
- * sofree() (and with that sorele(), sotryfree()), as well as sonewconn(),
- * which are usually called from a pre-set VNET context. sopoll() currently
- * does not need a VNET context to be set.
+ * sofree(), sorele(), sonewconn() and sorflush(), which are usually called
+ * from a pre-set VNET context.  sopoll() currently does not need a VNET
+ * context to be set.
  */
 
 #include <sys/cdefs.h>
@@ -792,7 +792,7 @@ solisten_clone(struct socket *head)
 	return (so);
 }
 
-/* Connstatus may be 0, or SS_ISCONFIRMING, or SS_ISCONNECTED. */
+/* Connstatus may be 0 or SS_ISCONNECTED. */
 struct socket *
 sonewconn(struct socket *head, int connstatus)
 {
@@ -1516,8 +1516,7 @@ sosend_dgram(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		 */
 		if ((so->so_proto->pr_flags & PR_CONNREQUIRED) &&
 		    (so->so_proto->pr_flags & PR_IMPLOPCL) == 0) {
-			if ((so->so_state & SS_ISCONFIRMING) == 0 &&
-			    !(resid == 0 && clen != 0)) {
+			if (!(resid == 0 && clen != 0)) {
 				SOCKBUF_UNLOCK(&so->so_snd);
 				error = ENOTCONN;
 				goto out;
@@ -1725,8 +1724,7 @@ restart:
 			 */
 			if ((so->so_proto->pr_flags & PR_CONNREQUIRED) &&
 			    (so->so_proto->pr_flags & PR_IMPLOPCL) == 0) {
-				if ((so->so_state & SS_ISCONFIRMING) == 0 &&
-				    !(resid == 0 && clen != 0)) {
+				if (!(resid == 0 && clen != 0)) {
 					SOCKBUF_UNLOCK(&so->so_snd);
 					error = ENOTCONN;
 					goto release;
@@ -2068,11 +2066,6 @@ soreceive_generic(struct socket *so, struct sockaddr **psa, struct uio *uio,
 		return (soreceive_rcvoob(so, uio, flags));
 	if (mp != NULL)
 		*mp = NULL;
-	if ((pr->pr_flags & PR_WANTRCVD) && (so->so_state & SS_ISCONFIRMING)
-	    && uio->uio_resid) {
-		VNET_SO_ASSERT(so);
-		pr->pr_rcvd(so, 0);
-	}
 
 	error = SOCK_IO_RECV_LOCK(so, SBLOCKWAIT(flags));
 	if (error)
@@ -2972,6 +2965,42 @@ soshutdown(struct socket *so, enum shutdown_how how)
 }
 
 /*
+ * Used by several pr_shutdown implementations that use generic socket buffers.
+ */
+void
+sorflush(struct socket *so)
+{
+	int error;
+
+	VNET_SO_ASSERT(so);
+
+	/*
+	 * Dislodge threads currently blocked in receive and wait to acquire
+	 * a lock against other simultaneous readers before clearing the
+	 * socket buffer.  Don't let our acquire be interrupted by a signal
+	 * despite any existing socket disposition on interruptable waiting.
+	 *
+	 * The SOCK_IO_RECV_LOCK() is important here as there some pr_soreceive
+	 * methods that read the top of the socket buffer without acquisition
+	 * of the socket buffer mutex, assuming that top of the buffer
+	 * exclusively belongs to the read(2) syscall.  This is handy when
+	 * performing MSG_PEEK.
+	 */
+	socantrcvmore(so);
+
+	error = SOCK_IO_RECV_LOCK(so, SBL_WAIT | SBL_NOINTR);
+	if (error != 0) {
+		KASSERT(SOLISTENING(so),
+		    ("%s: soiolock(%p) failed", __func__, so));
+		return;
+	}
+
+	sbrelease(so, SO_RCV);
+	SOCK_IO_RECV_UNLOCK(so);
+
+}
+
+/*
  * Wrapper for Socket established helper hook.
  * Parameters: socket, context of the hook point, hook id.
  */
@@ -3862,7 +3891,7 @@ soisconnected(struct socket *so)
 	bool last __diagused;
 
 	SOCK_LOCK(so);
-	so->so_state &= ~(SS_ISCONNECTING|SS_ISDISCONNECTING|SS_ISCONFIRMING);
+	so->so_state &= ~(SS_ISCONNECTING|SS_ISDISCONNECTING);
 	so->so_state |= SS_ISCONNECTED;
 
 	if (so->so_qstate == SQ_INCOMP) {

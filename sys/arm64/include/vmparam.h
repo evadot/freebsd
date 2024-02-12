@@ -83,11 +83,13 @@
 #define	VM_FREEPOOL_DIRECT	1
 
 /*
- * Create one free page lists: VM_FREELIST_DEFAULT is for all physical
- * pages.
+ * Create two free page lists: VM_FREELIST_DMA32 is for physical pages that have
+ * physical addresses below 4G, and VM_FREELIST_DEFAULT is for all other
+ * physical pages.
  */
-#define	VM_NFREELIST		1
+#define	VM_NFREELIST		2
 #define	VM_FREELIST_DEFAULT	0
+#define	VM_FREELIST_DMA32	1
 
 /*
  * When PAGE_SIZE is 4KB, an allocation size of 16MB is supported in order
@@ -129,6 +131,12 @@
  *                  0xfffffeffffffffff  End of DMAP
  *                  0xffffa00000000000  Start of DMAP
  *
+ *                  0xffff027fffffffff  End of KMSAN origin map
+ *                  0xffff020000000000  Start of KMSAN origin map
+ *
+ *                  0xffff017fffffffff  End of KMSAN shadow map
+ *                  0xffff010000000000  Start of KMSAN shadow map
+ *
  *                  0xffff009fffffffff  End of KASAN shadow map
  *                  0xffff008000000000  Start of KASAN shadow map
  *
@@ -164,6 +172,14 @@
 /* 128 GiB KASAN shadow map */
 #define	KASAN_MIN_ADDRESS	(0xffff008000000000UL)
 #define	KASAN_MAX_ADDRESS	(0xffff00a000000000UL)
+
+/* 512GiB KMSAN shadow map */
+#define	KMSAN_SHAD_MIN_ADDRESS	(0xffff010000000000UL)
+#define	KMSAN_SHAD_MAX_ADDRESS	(0xffff018000000000UL)
+
+/* 512GiB KMSAN origin map */
+#define	KMSAN_ORIG_MIN_ADDRESS	(0xffff020000000000UL)
+#define	KMSAN_ORIG_MAX_ADDRESS	(0xffff028000000000UL)
 
 /* The address bits that hold a pointer authentication code */
 #define	PAC_ADDR_MASK		(0xff7f000000000000UL)

@@ -126,6 +126,8 @@ SDT_PROBE_DEFINE4(pf, ip, test6, done, "int", "int", "struct pf_krule *",
 SDT_PROBE_DEFINE5(pf, ip, state, lookup, "struct pfi_kkif *",
     "struct pf_state_key_cmp *", "int", "struct pf_pdesc *",
     "struct pf_kstate *");
+SDT_PROBE_DEFINE2(pf, ip, , bound_iface, "struct pf_kstate *",
+    "struct pfi_kkif *");
 SDT_PROBE_DEFINE4(pf, sctp, multihome, test, "struct pfi_kkif *",
     "struct pf_krule *", "struct mbuf *", "int");
 
@@ -412,8 +414,26 @@ VNET_DEFINE(struct pf_limit, pf_limits[PF_LIMIT_MAX]);
 			return (PF_PASS);				\
 	} while (0)
 
-#define	BOUND_IFACE(r, k) \
-	((r)->rule_flag & PFRULE_IFBOUND) ? (k) : V_pfi_all
+static struct pfi_kkif *
+BOUND_IFACE(struct pf_kstate *st, struct pfi_kkif *k)
+{
+	SDT_PROBE2(pf, ip, , bound_iface, st, k);
+
+	/* Floating unless otherwise specified. */
+	if (! (st->rule.ptr->rule_flag & PFRULE_IFBOUND))
+		return (V_pfi_all);
+
+	/* Don't overrule the interface for states created on incoming packets. */
+	if (st->direction == PF_IN)
+		return (k);
+
+	/* No route-to, so don't overrule. */
+	if (st->rt != PF_ROUTETO)
+		return (k);
+
+	/* Bind to the route-to interface. */
+	return (st->rt_kif);
+}
 
 #define	STATE_INC_COUNTERS(s)						\
 	do {								\
@@ -1600,7 +1620,7 @@ pf_find_state(struct pfi_kkif *kif, struct pf_state_key_cmp *key, u_int dir)
 
 	/* List is sorted, if-bound states before floating ones. */
 	TAILQ_FOREACH(s, &sk->states[idx], key_list[idx])
-		if (s->kif == V_pfi_all || s->kif == kif) {
+		if (s->kif == V_pfi_all || s->kif == kif || s->orig_kif == kif) {
 			PF_STATE_LOCK(s);
 			PF_HASHROW_UNLOCK(kh);
 			if (__predict_false(s->timeout >= PFTM_MAX)) {
@@ -3117,7 +3137,7 @@ pf_send_sctp_abort(sa_family_t af, struct pf_pdesc *pd,
 	off += sizeof(*chunk);
 	m->m_pkthdr.len = m->m_len = off;
 
-	pf_sctp_checksum(m, off - sizeof(*hdr) - sizeof(*chunk));;
+	pf_sctp_checksum(m, off - sizeof(*hdr) - sizeof(*chunk));
 
 	if (rtableid >= 0)
 		M_SETFIB(m, rtableid);
@@ -4999,7 +5019,7 @@ pf_create_state(struct pf_krule *r, struct pf_krule *nr, struct pf_krule *a,
 		    __func__, nr, sk, nk));
 
 	/* Swap sk/nk for PF_OUT. */
-	if (pf_state_insert(BOUND_IFACE(r, kif), kif,
+	if (pf_state_insert(BOUND_IFACE(s, kif), kif,
 	    (pd->dir == PF_IN) ? sk : nk,
 	    (pd->dir == PF_IN) ? nk : sk, s)) {
 		REASON_SET(&reason, PFRES_STATEINS);
@@ -6104,7 +6124,7 @@ pf_sctp_multihome_delayed(struct pf_pdesc *pd, int off, struct pfi_kkif *kif,
 {
 	struct pf_sctp_multihome_job	*j, *tmp;
 	struct pf_sctp_source		*i;
-	int			 ret __unused;;
+	int			 ret __unused;
 	struct pf_kstate	*sm = NULL;
 	struct pf_krule		*ra = NULL;
 	struct pf_krule		*r = &V_pf_default_rule;
@@ -7343,6 +7363,12 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 	}
 
 	/*
+	 * Make sure dummynet gets the correct direction, in case it needs to
+	 * re-inject later.
+	 */
+	pd->dir = PF_OUT;
+
+	/*
 	 * If small enough for interface, or the interface will take
 	 * care of the fragmentation for us, we can just send directly.
 	 */
@@ -8515,7 +8541,7 @@ pf_test6(int dir, int pflags, struct ifnet *ifp, struct mbuf **m0, struct inpcb 
 	 * confused and fail to send the icmp6 packet too big error. Just send
 	 * it here, before we do any NAT.
 	 */
-	if (dir == PF_OUT && IN6_LINKMTU(ifp) < pf_max_frag_size(m)) {
+	if (dir == PF_OUT && pflags & PFIL_FWD && IN6_LINKMTU(ifp) < pf_max_frag_size(m)) {
 		PF_RULES_RUNLOCK();
 		*m0 = NULL;
 		icmp6_error(m, ICMP6_PACKET_TOO_BIG, 0, IN6_LINKMTU(ifp));

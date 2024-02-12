@@ -365,6 +365,97 @@ dummynet_cleanup()
 	pft_cleanup
 }
 
+atf_test_case "ifbound" "cleanup"
+ifbound_head()
+{
+	atf_set descr 'Test that route-to states bind the expected interface'
+	atf_set require.user root
+}
+
+ifbound_body()
+{
+	pft_init
+
+	j="route_to:ifbound"
+
+	epair_one=$(vnet_mkepair)
+	epair_two=$(vnet_mkepair)
+	ifconfig ${epair_one}b up
+
+	vnet_mkjail ${j}2 ${epair_two}b
+	jexec ${j}2 ifconfig ${epair_two}b inet 198.51.100.2/24 up
+	jexec ${j}2 ifconfig ${epair_two}b inet alias 203.0.113.1/24
+	jexec ${j}2 route add default 198.51.100.1
+
+	vnet_mkjail $j ${epair_one}a ${epair_two}a
+	jexec $j ifconfig ${epair_one}a 192.0.2.1/24 up
+	jexec $j ifconfig ${epair_two}a 198.51.100.1/24 up
+	jexec $j route add default 192.0.2.2
+
+	jexec $j pfctl -e
+	pft_set_rules $j \
+		"set state-policy if-bound" \
+		"block" \
+		"pass out route-to (${epair_two}a 198.51.100.2)"
+
+	atf_check -s exit:0 -o ignore \
+	    jexec $j ping -c 3 203.0.113.1
+}
+
+ifbound_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "dummynet_frag" "cleanup"
+dummynet_frag_head()
+{
+	atf_set descr 'Test fragmentation with route-to and dummynet'
+	atf_set require.user root
+}
+
+dummynet_frag_body()
+{
+	pft_init
+	dummynet_init
+
+	epair_one=$(vnet_mkepair)
+	epair_two=$(vnet_mkepair)
+
+	ifconfig ${epair_one}a 192.0.2.1/24 up
+
+	vnet_mkjail alcatraz ${epair_one}b ${epair_two}a
+	jexec alcatraz ifconfig ${epair_one}b 192.0.2.2/24 up
+	jexec alcatraz ifconfig ${epair_two}a 198.51.100.1/24 up
+	jexec alcatraz sysctl net.inet.ip.forwarding=1
+
+	vnet_mkjail singsing ${epair_two}b
+	jexec singsing ifconfig ${epair_two}b 198.51.100.2/24 up
+	jexec singsing route add default 198.51.100.1
+
+	route add 198.51.100.0/24 192.0.2.2
+
+	jexec alcatraz dnctl pipe 1 config bw 1000Byte/s burst 4500
+	jexec alcatraz dnctl pipe 2 config
+	# This second pipe ensures that the pf_test(PF_OUT) call in pf_route() doesn't
+	# delay packets in dummynet (by inheriting pipe 1 from the input rule).
+
+	jexec alcatraz pfctl -e
+	pft_set_rules alcatraz \
+		"set reassemble yes" \
+		"pass in route-to (${epair_two}a 198.51.100.2) inet proto icmp all icmp-type echoreq dnpipe 1" \
+		"pass out dnpipe 2"
+
+
+	atf_check -s exit:0 -o ignore ping -c 1 198.51.100.2
+	atf_check -s exit:0 -o ignore ping -c 1 -s 4000 198.51.100.2
+}
+
+dummynet_frag_cleanup()
+{
+	pft_cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case "v4"
@@ -373,4 +464,6 @@ atf_init_test_cases()
 	atf_add_test_case "multiwanlocal"
 	atf_add_test_case "icmp_nat"
 	atf_add_test_case "dummynet"
+	atf_add_test_case "ifbound"
+	atf_add_test_case "dummynet_frag"
 }
