@@ -76,6 +76,18 @@
     if (linuxkpi_debug_80211 & D80211_TRACE_MODE_HT)			\
 	printf("%s:%d: XXX LKPI80211 IMPROVE_HT\n", __func__, __LINE__)
 
+#define	MTAG_ABI_LKPI80211	1707696513	/* LinuxKPI 802.11 KBI */
+
+/*
+ * Deferred RX path.
+ * We need to pass *ni along (and possibly more in the future so
+ * we use a struct right from the start.
+ */
+#define	LKPI80211_TAG_RXNI	0		/* deferred RX path */
+struct lkpi_80211_tag_rxni {
+	struct ieee80211_node	*ni;		/* MUST hold a reference to it. */
+};
+
 struct lkpi_radiotap_tx_hdr {
 	struct ieee80211_radiotap_header wt_ihdr;
 	uint8_t		wt_flags;
@@ -192,6 +204,11 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 	uint32_t			txq_generation[IEEE80211_NUM_ACS];
 	TAILQ_HEAD(, lkpi_txq)		scheduled_txqs[IEEE80211_NUM_ACS];
 
+	/* Deferred RX path. */
+	struct task		rxq_task;
+	struct mbufq		rxq;
+	struct mtx		rxq_mtx;
+
 	/* Scan functions we overload to handle depending on scan mode. */
 	void                    (*ic_scan_curchan)(struct ieee80211_scan_state *,
 				    unsigned long);
@@ -240,6 +257,7 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 
 	bool				update_mc;
 	bool				update_wme;
+	bool				rxq_stopped;
 
 	/* Must be last! */
 	struct ieee80211_hw		hw __aligned(CACHE_LINE_SIZE);
@@ -304,14 +322,37 @@ struct lkpi_wiphy {
 #define	LKPI_80211_LHW_TXQ_UNLOCK_ASSERT(_lhw)		\
     mtx_assert(&(_lhw)->txq_mtx, MA_NOTOWNED)
 
+#define	LKPI_80211_LHW_RXQ_LOCK_INIT(_lhw)		\
+    mtx_init(&(_lhw)->rxq_mtx, "lhw-rxq", NULL, MTX_DEF | MTX_RECURSE);
+#define	LKPI_80211_LHW_RXQ_LOCK_DESTROY(_lhw)		\
+    mtx_destroy(&(_lhw)->rxq_mtx);
+#define	LKPI_80211_LHW_RXQ_LOCK(_lhw)			\
+    mtx_lock(&(_lhw)->rxq_mtx)
+#define	LKPI_80211_LHW_RXQ_UNLOCK(_lhw)			\
+    mtx_unlock(&(_lhw)->rxq_mtx)
+#define	LKPI_80211_LHW_RXQ_LOCK_ASSERT(_lhw)		\
+    mtx_assert(&(_lhw)->rxq_mtx, MA_OWNED)
+#define	LKPI_80211_LHW_RXQ_UNLOCK_ASSERT(_lhw)		\
+    mtx_assert(&(_lhw)->rxq_mtx, MA_NOTOWNED)
+
 #define	LKPI_80211_LHW_LVIF_LOCK(_lhw)	sx_xlock(&(_lhw)->lvif_sx)
 #define	LKPI_80211_LHW_LVIF_UNLOCK(_lhw) sx_xunlock(&(_lhw)->lvif_sx)
 
 #define	LKPI_80211_LVIF_LOCK(_lvif)	mtx_lock(&(_lvif)->mtx)
 #define	LKPI_80211_LVIF_UNLOCK(_lvif)	mtx_unlock(&(_lvif)->mtx)
 
-#define	LKPI_80211_LSTA_LOCK(_lsta)	mtx_lock(&(_lsta)->txq_mtx)
-#define	LKPI_80211_LSTA_UNLOCK(_lsta)	mtx_unlock(&(_lsta)->txq_mtx)
+#define	LKPI_80211_LSTA_TXQ_LOCK_INIT(_lsta)		\
+    mtx_init(&(_lsta)->txq_mtx, "lsta-txq", NULL, MTX_DEF);
+#define	LKPI_80211_LSTA_TXQ_LOCK_DESTROY(_lsta)		\
+    mtx_destroy(&(_lsta)->txq_mtx);
+#define	LKPI_80211_LSTA_TXQ_LOCK(_lsta)			\
+    mtx_lock(&(_lsta)->txq_mtx)
+#define	LKPI_80211_LSTA_TXQ_UNLOCK(_lsta)		\
+    mtx_unlock(&(_lsta)->txq_mtx)
+#define	LKPI_80211_LSTA_TXQ_LOCK_ASSERT(_lsta)		\
+    mtx_assert(&(_lsta)->txq_mtx, MA_OWNED)
+#define	LKPI_80211_LSTA_TXQ_UNLOCK_ASSERT(_lsta)	\
+    mtx_assert(&(_lsta)->txq_mtx, MA_NOTOWNED)
 
 #define	LKPI_80211_LTXQ_LOCK_INIT(_ltxq)		\
     mtx_init(&(_ltxq)->ltxq_mtx, "ltxq", NULL, MTX_DEF);

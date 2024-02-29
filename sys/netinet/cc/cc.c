@@ -452,7 +452,7 @@ newreno_cc_after_idle(struct cc_var *ccv)
  * Perform any necessary tasks before we enter congestion recovery.
  */
 void
-newreno_cc_cong_signal(struct cc_var *ccv, uint32_t type)
+newreno_cc_cong_signal(struct cc_var *ccv, ccsignal_t type)
 {
 	uint32_t cwin, factor, mss, pipe;
 
@@ -501,11 +501,13 @@ newreno_cc_cong_signal(struct cc_var *ccv, uint32_t type)
 		}
 		CCV(ccv, snd_cwnd) = mss;
 		break;
+	default:
+		break;
 	}
 }
 
 void
-newreno_cc_ack_received(struct cc_var *ccv, uint16_t type)
+newreno_cc_ack_received(struct cc_var *ccv, ccsignal_t type)
 {
 	if (type == CC_ACK && !IN_RECOVERY(CCV(ccv, t_flags)) &&
 	    (ccv->flags & CCF_CWND_LIMITED)) {
