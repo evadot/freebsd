@@ -553,8 +553,9 @@ enum nvme_critical_warning_state {
 	NVME_CRIT_WARN_ST_DEVICE_RELIABILITY		= 0x4,
 	NVME_CRIT_WARN_ST_READ_ONLY			= 0x8,
 	NVME_CRIT_WARN_ST_VOLATILE_MEMORY_BACKUP	= 0x10,
+	NVME_CRIT_WARN_ST_PERSISTENT_MEMORY_REGION	= 0x20,
 };
-#define NVME_CRIT_WARN_ST_RESERVED_MASK			(0xE0)
+#define NVME_CRIT_WARN_ST_RESERVED_MASK			(0xC0)
 #define	NVME_ASYNC_EVENT_NS_ATTRIBUTE			(0x100)
 #define	NVME_ASYNC_EVENT_FW_ACTIVATE			(0x200)
 
@@ -1465,7 +1466,8 @@ _Static_assert(sizeof(struct nvme_health_information_page) == 512, "bad size for
 struct nvme_firmware_page {
 	uint8_t			afi;
 	uint8_t			reserved[7];
-	uint64_t		revision[7]; /* revisions for 7 slots */
+	/* revisions for 7 slots */
+	uint8_t			revision[7][NVME_FIRMWARE_REVISION_LENGTH];
 	uint8_t			reserved2[448];
 } __packed __aligned(4);
 
@@ -2003,17 +2005,6 @@ void	nvme_health_information_page_swapbytes(
 	s->tmt2tc = le32toh(s->tmt2tc);
 	s->ttftmt1 = le32toh(s->ttftmt1);
 	s->ttftmt2 = le32toh(s->ttftmt2);
-#endif
-}
-
-static inline
-void	nvme_firmware_page_swapbytes(struct nvme_firmware_page *s __unused)
-{
-#if _BYTE_ORDER != _LITTLE_ENDIAN
-	int i;
-
-	for (i = 0; i < 7; i++)
-		s->revision[i] = le64toh(s->revision[i]);
 #endif
 }
 

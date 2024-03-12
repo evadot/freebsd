@@ -83,6 +83,7 @@ pci_host_generic_core_attach(device_t dev)
 	uint64_t phys_base;
 	uint64_t pci_base;
 	uint64_t size;
+	const char *range_descr;
 	char buf[64];
 	int domain, error;
 	int flags, rid, tuple, type;
@@ -179,18 +180,21 @@ pci_host_generic_core_attach(device_t dev)
 		switch (FLAG_TYPE(sc->ranges[tuple].flags)) {
 		case FLAG_TYPE_PMEM:
 			sc->has_pmem = true;
+			range_descr = "prefetch";
 			flags = RF_PREFETCHABLE;
 			type = SYS_RES_MEMORY;
 			error = rman_manage_region(&sc->pmem_rman,
 			   pci_base, pci_base + size - 1);
 			break;
 		case FLAG_TYPE_MEM:
+			range_descr = "memory";
 			flags = 0;
 			type = SYS_RES_MEMORY;
 			error = rman_manage_region(&sc->mem_rman,
 			   pci_base, pci_base + size - 1);
 			break;
 		case FLAG_TYPE_IO:
+			range_descr = "I/O port";
 			flags = 0;
 			type = SYS_RES_IOPORT;
 			error = rman_manage_region(&sc->io_rman,
@@ -219,6 +223,10 @@ pci_host_generic_core_attach(device_t dev)
 			error = ENXIO;
 			goto err_rman_manage;
 		}
+		if (bootverbose)
+			device_printf(dev,
+			    "PCI addr: 0x%jx, CPU addr: 0x%jx, Size: 0x%jx, Type: %s\n",
+			    pci_base, phys_base, size, range_descr);
 	}
 
 	return (0);
@@ -496,8 +504,8 @@ generic_pcie_containing_range(device_t dev, int type, rman_res_t start,
 }
 
 static int
-generic_pcie_translate_resource_common(device_t dev, int type, rman_res_t start,
-    rman_res_t end, rman_res_t *new_start, rman_res_t *new_end)
+generic_pcie_translate_resource(device_t dev, int type, rman_res_t start,
+    rman_res_t *new_start)
 {
 	struct pcie_range *range;
 
@@ -505,32 +513,18 @@ generic_pcie_translate_resource_common(device_t dev, int type, rman_res_t start,
 	switch (type) {
 	case SYS_RES_IOPORT:
 	case SYS_RES_MEMORY:
-		range = generic_pcie_containing_range(dev, type, start, end);
+		range = generic_pcie_containing_range(dev, type, start, start);
 		if (range == NULL)
 			return (ENOENT);
-		if (range != NULL) {
-			*new_start = start - range->pci_base + range->phys_base;
-			*new_end = end - range->pci_base + range->phys_base;
-		}
+		*new_start = start - range->pci_base + range->phys_base;
 		break;
 	default:
 		/* No translation for non-memory types */
 		*new_start = start;
-		*new_end = end;
 		break;
 	}
 
 	return (0);
-}
-
-static int
-generic_pcie_translate_resource(device_t bus, int type,
-    rman_res_t start, rman_res_t *newstart)
-{
-	rman_res_t newend; /* unused */
-
-	return (generic_pcie_translate_resource_common(
-	    bus, type, start, 0, newstart, &newend));
 }
 
 struct resource *
