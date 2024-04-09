@@ -287,9 +287,6 @@ struct snd_mixer;
 #define SND_DEV_DSP_SPDIFOUT	19	/* /dev/dsp_spdifout */
 #define SND_DEV_DSP_SPDIFIN	20	/* /dev/dsp_spdifin  */
 
-#define SND_DEV_LAST		SND_DEV_DSP_SPDIFIN
-#define SND_DEV_MAX		PCMMAXDEV
-
 #define DSP_DEFAULT_SPEED	8000
 
 #define ON		1
@@ -344,8 +341,7 @@ void snd_mtxassert(void *m);
 #define	snd_mtxlock(m) mtx_lock(m)
 #define	snd_mtxunlock(m) mtx_unlock(m)
 
-typedef int (*sndstat_handler)(struct sbuf *s, device_t dev, int verbose);
-int sndstat_register(device_t dev, char *str, sndstat_handler handler);
+int sndstat_register(device_t dev, char *str);
 int sndstat_unregister(device_t dev);
 
 /* usage of flags in device config entry (config file) */
@@ -519,7 +515,7 @@ int	sound_oss_card_info(oss_card_info *);
 		mtx_unlock(&Giant);					\
 	}								\
 } while (0)
-#else /* SND_DIAGNOSTIC */
+#else /* !SND_DIAGNOSTIC */
 #define PCM_WAIT(x)		do {					\
 	PCM_LOCKASSERT(x);						\
 	while ((x)->flags & SD_F_BUSY)					\
@@ -590,7 +586,7 @@ int	sound_oss_card_info(oss_card_info *);
 		mtx_unlock(&Giant);					\
 	}								\
 } while (0)
-#endif /* !SND_DIAGNOSTIC */
+#endif /* SND_DIAGNOSTIC */
 
 #define PCM_GIANT_LEAVE(x)						\
 	PCM_GIANT_EXIT(x);						\
