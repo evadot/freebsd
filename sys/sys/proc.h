@@ -938,12 +938,6 @@ struct proc {
 #define	SINGLE_BOUNDARY	2
 #define	SINGLE_ALLPROC	3
 
-#ifdef MALLOC_DECLARE
-MALLOC_DECLARE(M_PARGS);
-MALLOC_DECLARE(M_SESSION);
-MALLOC_DECLARE(M_SUBPROC);
-#endif
-
 #define	FOREACH_PROC_IN_SYSTEM(p)					\
 	LIST_FOREACH((p), &allproc, p_list)
 #define	FOREACH_THREAD_IN_PROC(p, td)					\
@@ -1268,7 +1262,6 @@ void	cpu_thread_free(struct thread *);
 void	cpu_thread_swapin(struct thread *);
 void	cpu_thread_swapout(struct thread *);
 struct	thread *thread_alloc(int pages);
-int	thread_alloc_stack(struct thread *, int pages);
 int	thread_check_susp(struct thread *td, bool sleep);
 void	thread_cow_get_proc(struct thread *newtd, struct proc *p);
 void	thread_cow_get(struct thread *newtd, struct thread *td);
@@ -1281,6 +1274,7 @@ void	thread_exit(void) __dead2;
 void	thread_free(struct thread *td);
 void	thread_link(struct thread *td, struct proc *p);
 void	thread_reap_barrier(void);
+int	thread_recycle(struct thread *, int pages);
 int	thread_single(struct proc *p, int how);
 void	thread_single_end(struct proc *p, int how);
 void	thread_stash(struct thread *td);

@@ -20,6 +20,7 @@ SUBDIR=	\
 	accf_data \
 	accf_dns \
 	accf_http \
+	accf_tls \
 	acl_nfs4 \
 	acl_posix1e \
 	${_acpi} \
@@ -218,6 +219,7 @@ SUBDIR=	\
 	lindebugfs \
 	linuxkpi \
 	linuxkpi_hdmi \
+	linuxkpi_video \
 	linuxkpi_wlan \
 	${_lio} \
 	lpt \
