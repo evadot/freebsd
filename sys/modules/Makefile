@@ -296,6 +296,7 @@ SUBDIR=	\
 	nvd \
 	${_nvdimm} \
 	nvme \
+	nvmf \
 	${_nvram} \
 	oce \
 	${_ocs_fc} \
@@ -390,7 +391,7 @@ SUBDIR=	\
 	${_ti} \
 	tmpfs \
 	${_toecore} \
-	${_tpm} \
+	tpm \
 	tws \
 	uart \
 	udf \
@@ -813,7 +814,6 @@ _pchtherm = pchtherm
 _s3=		s3
 _sdhci_acpi=	sdhci_acpi
 _superio=	superio
-_tpm=		tpm
 _vesa=		vesa
 _viawd=		viawd
 _vmd=		vmd

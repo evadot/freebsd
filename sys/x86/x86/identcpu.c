@@ -106,6 +106,7 @@ u_int	cpu_exthigh;		/* Highest arg to extended CPUID */
 u_int	cpu_id;			/* Stepping ID */
 u_int	cpu_procinfo;		/* HyperThreading Info / Brand Index / CLFUSH */
 u_int	cpu_procinfo2;		/* Multicore info */
+u_int	cpu_procinfo3;
 char	cpu_vendor[20];		/* CPU Origin code */
 u_int	cpu_vendor_id;		/* CPU vendor ID */
 u_int	cpu_mxcsr_mask;		/* Valid bits in mxcsr */
@@ -1089,19 +1090,29 @@ printcpuinfo(void)
 				    "\001CLZERO"
 				    "\002IRPerf"
 				    "\003XSaveErPtr"
+				    "\004INVLPGB"
 				    "\005RDPRU"
+				    "\007BE"
 				    "\011MCOMMIT"
 				    "\012WBNOINVD"
 				    "\015IBPB"
+				    "\016INT_WBINVD"
 				    "\017IBRS"
 				    "\020STIBP"
 				    "\021IBRS_ALWAYSON"
 				    "\022STIBP_ALWAYSON"
 				    "\023PREFER_IBRS"
+				    "\024SAMEMODE_IBRS"
+				    "\025NOLMSLE"
+				    "\026INVLPGBNEST"
 				    "\030PPIN"
 				    "\031SSBD"
 				    "\032VIRT_SSBD"
 				    "\033SSB_NO"
+				    "\034CPPC"
+				    "\035PSFD"
+				    "\036BTC_NO"
+				    "\037IBPB_RET"
 				    );
 			}
 
@@ -1470,7 +1481,8 @@ identify_hypervisor(void)
 	p = kern_getenv("smbios.system.serial");
 	if (p != NULL) {
 		if (strncmp(p, "VMware-", 7) == 0 || strncmp(p, "VMW", 3) == 0) {
-			vmware_hvcall(VMW_HVCMD_GETVERSION, regs);
+			vmware_hvcall(0, VMW_HVCMD_GETVERSION,
+			    VMW_HVCMD_DEFAULT_PARAM, regs);
 			if (regs[1] == VMW_HVMAGIC) {
 				vm_guest = VM_GUEST_VMWARE;
 				freeenv(p);
@@ -1663,6 +1675,7 @@ finishidentcpu(void)
 		cpu_maxphyaddr = regs[0] & 0xff;
 		amd_extended_feature_extensions = regs[1];
 		cpu_procinfo2 = regs[2];
+		cpu_procinfo3 = regs[3];
 	} else {
 		cpu_maxphyaddr = (cpu_feature & CPUID_PAE) != 0 ? 36 : 32;
 	}

@@ -51,6 +51,16 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20240508: Remove remnants of portsnap(8)
+OLD_DIRS+=var/db/portsnap
+
+# 20240507: remove gbde
+OLD_FILES+=boot/kernel/geom_bde.ko
+OLD_FILES+=etc/rc.d/gbde
+OLD_FILES+=sbin/gbde
+OLD_FILES+=usr/share/man/man4/gbde.4.gz
+OLD_FILES+=usr/share/man/man8/gbde.8.gz
+
 # 20240422: remove improperly installed libcxxrt.so.1
 MOVED_LIBS+=usr/lib/libcxxrt.so.1
 
@@ -9481,11 +9491,6 @@ OLD_FILES+=usr/share/man/man4/imm.4.gz
 OLD_FILES+=usr/share/man/man4/vpo.4.gz
 
 # 20200104: gcc libssp removed
-OLD_FILES+=usr/include/ssp/ssp.h
-OLD_FILES+=usr/include/ssp/stdio.h
-OLD_FILES+=usr/include/ssp/string.h
-OLD_FILES+=usr/include/ssp/unistd.h
-OLD_DIRS+=usr/include/ssp
 OLD_FILES+=usr/lib/libssp.a
 
 # 20191229: GEOM_SCHED class and gsched tool removed

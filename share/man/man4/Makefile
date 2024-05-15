@@ -163,7 +163,6 @@ MAN=	aac.4 \
 	fwip.4 \
 	fwohci.4 \
 	fxp.4 \
-	gbde.4 \
 	gdb.4 \
 	gem.4 \
 	genet.4 \
@@ -342,6 +341,7 @@ MAN=	aac.4 \
 	netlink.4 \
 	netmap.4 \
 	${_nfe.4} \
+	nfslockd.4 \
 	${_nfsmb.4} \
 	ng_async.4 \
 	ng_bpf.4 \
@@ -408,6 +408,9 @@ MAN=	aac.4 \
 	nvd.4 \
 	${_nvdimm.4} \
 	nvme.4 \
+	nvmf.4 \
+	nvmf_tcp.4 \
+	nvmft.4 \
 	${_nvram.4} \
 	oce.4 \
 	ocs_fc.4\
@@ -491,6 +494,7 @@ MAN=	aac.4 \
 	send.4 \
 	ses.4 \
 	${_sfxge.4} \
+	sg.4 \
 	sge.4 \
 	siba.4 \
 	siftr.4 \
@@ -516,6 +520,7 @@ MAN=	aac.4 \
 	snd_es137x.4 \
 	snd_fm801.4 \
 	snd_hda.4 \
+	snd_hdsp.4 \
 	snd_hdspe.4 \
 	snd_ich.4 \
 	snd_maestro3.4 \
