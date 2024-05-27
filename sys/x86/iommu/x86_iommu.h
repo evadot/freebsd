@@ -1,6 +1,10 @@
 /*-
- * Copyright (c) 2003 Alan L. Cox <alc@cs.rice.edu>
- * All rights reserved.
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2013-2015 The FreeBSD Foundation
+ *
+ * This software was developed by Konstantin Belousov <kib@FreeBSD.org>
+ * under sponsorship from the FreeBSD Foundation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -14,7 +18,7 @@
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -24,45 +28,35 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>
-#include <sys/malloc.h>
-#include <vm/vm.h>
-#include <vm/vm_param.h>
-#include <vm/vm_page.h>
-#include <vm/vm_phys.h>
-#include <vm/vm_dumpset.h>
-#include <vm/uma.h>
-#include <vm/uma_int.h>
+#ifndef __X86_IOMMU_X86_IOMMU_H
+#define	__X86_IOMMU_X86_IOMMU_H
 
-void *
-uma_small_alloc(uma_zone_t zone, vm_size_t bytes, int domain, u_int8_t *flags,
-    int wait)
-{
-	vm_page_t m;
-	vm_paddr_t pa;
-	void *va;
+/* Both Intel and AMD are not too crazy to have different sizes. */
+typedef struct iommu_pte {
+	uint64_t pte;
+} iommu_pte_t;
 
-	*flags = UMA_SLAB_PRIV;
-	m = vm_page_alloc_noobj_domain(domain, malloc2vm_flags(wait) |
-	    VM_ALLOC_WIRED);
-	if (m == NULL)
-		return (NULL);
-	pa = m->phys_addr;
-	if ((wait & M_NODUMP) == 0)
-		dump_add_page(pa);
-	va = (void *)PHYS_TO_DMAP(pa);
-	return (va);
-}
+#define	IOMMU_PAGE_SIZE		PAGE_SIZE
+#define	IOMMU_PAGE_MASK		(IOMMU_PAGE_SIZE - 1)
+#define	IOMMU_PAGE_SHIFT	PAGE_SHIFT
+#define	IOMMU_NPTEPG		(IOMMU_PAGE_SIZE / sizeof(iommu_pte_t))
+#define	IOMMU_NPTEPGSHIFT 	9
+#define	IOMMU_PTEMASK		(IOMMU_NPTEPG - 1)
 
-void
-uma_small_free(void *mem, vm_size_t size, u_int8_t flags)
-{
-	vm_page_t m;
-	vm_paddr_t pa;
+struct sf_buf;
+struct vm_object;
 
-	pa = DMAP_TO_PHYS((vm_offset_t)mem);
-	dump_drop_page(pa);
-	m = PHYS_TO_VM_PAGE(pa);
-	vm_page_unwire_noq(m);
-	vm_page_free(m);
-}
+struct vm_page *iommu_pgalloc(struct vm_object *obj, vm_pindex_t idx,
+    int flags);
+void iommu_pgfree(struct vm_object *obj, vm_pindex_t idx, int flags);
+void *iommu_map_pgtbl(struct vm_object *obj, vm_pindex_t idx, int flags,
+    struct sf_buf **sf);
+void iommu_unmap_pgtbl(struct sf_buf *sf);
+
+extern iommu_haddr_t iommu_high;
+extern int iommu_tbl_pagecnt;
+
+SYSCTL_DECL(_hw_iommu);
+SYSCTL_DECL(_hw_iommu_dmar);
+
+#endif
