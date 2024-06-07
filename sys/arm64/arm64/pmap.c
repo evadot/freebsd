@@ -1437,7 +1437,6 @@ pmap_bootstrap_san1(vm_offset_t va, int scale)
 	 * Rebuild physmap one more time, we may have excluded more regions from
 	 * allocation since pmap_bootstrap().
 	 */
-	bzero(physmap, sizeof(physmap));
 	physmap_idx = physmem_avail(physmap, nitems(physmap));
 	physmap_idx /= 2;
 
@@ -1629,7 +1628,8 @@ pmap_init_pv_table(void)
 
 /*
  *	Initialize the pmap module.
- *	Called by vm_init, to initialize any structures that the pmap
+ *
+ *	Called by vm_mem_init(), to initialize any structures that the pmap
  *	system needs to map virtual memory.
  */
 void
@@ -4564,9 +4564,8 @@ pmap_update_entry(pmap_t pmap, pd_entry_t *ptep, pd_entry_t newpte,
 	register_t intr;
 
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
-
-	if ((newpte & ATTR_SW_NO_PROMOTE) != 0)
-		panic("%s: Updating non-promote pte", __func__);
+	KASSERT((newpte & ATTR_SW_NO_PROMOTE) == 0,
+	    ("%s: Updating non-promote pte", __func__));
 
 	/*
 	 * Ensure we don't get switched out with the page table in an
@@ -4607,9 +4606,8 @@ pmap_update_strided(pmap_t pmap, pd_entry_t *ptep, pd_entry_t *ptep_end,
 	register_t intr;
 
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
-
-	if ((newpte & ATTR_SW_NO_PROMOTE) != 0)
-		panic("%s: Updating non-promote pte", __func__);
+	KASSERT((newpte & ATTR_SW_NO_PROMOTE) == 0,
+	    ("%s: Updating non-promote pte", __func__));
 
 	/*
 	 * Ensure we don't get switched out with the page table in an
@@ -5885,9 +5883,19 @@ pmap_enter_object(pmap_t pmap, vm_offset_t start, vm_offset_t end,
 		    ((rv = pmap_enter_l3c_rx(pmap, va, m, &mpte, prot,
 		    &lock)) == KERN_SUCCESS || rv == KERN_NO_SPACE))
 			m = &m[L3C_ENTRIES - 1];
-		else
-			mpte = pmap_enter_quick_locked(pmap, va, m, prot, mpte,
-			    &lock);
+		else {
+			/*
+			 * In general, if a superpage mapping were possible,
+			 * it would have been created above.  That said, if
+			 * start and end are not superpage aligned, then
+			 * promotion might be possible at the ends of [start,
+			 * end).  However, in practice, those promotion
+			 * attempts are so unlikely to succeed that they are
+			 * not worth trying.
+			 */
+			mpte = pmap_enter_quick_locked(pmap, va, m, prot |
+			    VM_PROT_NO_PROMOTE, mpte, &lock);
+		}
 		m = TAILQ_NEXT(m, listq);
 	}
 	if (lock != NULL)
@@ -6050,11 +6058,19 @@ pmap_enter_quick_locked(pmap_t pmap, vm_offset_t va, vm_page_t m,
 
 #if VM_NRESERVLEVEL > 0
 	/*
-	 * If both the PTP and the reservation are fully populated, then
-	 * attempt promotion.
+	 * First, attempt L3C promotion, if the virtual and physical addresses
+	 * are aligned with each other and an underlying reservation has the
+	 * neighboring L3 pages allocated.  The first condition is simply an
+	 * optimization that recognizes some eventual promotion failures early
+	 * at a lower run-time cost.  Then, attempt L2 promotion, if both the
+	 * PTP and the reservation are fully populated.
 	 */
-	if ((mpte == NULL || mpte->ref_count == NL3PG) &&
+	if ((prot & VM_PROT_NO_PROMOTE) == 0 &&
+	    (va & L3C_OFFSET) == (pa & L3C_OFFSET) &&
 	    (m->flags & PG_FICTITIOUS) == 0 &&
+	    vm_reserv_is_populated(m, L3C_ENTRIES) &&
+	    pmap_promote_l3c(pmap, l3, va) &&
+	    (mpte == NULL || mpte->ref_count == NL3PG) &&
 	    vm_reserv_level_iffullpop(m) == 0) {
 		if (l2 == NULL)
 			l2 = pmap_pde(pmap, va, &lvl);
@@ -9258,7 +9274,7 @@ pmap_bti_deassign_all(pmap_t pmap)
 static bool
 pmap_bti_same(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
 {
-	struct rs_el *prev_rs, *rs;
+	struct rs_el *next_rs, *rs;
 	vm_offset_t va;
 
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
@@ -9270,17 +9286,18 @@ pmap_bti_same(pmap_t pmap, vm_offset_t sva, vm_offset_t eva)
 	if (pmap->pm_bti == NULL || ADDR_IS_KERNEL(sva))
 		return (true);
 	MPASS(!ADDR_IS_KERNEL(eva));
-	for (va = sva; va < eva; prev_rs = rs) {
-		rs = rangeset_lookup(pmap->pm_bti, va);
-		if (va == sva)
-			prev_rs = rs;
-		else if ((rs == NULL) ^ (prev_rs == NULL))
+	rs = rangeset_lookup(pmap->pm_bti, sva);
+	if (rs == NULL) {
+		rs = rangeset_next(pmap->pm_bti, sva);
+		return (rs == NULL ||
+			rs->re_start >= eva);
+	}
+	while ((va = rs->re_end) < eva) {
+		next_rs = rangeset_next(pmap->pm_bti, va);
+		if (next_rs == NULL ||
+		    va != next_rs->re_start)
 			return (false);
-		if (rs == NULL) {
-			va += PAGE_SIZE;
-			continue;
-		}
-		va = rs->re_end;
+		rs = next_rs;
 	}
 	return (true);
 }
