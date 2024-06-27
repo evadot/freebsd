@@ -1408,15 +1408,15 @@ pf_commit_rules(u_int32_t ticket, int rs_num, char *anchor)
 				continue;
 			}
 			pf_counter_u64_critical_enter();
-			pf_counter_u64_add_protected(&rule->evaluations,
+			pf_counter_u64_rollup_protected(&rule->evaluations,
 			    pf_counter_u64_fetch(&old_rule->evaluations));
-			pf_counter_u64_add_protected(&rule->packets[0],
+			pf_counter_u64_rollup_protected(&rule->packets[0],
 			    pf_counter_u64_fetch(&old_rule->packets[0]));
-			pf_counter_u64_add_protected(&rule->packets[1],
+			pf_counter_u64_rollup_protected(&rule->packets[1],
 			    pf_counter_u64_fetch(&old_rule->packets[1]));
-			pf_counter_u64_add_protected(&rule->bytes[0],
+			pf_counter_u64_rollup_protected(&rule->bytes[0],
 			    pf_counter_u64_fetch(&old_rule->bytes[0]));
-			pf_counter_u64_add_protected(&rule->bytes[1],
+			pf_counter_u64_rollup_protected(&rule->bytes[1],
 			    pf_counter_u64_fetch(&old_rule->bytes[1]));
 			pf_counter_u64_critical_exit();
 		}
@@ -2479,6 +2479,51 @@ pf_ioctl_get_timeout(int timeout, int *seconds)
 	PF_RULES_RLOCK();
 	*seconds = V_pf_default_rule.timeout[timeout];
 	PF_RULES_RUNLOCK();
+
+	return (0);
+}
+
+int
+pf_ioctl_set_limit(int index, unsigned int limit, unsigned int *old_limit)
+{
+
+	PF_RULES_WLOCK();
+	if (index < 0 || index >= PF_LIMIT_MAX ||
+	    V_pf_limits[index].zone == NULL) {
+		PF_RULES_WUNLOCK();
+		return (EINVAL);
+	}
+	uma_zone_set_max(V_pf_limits[index].zone, limit);
+	if (old_limit != NULL)
+		*old_limit = V_pf_limits[index].limit;
+	V_pf_limits[index].limit = limit;
+	PF_RULES_WUNLOCK();
+
+	return (0);
+}
+
+int
+pf_ioctl_get_limit(int index, unsigned int *limit)
+{
+	PF_RULES_RLOCK_TRACKER;
+
+	if (index < 0 || index >= PF_LIMIT_MAX)
+		return (EINVAL);
+
+	PF_RULES_RLOCK();
+	*limit = V_pf_limits[index].limit;
+	PF_RULES_RUNLOCK();
+
+	return (0);
+}
+
+int
+pf_ioctl_begin_addrs(uint32_t *ticket)
+{
+	PF_RULES_WLOCK();
+	pf_empty_kpool(&V_pf_pabuf);
+	*ticket = ++V_ticket_pabuf;
+	PF_RULES_WUNLOCK();
 
 	return (0);
 }
@@ -3894,32 +3939,16 @@ DIOCGETSTATESV2_full:
 	case DIOCGETLIMIT: {
 		struct pfioc_limit	*pl = (struct pfioc_limit *)addr;
 
-		if (pl->index < 0 || pl->index >= PF_LIMIT_MAX) {
-			error = EINVAL;
-			break;
-		}
-		PF_RULES_RLOCK();
-		pl->limit = V_pf_limits[pl->index].limit;
-		PF_RULES_RUNLOCK();
+		error = pf_ioctl_get_limit(pl->index, &pl->limit);
 		break;
 	}
 
 	case DIOCSETLIMIT: {
 		struct pfioc_limit	*pl = (struct pfioc_limit *)addr;
-		int			 old_limit;
+		unsigned int old_limit;
 
-		PF_RULES_WLOCK();
-		if (pl->index < 0 || pl->index >= PF_LIMIT_MAX ||
-		    V_pf_limits[pl->index].zone == NULL) {
-			PF_RULES_WUNLOCK();
-			error = EINVAL;
-			break;
-		}
-		uma_zone_set_max(V_pf_limits[pl->index].zone, pl->limit);
-		old_limit = V_pf_limits[pl->index].limit;
-		V_pf_limits[pl->index].limit = pl->limit;
+		error = pf_ioctl_set_limit(pl->index, pl->limit, &old_limit);
 		pl->limit = old_limit;
-		PF_RULES_WUNLOCK();
 		break;
 	}
 
@@ -4164,10 +4193,7 @@ DIOCGETSTATESV2_full:
 	case DIOCBEGINADDRS: {
 		struct pfioc_pooladdr	*pp = (struct pfioc_pooladdr *)addr;
 
-		PF_RULES_WLOCK();
-		pf_empty_kpool(&V_pf_pabuf);
-		pp->ticket = ++V_ticket_pabuf;
-		PF_RULES_WUNLOCK();
+		error = pf_ioctl_begin_addrs(&pp->ticket);
 		break;
 	}
 
