@@ -8082,6 +8082,13 @@ pf_test(int dir, int pflags, struct ifnet *ifp, struct mbuf **m0,
 	pd.af = AF_INET;
 	pd.act.rtableid = -1;
 
+	if (m->m_len < sizeof(struct ip) &&
+	    (m = *m0 = m_pullup(*m0, sizeof(struct ip))) == NULL) {
+		DPFPRINTF(PF_DEBUG_URGENT,
+		    ("pf_test: m_len < sizeof(struct ip), pullup failed\n"));
+		PF_RULES_RUNLOCK();
+		return (PF_DROP);
+	}
 	h = mtod(m, struct ip *);
 	off = h->ip_hl << 2;
 
@@ -8262,7 +8269,7 @@ pf_test(int dir, int pflags, struct ifnet *ifp, struct mbuf **m0,
 				V_pfsync_update_state_ptr(s);
 			r = s->rule.ptr;
 			a = s->anchor.ptr;
-		} else {
+		} else if (s == NULL) {
 			action = pf_test_rule(&r, &s, kif, m, off,
 			    &pd, &a, &ruleset, inp);
 		}
@@ -8888,7 +8895,7 @@ pf_test6(int dir, int pflags, struct ifnet *ifp, struct mbuf **m0, struct inpcb 
 				V_pfsync_update_state_ptr(s);
 			r = s->rule.ptr;
 			a = s->anchor.ptr;
-		} else {
+		} else if (s == NULL) {
 			action = pf_test_rule(&r, &s, kif, m, off,
 			    &pd, &a, &ruleset, inp);
 		}

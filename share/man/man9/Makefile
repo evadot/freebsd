@@ -62,6 +62,7 @@ MAN=	accept_filter.9 \
 	callout.9 \
 	casuword.9 \
 	cd.9 \
+	cdefs.9 \
 	cnv.9 \
 	condvar.9 \
 	config_intrhook.9 \
@@ -2249,6 +2250,7 @@ MLINKS+=taskqueue.9 TASK_INIT.9 \
 	taskqueue.9 taskqueue_drain_timeout.9 \
 	taskqueue.9 taskqueue_enqueue.9 \
 	taskqueue.9 taskqueue_enqueue_timeout.9 \
+	taskqueue.9 taskqueue_enqueue_timeout_sbt.9 \
 	taskqueue.9 TASKQUEUE_FAST_DEFINE.9 \
 	taskqueue.9 TASKQUEUE_FAST_DEFINE_THREAD.9 \
 	taskqueue.9 taskqueue_free.9 \

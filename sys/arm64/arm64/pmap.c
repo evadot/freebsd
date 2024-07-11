@@ -1207,15 +1207,18 @@ pmap_bootstrap_l3_page(struct pmap_bootstrap_state *state, int i)
 }
 
 static void
-pmap_bootstrap_dmap(vm_paddr_t min_pa)
+pmap_bootstrap_dmap(void)
 {
 	int i;
 
-	dmap_phys_base = min_pa & ~L1_OFFSET;
+	/* Fill in physmap array. */
+	physmap_idx = physmem_avail(physmap, nitems(physmap));
+
+	dmap_phys_base = physmap[0] & ~L1_OFFSET;
 	dmap_phys_max = 0;
 	dmap_max_addr = 0;
 
-	for (i = 0; i < (physmap_idx * 2); i += 2) {
+	for (i = 0; i < physmap_idx; i += 2) {
 		bs_state.pa = physmap[i] & ~L3_OFFSET;
 		bs_state.va = bs_state.pa - dmap_phys_base + DMAP_MIN_ADDRESS;
 
@@ -1299,8 +1302,7 @@ void
 pmap_bootstrap(vm_size_t kernlen)
 {
 	vm_offset_t dpcpu, msgbufpv;
-	vm_paddr_t start_pa, pa, min_pa;
-	int i;
+	vm_paddr_t start_pa, pa;
 
 	/* Verify that the ASID is set through TTBR0. */
 	KASSERT((READ_SPECIALREG(tcr_el1) & TCR_A1) == 0,
@@ -1319,28 +1321,13 @@ pmap_bootstrap(vm_size_t kernlen)
 	kernel_pmap->pm_ttbr = kernel_pmap->pm_l0_paddr;
 	kernel_pmap->pm_asid_set = &asids;
 
-	/* Assume the address we were loaded to is a valid physical address */
-	min_pa = pmap_early_vtophys(KERNBASE);
-
-	physmap_idx = physmem_avail(physmap, nitems(physmap));
-
-	/*
-	 * Find the minimum physical address. physmap is sorted,
-	 * but may contain empty ranges.
-	 */
-	for (i = 0; i < physmap_idx; i += 2) {
-		if (physmap[i] == physmap[i + 1])
-			continue;
-		if (physmap[i] <= min_pa)
-			min_pa = physmap[i];
-	}
-
 	bs_state.freemempos = KERNBASE + kernlen;
 	bs_state.freemempos = roundup2(bs_state.freemempos, PAGE_SIZE);
 
 	/* Create a direct map region early so we can use it for pa -> va */
-	pmap_bootstrap_dmap(min_pa);
+	pmap_bootstrap_dmap();
 	bs_state.dmap_valid = true;
+
 	/*
 	 * We only use PXN when we know nothing will be executed from it, e.g.
 	 * the DMAP region.
@@ -4373,7 +4360,8 @@ pmap_mask_set_locked(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, pt_entry_t m
 			if (sva + L2_SIZE == va_next && eva >= va_next) {
 				pmap_protect_l2(pmap, l2, sva, mask, nbits);
 				continue;
-			} else if (pmap_demote_l2(pmap, l2, sva) == NULL)
+			} else if ((pmap_load(l2) & mask) == nbits ||
+			    pmap_demote_l2(pmap, l2, sva) == NULL)
 				continue;
 		}
 		KASSERT((pmap_load(l2) & ATTR_DESCR_MASK) == L2_TABLE,
@@ -4403,8 +4391,22 @@ pmap_mask_set_locked(pmap_t pmap, vm_offset_t sva, vm_offset_t eva, pt_entry_t m
 					va = va_next;
 				}
 				if ((l3 & ATTR_CONTIGUOUS) != 0) {
-					l3p += L3C_ENTRIES - 1;
-					sva += L3C_SIZE - L3_SIZE;
+					/*
+					 * Does this L3C page extend beyond
+					 * the requested range?  Handle the
+					 * possibility that "va_next" is zero.
+					 */
+					if ((sva | L3C_OFFSET) > va_next - 1)
+						break;
+
+					/*
+					 * Skip ahead to the last L3_PAGE
+					 * within this L3C page.
+					 */
+					l3p = (pt_entry_t *)((uintptr_t)l3p |
+					    ((L3C_ENTRIES - 1) *
+					    sizeof(pt_entry_t)));
+					sva |= L3C_SIZE - L3_SIZE;
 				}
 				continue;
 			}

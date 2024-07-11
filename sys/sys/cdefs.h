@@ -124,8 +124,6 @@
 #define	__STRING(x)	#x		/* stringify without expanding x */
 #define	__XSTRING(x)	__STRING(x)	/* expand x, then stringify */
 
-#define	__const		const		/* define reserved names to standard */
-#define	__signed	signed
 #define	__volatile	volatile
 #if defined(__cplusplus)
 #define	__inline	inline		/* convert to C++ keyword */
@@ -139,26 +137,10 @@
 #define	__P(protos)	()		/* traditional C preprocessor */
 #define	__CONCAT(x,y)	x/**/y
 #define	__STRING(x)	"x"
-
 #if !defined(__CC_SUPPORTS___INLINE)
-#define	__const				/* delete pseudo-ANSI C keywords */
+/* Just delete these in a K&R environment */
 #define	__inline
-#define	__signed
 #define	__volatile
-/*
- * In non-ANSI C environments, new programs will want ANSI-only C keywords
- * deleted from the program and old programs will want them left alone.
- * When using a compiler other than gcc, programs using the ANSI C keywords
- * const, inline etc. as normal identifiers should define -DNO_ANSI_KEYWORDS.
- * When using "gcc -traditional", we assume that this is the intent; if
- * __GNUC__ is defined but __STDC__ is not, we leave the new keywords alone.
- */
-#ifndef	NO_ANSI_KEYWORDS
-#define	const				/* delete ANSI C keywords */
-#define	inline
-#define	signed
-#define	volatile
-#endif	/* !NO_ANSI_KEYWORDS */
 #endif	/* !__CC_SUPPORTS___INLINE */
 #endif	/* !(__STDC__ || __cplusplus) */
 
@@ -244,8 +226,8 @@
 	_Generic(expr, t: yes, default: no)
 #elif !defined(__cplusplus)
 #define	__generic(expr, t, yes, no)					\
-	__builtin_choose_expr(						\
-	    __builtin_types_compatible_p(__typeof((0, (expr))), t), yes, no)
+	__builtin_choose_expr(__builtin_types_compatible_p(		\
+	    __typeof(((void)0, (expr))), t), yes, no)
 #endif
 
 /*
@@ -321,6 +303,13 @@
 #define	__restrict	restrict
 #endif
 
+/*
+ * All modern compilers have explicit branch prediction so that the CPU back-end
+ * can hint to the processor and also so that code blocks can be reordered such
+ * that the predicted path sees a more linear flow, thus improving cache
+ * behavior, etc. Use sparingly, except in performance critical code where
+ * they make things measurably faster.
+ */
 #define	__predict_true(exp)     __builtin_expect((exp), 1)
 #define	__predict_false(exp)    __builtin_expect((exp), 0)
 
@@ -349,9 +338,7 @@
 
 /*
  * Compiler-dependent macros to declare that functions take printf-like
- * or scanf-like arguments.  They are null except for versions of gcc
- * that are known to support the features properly (old versions of gcc-2
- * didn't permit keeping the keywords out of the application namespace).
+ * or scanf-like arguments.
  */
 #define	__printflike(fmtarg, firstvararg) \
 	    __attribute__((__format__ (__printf__, fmtarg, firstvararg)))
@@ -363,8 +350,21 @@
 #define	__strftimelike(fmtarg, firstvararg) \
 	    __attribute__((__format__ (__strftime__, fmtarg, firstvararg)))
 
+/*
+ * Like __printflike, but allows fmtarg to be NULL. FreeBSD invented 'printf0'
+ * for this because older versions of gcc issued warnings for NULL first args.
+ * Clang has always had printf and printf0 as aliases. gcc 11.0 now follows
+ * clang. So now this is an alias for __printflike, or nothing. In the future
+ * _Nullable or _Nonnull will replace this.
+ * XXX Except that doesn't work, so for now revert to printf0 for clang and
+ * the FreeBSD gcc until I can work this out.
+ */
+#if defined(__clang__) || (defined(__GNUC__) && defined (__FreeBSD_cc_version))
 #define	__printf0like(fmtarg, firstvararg) \
 	    __attribute__((__format__ (__printf0__, fmtarg, firstvararg)))
+#else
+#define	__printf0like(fmtarg, firstvararg)
+#endif
 
 #define	__strong_reference(sym,aliassym)	\
 	extern __typeof (sym) aliassym __attribute__ ((__alias__ (#sym)))

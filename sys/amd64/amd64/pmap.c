@@ -5595,8 +5595,7 @@ retry:
 			pv = &pc->pc_pventry[field * 64 + bit];
 			pc->pc_map[field] &= ~(1ul << bit);
 			/* If this was the last item, move it to tail */
-			if (pc->pc_map[0] == 0 && pc->pc_map[1] == 0 &&
-			    pc->pc_map[2] == 0) {
+			if (pc_is_full(pc)) {
 				TAILQ_REMOVE(&pmap->pm_pvchunk, pc, pc_list);
 				TAILQ_INSERT_TAIL(&pmap->pm_pvchunk, pc,
 				    pc_list);
@@ -5807,8 +5806,7 @@ pmap_pv_demote_pde(pmap_t pmap, vm_offset_t va, vm_paddr_t pa,
 	va_last = va + NBPDR - PAGE_SIZE;
 	for (;;) {
 		pc = TAILQ_FIRST(&pmap->pm_pvchunk);
-		KASSERT(pc->pc_map[0] != 0 || pc->pc_map[1] != 0 ||
-		    pc->pc_map[2] != 0, ("pmap_pv_demote_pde: missing spare"));
+		KASSERT(!pc_is_full(pc), ("pmap_pv_demote_pde: missing spare"));
 		for (field = 0; field < _NPCM; field++) {
 			while (pc->pc_map[field]) {
 				bit = bsfq(pc->pc_map[field]);
@@ -5829,7 +5827,7 @@ pmap_pv_demote_pde(pmap_t pmap, vm_offset_t va, vm_paddr_t pa,
 		TAILQ_INSERT_TAIL(&pmap->pm_pvchunk, pc, pc_list);
 	}
 out:
-	if (pc->pc_map[0] == 0 && pc->pc_map[1] == 0 && pc->pc_map[2] == 0) {
+	if (pc_is_full(pc)) {
 		TAILQ_REMOVE(&pmap->pm_pvchunk, pc, pc_list);
 		TAILQ_INSERT_TAIL(&pmap->pm_pvchunk, pc, pc_list);
 	}
@@ -6796,8 +6794,7 @@ retry_pdpe:
 		 */
 		if ((ptpaddr & PG_PS) != 0) {
 			/*
-			 * Are we protecting the entire large page?  If not,
-			 * demote the mapping and fall through.
+			 * Are we protecting the entire large page?
 			 */
 			if (sva + NBPDR == va_next && eva >= va_next) {
 				/*
@@ -6807,9 +6804,23 @@ retry_pdpe:
 				if (pmap_protect_pde(pmap, pde, sva, prot))
 					anychanged = true;
 				continue;
-			} else if (!pmap_demote_pde(pmap, pde, sva)) {
+			}
+
+			/*
+			 * Does the large page mapping need to change?  If so,
+			 * demote it and fall through.
+			 */
+			pbits = ptpaddr;
+			if ((prot & VM_PROT_WRITE) == 0)
+				pbits &= ~(PG_RW | PG_M);
+			if ((prot & VM_PROT_EXECUTE) == 0)
+				pbits |= pg_nx;
+			if (ptpaddr == pbits || !pmap_demote_pde(pmap, pde,
+			    sva)) {
 				/*
-				 * The large page mapping was destroyed.
+				 * Either the large page mapping doesn't need
+				 * to change, or it was destroyed during
+				 * demotion.
 				 */
 				continue;
 			}
