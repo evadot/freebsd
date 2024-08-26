@@ -1122,9 +1122,17 @@ forwarding_intr_to_fwq(struct adapter *sc)
 static inline bool
 hw_off_limits(struct adapter *sc)
 {
-	int off_limits = atomic_load_int(&sc->error_flags) & HW_OFF_LIMITS;
+	const int off_limits = atomic_load_int(&sc->error_flags) & HW_OFF_LIMITS;
 
 	return (__predict_false(off_limits != 0));
+}
+
+static inline bool
+adapter_stopped(struct adapter *sc)
+{
+	const int stopped = atomic_load_int(&sc->error_flags) & ADAP_STOPPED;
+
+	return (__predict_false(stopped != 0));
 }
 
 static inline int
@@ -1553,7 +1561,10 @@ t4_wrq_tx(struct adapter *sc, struct wrqe *wr)
 	struct sge_wrq *wrq = wr->wrq;
 
 	TXQ_LOCK(wrq);
-	t4_wrq_tx_locked(sc, wrq, wr);
+	if (__predict_true(wrq->eq.flags & EQ_HW_ALLOCATED))
+		t4_wrq_tx_locked(sc, wrq, wr);
+	else
+		free(wr, M_CXGBE);
 	TXQ_UNLOCK(wrq);
 }
 

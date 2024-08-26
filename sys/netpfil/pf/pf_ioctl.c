@@ -129,7 +129,6 @@ static void		 pf_hash_rule_addr(MD5_CTX *, struct pf_rule_addr *);
 static int		 pf_commit_rules(u_int32_t, int, char *);
 static int		 pf_addr_setup(struct pf_kruleset *,
 			    struct pf_addr_wrap *, sa_family_t);
-static void		 pf_addr_copyout(struct pf_addr_wrap *);
 static void		 pf_src_node_copy(const struct pf_ksrc_node *,
 			    struct pf_src_node *);
 #ifdef ALTQ
@@ -1525,7 +1524,7 @@ pf_addr_setup(struct pf_kruleset *ruleset, struct pf_addr_wrap *addr,
 	return (error);
 }
 
-static void
+void
 pf_addr_copyout(struct pf_addr_wrap *addr)
 {
 
@@ -2208,6 +2207,11 @@ pf_ioctl_addrule(struct pf_krule *rule, uint32_t ticket,
 	    (TAILQ_FIRST(&rule->rpool.list) == NULL))
 		error = EINVAL;
 
+	if (rule->action == PF_PASS && rule->rpool.opts & PF_POOL_STICKYADDR &&
+	    !rule->keep_state) {
+		error = EINVAL;
+	}
+
 	if (error) {
 		pf_free_rule(rule);
 		rule = NULL;
@@ -2587,6 +2591,65 @@ pf_ioctl_add_addr(struct pfioc_pooladdr *pp)
 out:
 	free(pa, M_PFRULE);
 	return (error);
+}
+
+int
+pf_ioctl_get_addrs(struct pfioc_pooladdr *pp)
+{
+	struct pf_kpool		*pool;
+	struct pf_kpooladdr	*pa;
+
+	PF_RULES_RLOCK_TRACKER;
+
+	pp->anchor[sizeof(pp->anchor) - 1] = 0;
+	pp->nr = 0;
+
+	PF_RULES_RLOCK();
+	pool = pf_get_kpool(pp->anchor, pp->ticket, pp->r_action,
+	    pp->r_num, 0, 1, 0);
+	if (pool == NULL) {
+		PF_RULES_RUNLOCK();
+		return (EBUSY);
+	}
+	TAILQ_FOREACH(pa, &pool->list, entries)
+		pp->nr++;
+	PF_RULES_RUNLOCK();
+
+	return (0);
+}
+
+int
+pf_ioctl_get_addr(struct pfioc_pooladdr *pp)
+{
+	struct pf_kpool		*pool;
+	struct pf_kpooladdr	*pa;
+	u_int32_t		 nr = 0;
+
+	PF_RULES_RLOCK_TRACKER;
+
+	pp->anchor[sizeof(pp->anchor) - 1] = 0;
+
+	PF_RULES_RLOCK();
+	pool = pf_get_kpool(pp->anchor, pp->ticket, pp->r_action,
+	    pp->r_num, 0, 1, 1);
+	if (pool == NULL) {
+		PF_RULES_RUNLOCK();
+		return (EBUSY);
+	}
+	pa = TAILQ_FIRST(&pool->list);
+	while ((pa != NULL) && (nr < pp->nr)) {
+		pa = TAILQ_NEXT(pa, entries);
+		nr++;
+	}
+	if (pa == NULL) {
+		PF_RULES_RUNLOCK();
+		return (EBUSY);
+	}
+	pf_kpooladdr_to_pooladdr(pa, &pp->addr);
+	pf_addr_copyout(&pp->addr.addr);
+	PF_RULES_RUNLOCK();
+
+	return (0);
 }
 
 static int
@@ -4267,55 +4330,15 @@ DIOCGETSTATESV2_full:
 
 	case DIOCGETADDRS: {
 		struct pfioc_pooladdr	*pp = (struct pfioc_pooladdr *)addr;
-		struct pf_kpool		*pool;
-		struct pf_kpooladdr	*pa;
 
-		pp->anchor[sizeof(pp->anchor) - 1] = 0;
-		pp->nr = 0;
-
-		PF_RULES_RLOCK();
-		pool = pf_get_kpool(pp->anchor, pp->ticket, pp->r_action,
-		    pp->r_num, 0, 1, 0);
-		if (pool == NULL) {
-			PF_RULES_RUNLOCK();
-			error = EBUSY;
-			break;
-		}
-		TAILQ_FOREACH(pa, &pool->list, entries)
-			pp->nr++;
-		PF_RULES_RUNLOCK();
+		error = pf_ioctl_get_addrs(pp);
 		break;
 	}
 
 	case DIOCGETADDR: {
 		struct pfioc_pooladdr	*pp = (struct pfioc_pooladdr *)addr;
-		struct pf_kpool		*pool;
-		struct pf_kpooladdr	*pa;
-		u_int32_t		 nr = 0;
 
-		pp->anchor[sizeof(pp->anchor) - 1] = 0;
-
-		PF_RULES_RLOCK();
-		pool = pf_get_kpool(pp->anchor, pp->ticket, pp->r_action,
-		    pp->r_num, 0, 1, 1);
-		if (pool == NULL) {
-			PF_RULES_RUNLOCK();
-			error = EBUSY;
-			break;
-		}
-		pa = TAILQ_FIRST(&pool->list);
-		while ((pa != NULL) && (nr < pp->nr)) {
-			pa = TAILQ_NEXT(pa, entries);
-			nr++;
-		}
-		if (pa == NULL) {
-			PF_RULES_RUNLOCK();
-			error = EBUSY;
-			break;
-		}
-		pf_kpooladdr_to_pooladdr(pa, &pp->addr);
-		pf_addr_copyout(&pp->addr.addr);
-		PF_RULES_RUNLOCK();
+		error = pf_ioctl_get_addr(pp);
 		break;
 	}
 

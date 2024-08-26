@@ -900,29 +900,27 @@ vmbus_dma_free(struct vmbus_softc *sc)
 	int cpu;
 
 	if (sc->vmbus_evtflags != NULL) {
-		contigfree(sc->vmbus_evtflags, PAGE_SIZE, M_DEVBUF);
+		free(sc->vmbus_evtflags, M_DEVBUF);
 		sc->vmbus_evtflags = NULL;
 		sc->vmbus_rx_evtflags = NULL;
 		sc->vmbus_tx_evtflags = NULL;
 	}
 	if (sc->vmbus_mnf1 != NULL) {
-		contigfree(sc->vmbus_mnf1, PAGE_SIZE, M_DEVBUF);
+		free(sc->vmbus_mnf1, M_DEVBUF);
 		sc->vmbus_mnf1 = NULL;
 	}
 	if (sc->vmbus_mnf2 != NULL) {
-		contigfree(sc->vmbus_mnf2, sizeof(struct vmbus_mnf), M_DEVBUF);
+		free(sc->vmbus_mnf2, M_DEVBUF);
 		sc->vmbus_mnf2 = NULL;
 	}
 
 	CPU_FOREACH(cpu) {
 		if (VMBUS_PCPU_GET(sc, message, cpu) != NULL) {
-			contigfree(VMBUS_PCPU_GET(sc, message, cpu), PAGE_SIZE,
-			    M_DEVBUF);
+			free(VMBUS_PCPU_GET(sc, message, cpu), M_DEVBUF);
 			VMBUS_PCPU_GET(sc, message, cpu) = NULL;
 		}
 		if (VMBUS_PCPU_GET(sc, event_flags, cpu) != NULL) {
-			contigfree(VMBUS_PCPU_GET(sc, event_flags, cpu),
-			    PAGE_SIZE, M_DEVBUF);
+			free(VMBUS_PCPU_GET(sc, event_flags, cpu), M_DEVBUF);
 			VMBUS_PCPU_GET(sc, event_flags, cpu) = NULL;
 		}
 	}
@@ -1015,7 +1013,8 @@ vmbus_add_child(struct vmbus_channel *chan)
 	device_t parent = sc->vmbus_dev;
 
 	bus_topo_lock();
-	chan->ch_dev = device_add_child(parent, NULL, -1);
+
+	chan->ch_dev = device_add_child(parent, NULL, DEVICE_UNIT_ANY);
 	if (chan->ch_dev == NULL) {
 		bus_topo_unlock();
 		device_printf(parent, "device_add_child for chan%u failed\n",
@@ -1379,7 +1378,7 @@ vmbus_identify(driver_t *driver, device_t parent)
 	if (device_get_unit(parent) != 0 || vm_guest != VM_GUEST_HV ||
 	    (hyperv_features & CPUID_HV_MSR_SYNIC) == 0)
 		return;
-	device_add_child(parent, "vmbus", -1);
+	device_add_child(parent, "vmbus", DEVICE_UNIT_ANY);
 }
 
 static int
@@ -1423,7 +1422,7 @@ vmbus_free_cpu_mem(struct vmbus_softc *sc)
 		void **hv_cpu_mem;
 		hv_cpu_mem = VMBUS_PCPU_PTR(sc, cpu_mem, cpu);
 		if(*hv_cpu_mem != NULL) {
-			contigfree(*hv_cpu_mem, PAGE_SIZE, M_DEVBUF);
+			free(*hv_cpu_mem, M_DEVBUF);
 			*hv_cpu_mem = NULL;
 		}
 	}

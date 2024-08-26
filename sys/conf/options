@@ -106,7 +106,6 @@ CY_PCI_FASTINTR
 DEADLKRES	opt_watchdog.h
 EXPERIMENTAL	opt_global.h
 DIRECTIO
-FILEMON		opt_dontuse.h
 FFCLOCK
 FULL_PREEMPTION	opt_sched.h
 GZIO		opt_gzio.h
@@ -630,7 +629,6 @@ VM_KMEM_SIZE_SCALE	opt_vm.h
 VM_KMEM_SIZE_MAX	opt_vm.h
 VM_NRESERVLEVEL		opt_vm.h
 VM_LEVEL_0_ORDER	opt_vm.h
-NO_SWAPPING		opt_vm.h
 MALLOC_MAKE_FAILURES	opt_vm.h
 MALLOC_PROFILE		opt_vm.h
 MALLOC_DEBUG_MAXZONES	opt_vm.h

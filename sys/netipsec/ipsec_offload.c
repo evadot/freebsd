@@ -30,6 +30,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/ck.h>
+#include <sys/eventhandler.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
 #include <sys/pctrie.h>
@@ -138,6 +139,8 @@ PCTRIE_DEFINE(DRVSPI_SA, ifp_handle_sav, drv_spi,
     drvspi_sa_trie_alloc, drvspi_sa_trie_free);
 static struct pctrie drv_spi_pctrie;
 
+static eventhandler_tag ipsec_accel_ifdetach_event_tag;
+
 static void ipsec_accel_sa_newkey_impl(struct secasvar *sav);
 static int ipsec_accel_handle_sav(struct secasvar *sav, struct ifnet *ifp,
     u_int drv_spi, void *priv, uint32_t flags, struct ifp_handle_sav **ires);
@@ -151,6 +154,12 @@ static void ipsec_accel_sa_recordxfer(struct secasvar *sav, struct mbuf *m);
 static void ipsec_accel_sync_imp(void);
 static bool ipsec_accel_is_accel_sav_impl(struct secasvar *sav);
 static struct mbuf *ipsec_accel_key_setaccelif_impl(struct secasvar *sav);
+static void ipsec_accel_on_ifdown_impl(struct ifnet *ifp);
+static void ipsec_accel_drv_sa_lifetime_update_impl(struct secasvar *sav,
+    if_t ifp, u_int drv_spi, uint64_t octets, uint64_t allocs);
+static int ipsec_accel_drv_sa_lifetime_fetch_impl(struct secasvar *sav,
+    if_t ifp, u_int drv_spi, uint64_t *octets, uint64_t *allocs);
+static void ipsec_accel_ifdetach_event(void *arg, struct ifnet *ifp);
 
 static void
 ipsec_accel_init(void *arg)
@@ -167,7 +176,15 @@ ipsec_accel_init(void *arg)
 	ipsec_accel_sync_p = ipsec_accel_sync_imp;
 	ipsec_accel_is_accel_sav_p = ipsec_accel_is_accel_sav_impl;
 	ipsec_accel_key_setaccelif_p = ipsec_accel_key_setaccelif_impl;
+	ipsec_accel_on_ifdown_p = ipsec_accel_on_ifdown_impl;
+	ipsec_accel_drv_sa_lifetime_update_p =
+	    ipsec_accel_drv_sa_lifetime_update_impl;
+	ipsec_accel_drv_sa_lifetime_fetch_p =
+	    ipsec_accel_drv_sa_lifetime_fetch_impl;
 	pctrie_init(&drv_spi_pctrie);
+	ipsec_accel_ifdetach_event_tag = EVENTHANDLER_REGISTER(
+	    ifnet_departure_event, ipsec_accel_ifdetach_event, NULL,
+	    EVENTHANDLER_PRI_ANY);
 }
 SYSINIT(ipsec_accel_init, SI_SUB_VNET_DONE, SI_ORDER_ANY,
     ipsec_accel_init, NULL);
@@ -175,6 +192,8 @@ SYSINIT(ipsec_accel_init, SI_SUB_VNET_DONE, SI_ORDER_ANY,
 static void
 ipsec_accel_fini(void *arg)
 {
+	EVENTHANDLER_DEREGISTER(ifnet_departure_event,
+	    ipsec_accel_ifdetach_event_tag);
 	ipsec_accel_sa_newkey_p = NULL;
 	ipsec_accel_forget_sav_p = NULL;
 	ipsec_accel_spdadd_p = NULL;
@@ -183,6 +202,9 @@ ipsec_accel_fini(void *arg)
 	ipsec_accel_sync_p = NULL;
 	ipsec_accel_is_accel_sav_p = NULL;
 	ipsec_accel_key_setaccelif_p = NULL;
+	ipsec_accel_on_ifdown_p = NULL;
+	ipsec_accel_drv_sa_lifetime_update_p = NULL;
+	ipsec_accel_drv_sa_lifetime_fetch_p = NULL;
 	ipsec_accel_sync_imp();
 	clean_unrhdr(drv_spi_unr);	/* avoid panic, should go later */
 	clear_unrhdr(drv_spi_unr);
@@ -784,11 +806,19 @@ ipsec_accel_on_ifdown_sp(struct ifnet *ifp)
 	free(marker, M_IPSEC_MISC);
 }
 
-void
-ipsec_accel_on_ifdown(struct ifnet *ifp)
+static void
+ipsec_accel_on_ifdown_impl(struct ifnet *ifp)
 {
 	ipsec_accel_on_ifdown_sp(ifp);
 	ipsec_accel_on_ifdown_sav(ifp);
+}
+
+static void
+ipsec_accel_ifdetach_event(void *arg __unused, struct ifnet *ifp)
+{
+	if ((ifp->if_flags & IFF_RENAMING) != 0)
+		return;
+	ipsec_accel_on_ifdown_impl(ifp);
 }
 
 static bool
@@ -949,8 +979,8 @@ ipsec_accel_sa_lifetime_update(struct seclifetime *lft_c,
 	lft_c->usetime = min(lft_c->usetime, lft_l->usetime);
 }
 
-void
-ipsec_accel_drv_sa_lifetime_update(struct secasvar *sav, if_t ifp,
+static void
+ipsec_accel_drv_sa_lifetime_update_impl(struct secasvar *sav, if_t ifp,
     u_int drv_spi, uint64_t octets, uint64_t allocs)
 {
 	struct epoch_tracker et;
@@ -990,6 +1020,30 @@ ipsec_accel_drv_sa_lifetime_update(struct secasvar *sav, if_t ifp,
 out:
 	mtx_unlock(&ipsec_accel_cnt_lock);
 	NET_EPOCH_EXIT(et);
+}
+
+static int
+ipsec_accel_drv_sa_lifetime_fetch_impl(struct secasvar *sav,
+    if_t ifp, u_int drv_spi, uint64_t *octets, uint64_t *allocs)
+{
+	struct ifp_handle_sav *i;
+	int error;
+
+	NET_EPOCH_ASSERT();
+	error = 0;
+
+	mtx_lock(&ipsec_accel_cnt_lock);
+	CK_LIST_FOREACH(i, &sav->accel_ifps, sav_link) {
+		if (i->ifp == ifp && i->drv_spi == drv_spi) {
+			*octets = i->cnt_octets;
+			*allocs = i->cnt_allocs;
+			break;
+		}
+	}
+	if (i == NULL)
+		error = ENOENT;
+	mtx_unlock(&ipsec_accel_cnt_lock);
+	return (error);
 }
 
 static void

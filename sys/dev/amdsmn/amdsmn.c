@@ -60,6 +60,7 @@
 #define	PCI_DEVICE_ID_AMD_17H_M60H_ROOT		0x1630
 #define	PCI_DEVICE_ID_AMD_19H_M10H_ROOT		0x14a4
 #define	PCI_DEVICE_ID_AMD_19H_M60H_ROOT		0x14d8
+#define	PCI_DEVICE_ID_AMD_19H_M70H_ROOT		0x14e8
 
 struct pciid;
 struct amdsmn_softc {
@@ -112,6 +113,12 @@ static const struct pciid {
 	{
 		.amdsmn_vendorid = CPU_VENDOR_AMD,
 		.amdsmn_deviceid = PCI_DEVICE_ID_AMD_19H_M60H_ROOT,
+		.amdsmn_addr_reg = F17H_SMN_ADDR_REG,
+		.amdsmn_data_reg = F17H_SMN_DATA_REG,
+	},
+	{
+		.amdsmn_vendorid = CPU_VENDOR_AMD,
+		.amdsmn_deviceid = PCI_DEVICE_ID_AMD_19H_M70H_ROOT,
 		.amdsmn_addr_reg = F17H_SMN_ADDR_REG,
 		.amdsmn_data_reg = F17H_SMN_DATA_REG,
 	},
@@ -176,7 +183,7 @@ amdsmn_identify(driver_t *driver, device_t parent)
 	if (!amdsmn_match(parent, NULL))
 		return;
 
-	child = device_add_child(parent, "amdsmn", -1);
+	child = device_add_child(parent, "amdsmn", DEVICE_UNIT_ANY);
 	if (child == NULL)
 		device_printf(parent, "add amdsmn child failed\n");
 }

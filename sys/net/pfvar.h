@@ -884,21 +884,21 @@ SLIST_HEAD(pf_krule_slist, pf_krule_item);
 
 struct pf_ksrc_node {
 	LIST_ENTRY(pf_ksrc_node) entry;
-	struct pf_addr	 addr;
-	struct pf_addr	 raddr;
+	struct pf_addr		 addr;
+	struct pf_addr		 raddr;
 	struct pf_krule_slist	 match_rules;
-	union pf_krule_ptr rule;
-	struct pfi_kkif	*rkif;
-	counter_u64_t	 bytes[2];
-	counter_u64_t	 packets[2];
-	u_int32_t	 states;
-	u_int32_t	 conn;
-	struct pf_threshold	conn_rate;
-	u_int32_t	 creation;
-	u_int32_t	 expire;
-	sa_family_t	 af;
-	u_int8_t	 ruletype;
-	struct mtx	*lock;
+	union pf_krule_ptr	 rule;
+	struct pfi_kkif		*rkif;
+	counter_u64_t		 bytes[2];
+	counter_u64_t		 packets[2];
+	u_int32_t		 states;
+	u_int32_t		 conn;
+	struct pf_threshold	 conn_rate;
+	u_int32_t		 creation;
+	u_int32_t		 expire;
+	sa_family_t		 af;
+	u_int8_t		 ruletype;
+	struct mtx		*lock;
 };
 #endif
 
@@ -2528,9 +2528,12 @@ int			 pf_ioctl_get_limit(int, unsigned int *);
 int			 pf_ioctl_set_limit(int, unsigned int, unsigned int *);
 int			 pf_ioctl_begin_addrs(uint32_t *);
 int			 pf_ioctl_add_addr(struct pfioc_pooladdr *);
+int			 pf_ioctl_get_addrs(struct pfioc_pooladdr *);
+int			 pf_ioctl_get_addr(struct pfioc_pooladdr *);
 
 void			 pf_krule_free(struct pf_krule *);
 void			 pf_krule_clear_counters(struct pf_krule *);
+void			 pf_addr_copyout(struct pf_addr_wrap *);
 #endif
 
 /* The fingerprint functions can be linked into userland programs (tcpdump) */
@@ -2566,11 +2569,12 @@ u_short			 pf_map_addr(u_int8_t, struct pf_krule *,
 			    struct pf_addr *, struct pf_addr *,
 			    struct pfi_kkif **nkif, struct pf_addr *,
 			    struct pf_ksrc_node **);
-struct pf_krule		*pf_get_translation(struct pf_pdesc *, struct mbuf *,
+u_short			 pf_get_translation(struct pf_pdesc *, struct mbuf *,
 			    int, struct pfi_kkif *, struct pf_ksrc_node **,
 			    struct pf_state_key **, struct pf_state_key **,
 			    struct pf_addr *, struct pf_addr *,
-			    uint16_t, uint16_t, struct pf_kanchor_stackframe *);
+			    uint16_t, uint16_t, struct pf_kanchor_stackframe *,
+			    struct pf_krule **);
 
 struct pf_state_key	*pf_state_key_setup(struct pf_pdesc *, struct pf_addr *,
 			    struct pf_addr *, u_int16_t, u_int16_t);

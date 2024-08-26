@@ -16,6 +16,7 @@ ATF_TESTS_SH+=	altq \
 		fragmentation_no_reassembly \
 		get_state \
 		icmp \
+		icmp6 \
 		if_enc \
 		limits \
 		loginterface \
@@ -23,6 +24,7 @@ ATF_TESTS_SH+=	altq \
 		macro \
 		map_e \
 		match \
+		mbuf \
 		modulate \
 		names \
 		nat \
@@ -54,8 +56,9 @@ ATF_TESTS_PYTEST+=	frag6.py
 ATF_TESTS_PYTEST+=	nat66.py
 ATF_TESTS_PYTEST+=	sctp.py
 
-# Tests reuse jail names and so cannot run in parallel.
-TEST_METADATA+=	is_exclusive=true
+# Allow tests to run in parallel in their own jails
+TEST_METADATA+= execenv="jail"
+TEST_METADATA+= execenv_jail_params="vnet allow.raw_sockets"
 
 PROGS=	divapp
 
@@ -70,6 +73,7 @@ ${PACKAGE}FILES+=	CVE-2019-5597.py \
 			pfsync_defer.py \
 			pft_ether.py \
 			pft_read_ipfix.py \
+			rdr-srcport.py \
 			utils.subr
 
 ${PACKAGE}FILESMODE_CVE-2019-5597.py=	0555

@@ -260,11 +260,13 @@ static int c4iw_mod_unload(void);
 static int c4iw_activate(struct adapter *);
 static int c4iw_deactivate(struct adapter *);
 static int c4iw_stop(struct adapter *);
+static int c4iw_restart(struct adapter *);
 
 static struct uld_info c4iw_uld_info = {
 	.uld_activate = c4iw_activate,
 	.uld_deactivate = c4iw_deactivate,
 	.uld_stop = c4iw_stop,
+	.uld_restart = c4iw_restart,
 };
 
 static int
@@ -282,7 +284,7 @@ c4iw_activate(struct adapter *sc)
 	}
 
 	if (uld_active(sc, ULD_IWARP)) {
-		KASSERT(0, ("%s: RDMA already eanbled on sc %p", __func__, sc));
+		KASSERT(0, ("%s: RDMA already enabled on sc %p", __func__, sc));
 		return (0);
 	}
 
@@ -341,6 +343,12 @@ c4iw_stop(struct adapter *sc)
 		ib_dispatch_event(&event);
 	}
 
+	return (0);
+}
+
+static int
+c4iw_restart(struct adapter *sc)
+{
 	return (0);
 }
 

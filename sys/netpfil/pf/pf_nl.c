@@ -416,7 +416,6 @@ static bool
 nlattr_add_addr_wrap(struct nl_writer *nw, int attrtype, struct pf_addr_wrap *a)
 {
 	int off = nlattr_add_nested(nw, attrtype);
-	int num;
 
 	nlattr_add_in6_addr(nw, PF_AT_ADDR, &a->v.a.addr.v6);
 	nlattr_add_in6_addr(nw, PF_AT_MASK, &a->v.a.mask.v6);
@@ -425,22 +424,10 @@ nlattr_add_addr_wrap(struct nl_writer *nw, int attrtype, struct pf_addr_wrap *a)
 
 	if (a->type == PF_ADDR_DYNIFTL) {
 		nlattr_add_string(nw, PF_AT_IFNAME, a->v.ifname);
-		num = 0;
-		if (a->p.dyn != NULL)
-			num = a->p.dyn->pfid_acnt4 + a->p.dyn->pfid_acnt6;
-		nlattr_add_u32(nw, PF_AT_DYNCNT, num);
+		nlattr_add_u32(nw, PF_AT_DYNCNT, a->p.dyncnt);
 	} else if (a->type == PF_ADDR_TABLE) {
-		struct pfr_ktable *kt;
-
 		nlattr_add_string(nw, PF_AT_TABLENAME, a->v.tblname);
-		num = -1;
-		kt = a->p.tbl;
-		if ((kt->pfrkt_flags & PFR_TFLAG_ACTIVE) &&
-		    kt->pfrkt_root != NULL)
-			kt = kt->pfrkt_root;
-		if (kt->pfrkt_flags & PFR_TFLAG_ACTIVE)
-			num = kt->pfrkt_cnt;
-		nlattr_add_u32(nw, PF_AT_TBLCNT, num);
+		nlattr_add_u32(nw, PF_AT_TBLCNT, a->p.tblcnt);
 	}
 
 	nlattr_set_len(nw, off);
@@ -462,9 +449,13 @@ NL_DECLARE_ATTR_PARSER(rule_addr_parser, nla_p_ruleaddr);
 static bool
 nlattr_add_rule_addr(struct nl_writer *nw, int attrtype, struct pf_rule_addr *r)
 {
+	struct pf_addr_wrap aw = {0};
 	int off = nlattr_add_nested(nw, attrtype);
 
-	nlattr_add_addr_wrap(nw, PF_RAT_ADDR, &r->addr);
+	bcopy(&(r->addr), &aw, sizeof(struct pf_addr_wrap));
+	pf_addr_copyout(&aw);
+
+	nlattr_add_addr_wrap(nw, PF_RAT_ADDR, &aw);
 	nlattr_add_u16(nw, PF_RAT_SRC_PORT, r->port[0]);
 	nlattr_add_u16(nw, PF_RAT_DST_PORT, r->port[1]);
 	nlattr_add_u8(nw, PF_RAT_NEG, r->neg);
@@ -1509,6 +1500,21 @@ pf_handle_begin_addrs(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	return (0);
 }
 
+static bool
+nlattr_add_pool_addr(struct nl_writer *nw, int attrtype, struct pf_pooladdr *a)
+{
+	int off;
+
+	off = nlattr_add_nested(nw, attrtype);
+
+	nlattr_add_addr_wrap(nw, PF_PA_ADDR, &a->addr);
+	nlattr_add_string(nw, PF_PA_IFNAME, a->ifname);
+
+	nlattr_set_len(nw, off);
+
+	return (true);
+}
+
 #define _OUT(_field)	offsetof(struct pf_pooladdr, _field)
 static const struct nlattr_parser nla_p_pool_addr[] = {
 	{ .type = PF_PA_ADDR, .off = _OUT(addr), .arg = &addr_wrap_parser, .cb = nlattr_get_nested },
@@ -1546,6 +1552,82 @@ pf_handle_add_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	error = pf_ioctl_add_addr(&attrs);
 
 	return (error);
+}
+
+static int
+pf_handle_get_addrs(struct nlmsghdr *hdr, struct nl_pstate *npt)
+{
+	struct pfioc_pooladdr attrs = { 0 };
+	struct nl_writer *nw = npt->nw;
+	struct genlmsghdr *ghdr_new;
+	int error;
+
+	error = nl_parse_nlmsg(hdr, &add_addr_parser, npt, &attrs);
+	if (error != 0)
+		return (error);
+
+	error = pf_ioctl_get_addrs(&attrs);
+	if (error != 0)
+		return (error);
+
+	if (!nlmsg_reply(nw, hdr, sizeof(struct genlmsghdr)))
+		return (ENOMEM);
+
+	ghdr_new = nlmsg_reserve_object(nw, struct genlmsghdr);
+	ghdr_new->cmd = PFNL_CMD_GET_ADDRS;
+	ghdr_new->version = 0;
+	ghdr_new->reserved = 0;
+
+	nlattr_add_u32(nw, PF_AA_NR, attrs.nr);
+
+	if (!nlmsg_end(nw)) {
+		nlmsg_abort(nw);
+		return (ENOMEM);
+	}
+
+	return (error);
+}
+
+static int
+pf_handle_get_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
+{
+	struct pfioc_pooladdr attrs = { 0 };
+	struct nl_writer *nw = npt->nw;
+	struct genlmsghdr *ghdr_new;
+	int error;
+
+	error = nl_parse_nlmsg(hdr, &add_addr_parser, npt, &attrs);
+	if (error != 0)
+		return (error);
+
+	error = pf_ioctl_get_addr(&attrs);
+	if (error != 0)
+		return (error);
+
+	if (!nlmsg_reply(nw, hdr, sizeof(struct genlmsghdr)))
+		return (ENOMEM);
+
+	ghdr_new = nlmsg_reserve_object(nw, struct genlmsghdr);
+	ghdr_new->cmd = PFNL_CMD_GET_ADDRS;
+	ghdr_new->version = 0;
+	ghdr_new->reserved = 0;
+
+	nlattr_add_u32(nw, PF_AA_ACTION, attrs.action);
+	nlattr_add_u32(nw, PF_AA_TICKET, attrs.ticket);
+	nlattr_add_u32(nw, PF_AA_NR, attrs.nr);
+	nlattr_add_u32(nw, PF_AA_R_NUM, attrs.r_num);
+	nlattr_add_u8(nw, PF_AA_R_ACTION, attrs.r_action);
+	nlattr_add_u8(nw, PF_AA_R_LAST, attrs.r_last);
+	nlattr_add_u8(nw, PF_AA_AF, attrs.af);
+	nlattr_add_string(nw, PF_AA_ANCHOR, attrs.anchor);
+	nlattr_add_pool_addr(nw, PF_AA_ADDR, &attrs.addr);
+
+	if (!nlmsg_end(nw)) {
+		nlmsg_abort(nw);
+		return (ENOMEM);
+	}
+
+	return (0);
 }
 
 static const struct nlhdr_parser *all_parsers[] = {
@@ -1703,6 +1785,20 @@ static const struct genl_cmd pf_cmds[] = {
 		.cmd_name = "ADD_ADDR",
 		.cmd_cb = pf_handle_add_addr,
 		.cmd_flags = GENL_CMD_CAP_DO | GENL_CMD_CAP_HASPOL,
+		.cmd_priv = PRIV_NETINET_PF,
+	},
+	{
+		.cmd_num = PFNL_CMD_GET_ADDRS,
+		.cmd_name = "GET_ADDRS",
+		.cmd_cb = pf_handle_get_addrs,
+		.cmd_flags = GENL_CMD_CAP_DUMP | GENL_CMD_CAP_HASPOL,
+		.cmd_priv = PRIV_NETINET_PF,
+	},
+	{
+		.cmd_num = PFNL_CMD_GET_ADDR,
+		.cmd_name = "GET_ADDRS",
+		.cmd_cb = pf_handle_get_addr,
+		.cmd_flags = GENL_CMD_CAP_DUMP | GENL_CMD_CAP_HASPOL,
 		.cmd_priv = PRIV_NETINET_PF,
 	},
 };
