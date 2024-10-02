@@ -157,7 +157,7 @@
 		    int fd
 		);
 	}
-7	AUE_WAIT4	STD {
+7	AUE_WAIT4	STD|CAPENABLED {
 		int wait4(
 		    int pid,
 		    _Out_opt_ int *status,
@@ -3331,6 +3331,13 @@
 		    int type,
 		    uintptr_t idx1,
 		    uintptr_t idx2
+		);
+	}
+589	AUE_NULL	STD|CAPENABLED {
+		int getrlimitusage(
+		    u_int which,
+		    int flags,
+		    _Out_ rlim_t *res
 		);
 	}
 

@@ -143,7 +143,7 @@ CFLAGS += -mgeneral-regs-only
 CFLAGS += -ffixed-x18
 # Build with BTI+PAC
 CFLAGS += -mbranch-protection=standard
-.if ${LINKER_TYPE} == "lld"
+.if ${LINKER_FEATURES:Mbti-report}
 LDFLAGS += -Wl,-zbti-report=error
 .endif
 # TODO: support outline atomics
@@ -324,7 +324,6 @@ CCLDFLAGS+=	-fuse-ld=${LD:[1]:S/^ld.//1W}
 LD_EMULATION_aarch64=aarch64elf
 LD_EMULATION_amd64=elf_x86_64_fbsd
 LD_EMULATION_arm=armelf_fbsd
-LD_EMULATION_armv6=armelf_fbsd
 LD_EMULATION_armv7=armelf_fbsd
 LD_EMULATION_i386=elf_i386_fbsd
 LD_EMULATION_powerpc= elf32ppc_fbsd

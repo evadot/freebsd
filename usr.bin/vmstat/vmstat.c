@@ -66,7 +66,7 @@
 #include <libutil.h>
 #include <libxo/xo.h>
 
-#define VMSTAT_XO_VERSION "1"
+#define VMSTAT_XO_VERSION "2"
 
 static char da[] = "da";
 
@@ -282,6 +282,7 @@ main(int argc, char *argv[])
 	argv += optind;
 
 	xo_set_version(VMSTAT_XO_VERSION);
+	xo_open_container("vmstat");
 	if (!hflag)
 		xo_set_options(NULL, "no-humanize");
 	if (todo == 0)
@@ -383,6 +384,7 @@ nlist_ok:
 		dointr(interval, reps);
 	if (todo & VMSTAT)
 		dovmstat(interval, reps);
+	xo_close_container("vmstat");
 	xo_finish();
 	exit(0);
 }
@@ -1103,7 +1105,7 @@ percent(const char *name, long pctv, int *over)
 {
 	char fmt[64];
 
-	snprintf(fmt, sizeof(fmt), " {:%s/%%%ulld/%%lld}", name,
+	snprintf(fmt, sizeof(fmt), " {:%s/%%%uld/%%ld}", name,
 	    (*over && pctv <= 9) ? 1 : 2);
 	xo_emit(fmt, pctv);
 	if (*over && pctv <= 9)

@@ -869,7 +869,6 @@ static int stop_lld(struct adapter *);
 static inline int restart_adapter(struct adapter *);
 static int restart_lld(struct adapter *);
 #ifdef TCP_OFFLOAD
-static int toe_capability(struct vi_info *, bool);
 static int deactivate_all_uld(struct adapter *);
 static void stop_all_uld(struct adapter *);
 static void restart_all_uld(struct adapter *);
@@ -1920,6 +1919,9 @@ t4_detach_common(device_t dev)
 static inline int
 stop_adapter(struct adapter *sc)
 {
+	struct port_info *pi;
+	int i;
+
 	if (atomic_testandset_int(&sc->error_flags, ilog2(ADAP_STOPPED))) {
 		CH_ALERT(sc, "%s from %p, flags 0x%08x,0x%08x, EALREADY\n",
 			 __func__, curthread, sc->flags, sc->error_flags);
@@ -1927,7 +1929,24 @@ stop_adapter(struct adapter *sc)
 	}
 	CH_ALERT(sc, "%s from %p, flags 0x%08x,0x%08x\n", __func__, curthread,
 		 sc->flags, sc->error_flags);
-	return (t4_shutdown_adapter(sc));
+	t4_shutdown_adapter(sc);
+	for_each_port(sc, i) {
+		pi = sc->port[i];
+		PORT_LOCK(pi);
+		if (pi->up_vis > 0 && pi->link_cfg.link_ok) {
+			/*
+			 * t4_shutdown_adapter has already shut down all the
+			 * PHYs but it also disables interrupts and DMA so there
+			 * won't be a link interrupt.  Update the state manually
+			 * if the link was up previously and inform the kernel.
+			 */
+			pi->link_cfg.link_ok = false;
+			t4_os_link_changed(pi);
+		}
+		PORT_UNLOCK(pi);
+	}
+
+	return (0);
 }
 
 static inline int
@@ -2020,20 +2039,6 @@ stop_lld(struct adapter *sc)
 	for_each_port(sc, i) {
 		pi = sc->port[i];
 		pi->vxlan_tcam_entry = false;
-
-		PORT_LOCK(pi);
-		if (pi->up_vis > 0) {
-			/*
-			 * t4_shutdown_adapter has already shut down all the
-			 * PHYs but it also disables interrupts and DMA so there
-			 * won't be a link interrupt.  So we update the state
-			 * manually and inform the kernel.
-			 */
-			pi->link_cfg.link_ok = false;
-			t4_os_link_changed(pi);
-		}
-		PORT_UNLOCK(pi);
-
 		for_each_vi(pi, j, vi) {
 			vi->xact_addr_filt = -1;
 			mtx_lock(&vi->tick_mtx);
@@ -2085,6 +2090,13 @@ stop_lld(struct adapter *sc)
 			TXQ_UNLOCK(wrq);
 			quiesce_wrq(wrq);
 		}
+
+		if (pi->flags & HAS_TRACEQ) {
+			pi->flags &= ~HAS_TRACEQ;
+			sc->traceq = -1;
+			sc->tracer_valid = 0;
+			sc->tracer_enabled = 0;
+		}
 	}
 	if (sc->flags & FULL_INIT_DONE) {
 		/* Firmware event queue */
@@ -2110,21 +2122,30 @@ stop_lld(struct adapter *sc)
 	return (rc);
 }
 
-static int
-t4_suspend(device_t dev)
+int
+suspend_adapter(struct adapter *sc)
 {
-	struct adapter *sc = device_get_softc(dev);
-
-	CH_ALERT(sc, "%s from thread %p.\n", __func__, curthread);
 	stop_adapter(sc);
 	stop_lld(sc);
 #ifdef TCP_OFFLOAD
 	stop_all_uld(sc);
 #endif
 	set_adapter_hwstatus(sc, false);
-	CH_ALERT(sc, "%s end (thread %p).\n", __func__, curthread);
 
 	return (0);
+}
+
+static int
+t4_suspend(device_t dev)
+{
+	struct adapter *sc = device_get_softc(dev);
+	int rc;
+
+	CH_ALERT(sc, "%s from thread %p.\n", __func__, curthread);
+	rc = suspend_adapter(sc);
+	CH_ALERT(sc, "%s end (thread %p).\n", __func__, curthread);
+
+	return (rc);
 }
 
 struct adapter_pre_reset_state {
@@ -2391,6 +2412,15 @@ restart_lld(struct adapter *sc)
 					    "interface: %d\n", rc);
 					goto done;
 				}
+				if (sc->traceq < 0 && IS_MAIN_VI(vi)) {
+					sc->traceq = sc->sge.rxq[vi->first_rxq].iq.abs_id;
+					t4_write_reg(sc, is_t4(sc) ?
+					    A_MPS_TRC_RSS_CONTROL :
+					    A_MPS_T5_TRC_RSS_CONTROL,
+					    V_RSSCONTROL(pi->tx_chan) |
+					    V_QUEUENUMBER(sc->traceq));
+					pi->flags |= HAS_TRACEQ;
+				}
 
 				ifp = vi->ifp;
 				if (!(if_getdrvflags(ifp) & IFF_DRV_RUNNING))
@@ -2464,20 +2494,28 @@ done:
 	return (rc);
 }
 
-static int
-t4_resume(device_t dev)
+int
+resume_adapter(struct adapter *sc)
 {
-	struct adapter *sc = device_get_softc(dev);
-
-	CH_ALERT(sc, "%s from thread %p.\n", __func__, curthread);
 	restart_adapter(sc);
 	restart_lld(sc);
 #ifdef TCP_OFFLOAD
 	restart_all_uld(sc);
 #endif
+	return (0);
+}
+
+static int
+t4_resume(device_t dev)
+{
+	struct adapter *sc = device_get_softc(dev);
+	int rc;
+
+	CH_ALERT(sc, "%s from thread %p.\n", __func__, curthread);
+	rc = resume_adapter(sc);
 	CH_ALERT(sc, "%s end (thread %p).\n", __func__, curthread);
 
-	return (0);
+	return (rc);
 }
 
 static int
@@ -2512,12 +2550,7 @@ reset_adapter_with_pci_bus_reset(struct adapter *sc)
 static int
 reset_adapter_with_pl_rst(struct adapter *sc)
 {
-	stop_adapter(sc);
-	stop_lld(sc);
-#ifdef TCP_OFFLOAD
-	stop_all_uld(sc);
-#endif
-	set_adapter_hwstatus(sc, false);
+	suspend_adapter(sc);
 
 	/* This is a t4_write_reg without the hw_off_limits check. */
 	MPASS(sc->error_flags & HW_OFF_LIMITS);
@@ -2525,11 +2558,7 @@ reset_adapter_with_pl_rst(struct adapter *sc)
 			  F_PIORSTMODE | F_PIORST | F_AUTOPCIEPAUSE);
 	pause("pl_rst", 1 * hz);		/* Wait 1s for reset */
 
-	restart_adapter(sc);
-	restart_lld(sc);
-#ifdef TCP_OFFLOAD
-	restart_all_uld(sc);
-#endif
+	resume_adapter(sc);
 
 	return (0);
 }
@@ -12356,7 +12385,7 @@ t4_ioctl(struct cdev *dev, unsigned long cmd, caddr_t data, int fflag,
 }
 
 #ifdef TCP_OFFLOAD
-static int
+int
 toe_capability(struct vi_info *vi, bool enable)
 {
 	int rc;
@@ -12422,6 +12451,7 @@ toe_capability(struct vi_info *vi, bool enable)
 
 		if (isset(&sc->offload_map, pi->port_id)) {
 			/* TOE is enabled on another VI of this port. */
+			MPASS(pi->uld_vis > 0);
 			pi->uld_vis++;
 			return (0);
 		}
@@ -12447,17 +12477,17 @@ toe_capability(struct vi_info *vi, bool enable)
 		if (!uld_active(sc, ULD_ISCSI))
 			(void) t4_activate_uld(sc, ULD_ISCSI);
 
-		pi->uld_vis++;
-		setbit(&sc->offload_map, pi->port_id);
+		if (pi->uld_vis++ == 0)
+			setbit(&sc->offload_map, pi->port_id);
 	} else {
-		pi->uld_vis--;
-
-		if (!isset(&sc->offload_map, pi->port_id) || pi->uld_vis > 0)
+		if ((if_getcapenable(vi->ifp) & IFCAP_TOE) == 0) {
+			/* TOE is already disabled. */
 			return (0);
-
-		KASSERT(uld_active(sc, ULD_TOM),
-		    ("%s: TOM never initialized?", __func__));
-		clrbit(&sc->offload_map, pi->port_id);
+		}
+		MPASS(isset(&sc->offload_map, pi->port_id));
+		MPASS(pi->uld_vis > 0);
+		if (--pi->uld_vis == 0)
+			clrbit(&sc->offload_map, pi->port_id);
 	}
 
 	return (0);

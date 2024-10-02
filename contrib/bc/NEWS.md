@@ -1,5 +1,19 @@
 # News
 
+## 7.0.2
+
+This is a production release that fixes `Ctrl+d` on FreeBSD and Linux when using
+`editline`.
+
+This bug was caused by the macOS fix in `7.0.0`. Unfortunately, this means that
+macOS does not respond properly to `Ctrl+d`.
+
+## 7.0.1
+
+This is a production release that fixes a warning using GCC on FreeBSD.
+
+Other users do ***NOT*** need to upgrade.
+
 ## 7.0.0
 
 This is a production release to fix three bugs.
