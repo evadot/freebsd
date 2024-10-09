@@ -304,7 +304,8 @@ pctrie_insert_lookup_compound(struct pctrie *ptree, uint64_t *val,
 		if (pctrie_isleaf(node)) {
 			if (node == PCTRIE_NULL) {
 				if (parent == NULL)
-					ptree->pt_root = pctrie_toleaf(val);
+					pctrie_root_store(ptree,
+					    pctrie_toleaf(val), PCTRIE_LOCKED);
 				else
 					pctrie_addnode(parent, index,
 					    pctrie_toleaf(val), PCTRIE_LOCKED);
@@ -591,6 +592,42 @@ uint64_t *
 pctrie_iter_lookup(struct pctrie_iter *it, uint64_t index)
 {
 	return (_pctrie_iter_lookup(it, index, NULL, PCTRIE_LOCKED));
+}
+
+/*
+ * Insert the val in the trie, starting search with iterator.  Return a pointer
+ * to indicate where a new node must be allocated to complete insertion.
+ * Assumes access is externally synchronized by a lock.
+ */
+void *
+pctrie_iter_insert_lookup(struct pctrie_iter *it, uint64_t *val)
+{
+	struct pctrie_node *node;
+
+	it->index = *val;
+	node = _pctrie_iter_lookup_node(it, *val, NULL, PCTRIE_LOCKED);
+	if (node == PCTRIE_NULL) {
+		if (it->top == 0)
+			pctrie_root_store(it->ptree,
+			    pctrie_toleaf(val), PCTRIE_LOCKED);
+		else
+			pctrie_addnode(it->path[it->top - 1], it->index,
+			    pctrie_toleaf(val), PCTRIE_LOCKED);
+		return (NULL);
+	}
+	if (__predict_false(pctrie_match_value(node, it->index) != NULL))
+		panic("%s: key %jx is already present", __func__,
+		    (uintmax_t)it->index);
+
+	/*
+	 * 'node' must be replaced in the tree with a new branch node, with
+	 * children 'node' and 'val'. Return the place that points to 'node'
+	 * now, and will point to to the new branching node later.
+	 */
+	if (it->top == 0)
+		return ((smr_pctnode_t *)&it->ptree->pt_root);
+	node = it->path[it->top - 1];
+	return (&node->pn_child[pctrie_slot(node, it->index)]);
 }
 
 /*
@@ -1242,7 +1279,8 @@ pctrie_replace(struct pctrie *ptree, uint64_t *newval)
 		if (pctrie_isleaf(node)) {
 			if ((m = pctrie_toval(node)) != NULL && *m == index) {
 				if (parent == NULL)
-					ptree->pt_root = leaf;
+					pctrie_root_store(ptree,
+					    leaf, PCTRIE_LOCKED);
 				else
 					pctrie_node_store(
 					    &parent->pn_child[slot], leaf,
