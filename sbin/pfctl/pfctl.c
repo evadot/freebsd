@@ -1038,7 +1038,7 @@ pfctl_print_rule_counters(struct pfctl_rule *rule, int opts)
 {
 	if (opts & PF_OPT_DEBUG) {
 		const char *t[PF_SKIP_COUNT] = { "i", "d", "f",
-		    "p", "sa", "sp", "da", "dp" };
+		    "p", "sa", "da", "sp", "dp" };
 		int i;
 
 		printf("  [ Skip steps: ");
@@ -1252,21 +1252,18 @@ pfctl_show_rules(int dev, char *path, int opts, enum pfctl_show format,
 		u_int32_t                mnr, nr;
 
 		memset(&prs, 0, sizeof(prs));
-		memcpy(prs.path, npath, sizeof(prs.path));
-		if (ioctl(dev, DIOCGETRULESETS, &prs)) {
-			if (errno == EINVAL)
+		if ((ret = pfctl_get_rulesets(pfh, npath, &mnr)) != 0) {
+			if (ret == EINVAL)
 				fprintf(stderr, "Anchor '%s' "
 				    "not found.\n", anchorname);
 			else
-				err(1, "DIOCGETRULESETS");
+				errc(1, ret, "DIOCGETRULESETS");
 		}
-		mnr = prs.nr;
 
 		pfctl_print_rule_counters(&rule, opts);
 		for (nr = 0; nr < mnr; ++nr) {
-			prs.nr = nr;
-			if (ioctl(dev, DIOCGETRULESET, &prs))
-				err(1, "DIOCGETRULESET");
+			if ((ret = pfctl_get_ruleset(pfh, npath, nr, &prs)) != 0)
+				errc(1, ret, "DIOCGETRULESET");
 			INDENT(depth, !(opts & PF_OPT_VERBOSE));
 			printf("anchor \"%s\" all {\n", prs.name);
 			pfctl_show_rules(dev, npath, opts,
@@ -1456,21 +1453,18 @@ pfctl_show_nat(int dev, char *path, int opts, char *anchorname, int depth,
 		struct pfioc_ruleset     prs;
 		u_int32_t                mnr, nr;
 		memset(&prs, 0, sizeof(prs));
-		memcpy(prs.path, npath, sizeof(prs.path));
-		if (ioctl(dev, DIOCGETRULESETS, &prs)) {
-			if (errno == EINVAL)
+		if ((ret = pfctl_get_rulesets(pfh, npath, &mnr)) != 0) {
+			if (ret == EINVAL)
 				fprintf(stderr, "NAT anchor '%s' "
 				    "not found.\n", anchorname);
 			else
-				err(1, "DIOCGETRULESETS");
+				errc(1, ret, "DIOCGETRULESETS");
 		}
-		mnr = prs.nr;
 
 		pfctl_print_rule_counters(&rule, opts);
 		for (nr = 0; nr < mnr; ++nr) {
-			prs.nr = nr;
-			if (ioctl(dev, DIOCGETRULESET, &prs))
-				err(1, "DIOCGETRULESET");
+			if ((ret = pfctl_get_ruleset(pfh, npath, nr, &prs)) != 0)
+				errc(1, ret, "DIOCGETRULESET");
 			INDENT(depth, !(opts & PF_OPT_VERBOSE));
 			printf("nat-anchor \"%s\" all {\n", prs.name);
 			pfctl_show_nat(dev, npath, opts,
@@ -1525,49 +1519,29 @@ pfctl_show_nat(int dev, char *path, int opts, char *anchorname, int depth,
 	return (0);
 }
 
+static int
+pfctl_print_src_node(struct pfctl_src_node *sn, void *arg)
+{
+	int *opts = (int *)arg;
+
+	if (*opts & PF_OPT_SHOWALL) {
+		pfctl_print_title("SOURCE TRACKING NODES:");
+		*opts &= ~PF_OPT_SHOWALL;
+	}
+
+	print_src_node(sn, *opts);
+
+	return (0);
+}
+
 int
 pfctl_show_src_nodes(int dev, int opts)
 {
-	struct pfioc_src_nodes psn;
-	struct pf_src_node *p;
-	char *inbuf = NULL, *newinbuf = NULL;
-	unsigned int len = 0;
-	int i;
+	int error;
 
-	memset(&psn, 0, sizeof(psn));
-	for (;;) {
-		psn.psn_len = len;
-		if (len) {
-			newinbuf = realloc(inbuf, len);
-			if (newinbuf == NULL)
-				err(1, "realloc");
-			psn.psn_buf = inbuf = newinbuf;
-		}
-		if (ioctl(dev, DIOCGETSRCNODES, &psn) < 0) {
-			warn("DIOCGETSRCNODES");
-			free(inbuf);
-			return (-1);
-		}
-		if (psn.psn_len + sizeof(struct pfioc_src_nodes) < len)
-			break;
-		if (len == 0 && psn.psn_len == 0)
-			goto done;
-		if (len == 0 && psn.psn_len != 0)
-			len = psn.psn_len;
-		if (psn.psn_len == 0)
-			goto done;	/* no src_nodes */
-		len *= 2;
-	}
-	p = psn.psn_src_nodes;
-	if (psn.psn_len > 0 && (opts & PF_OPT_SHOWALL))
-		pfctl_print_title("SOURCE TRACKING NODES:");
-	for (i = 0; i < psn.psn_len; i += sizeof(*p)) {
-		print_src_node(p, opts);
-		p++;
-	}
-done:
-	free(inbuf);
-	return (0);
+	error = pfctl_get_srcnodes(pfh, pfctl_print_src_node, &opts);
+
+	return (error);
 }
 
 struct pfctl_show_state_arg {
@@ -2815,24 +2789,22 @@ pfctl_show_anchors(int dev, int opts, char *anchorname)
 {
 	struct pfioc_ruleset	 pr;
 	u_int32_t		 mnr, nr;
+	int			 ret;
 
 	memset(&pr, 0, sizeof(pr));
-	memcpy(pr.path, anchorname, sizeof(pr.path));
-	if (ioctl(dev, DIOCGETRULESETS, &pr)) {
-		if (errno == EINVAL)
+	if ((ret = pfctl_get_rulesets(pfh, anchorname, &mnr)) != 0) {
+		if (ret == EINVAL)
 			fprintf(stderr, "Anchor '%s' not found.\n",
 			    anchorname);
 		else
-			err(1, "DIOCGETRULESETS");
+			errc(1, ret, "DIOCGETRULESETS");
 		return (-1);
 	}
-	mnr = pr.nr;
 	for (nr = 0; nr < mnr; ++nr) {
 		char sub[MAXPATHLEN];
 
-		pr.nr = nr;
-		if (ioctl(dev, DIOCGETRULESET, &pr))
-			err(1, "DIOCGETRULESET");
+		if ((ret = pfctl_get_ruleset(pfh, anchorname, nr, &pr)) != 0)
+			errc(1, ret, "DIOCGETRULESET");
 		if (!strcmp(pr.name, PF_RESERVED_ANCHOR))
 			continue;
 		sub[0] = 0;

@@ -571,7 +571,6 @@ VERSION=	FreeBSD ${_REVISION}-${_BRANCH:C/-p[0-9]+$//} ${TARGET_ARCH} ${SRCRELDA
 .endif
 MAJOR_REVISION=	${_REVISION:R}
 
-.if !defined(PKG_VERSION)
 _PKG_REVISION=	${_REVISION}
 _STRTIMENOW=	%Y%m%d%H%M%S
 _TIMENOW=	${_STRTIMENOW:gmtime}
@@ -592,6 +591,7 @@ EXTRA_REVISION=	.rc${_BRANCH:C/RC([0-9]+).*/\1/}.${_TIMENOW}
 .elif ${_BRANCH:M*-p*}
 EXTRA_REVISION=	p${_BRANCH:C/.*-p([0-9]+$)/\1/}
 .endif
+.if !defined(PKG_VERSION)
 PKG_VERSION:=	${_PKG_REVISION}${EXTRA_REVISION:C/[[:space:]]//g}
 .endif
 .endif	# !defined(PKG_VERSION)
@@ -2039,6 +2039,16 @@ PKG_EXT=	pkg
 .if exists(${PKG_ABI_FILE}) && exists(${REPODIR}/${PKG_ABI})
 PKG_VERSION_FROM!=/usr/bin/readlink ${REPODIR}/${PKG_ABI}/latest
 PKG_VERSION_FROM_DIR=	${REPODIR}/${PKG_ABI}/${PKG_VERSION_FROM}
+# Determine the name of the branch base on the version
+# X.bY => beta
+# X.aY => alpha
+# X.rcY => rc
+# X.snap => snap
+# all others mean release
+#
+# This will be used when comparing to the branch that we are building
+# to decide if we keep old packages or new packages when only their
+# version differs
 BRANCH_EXT_FROM=
 .if ${PKG_VERSION_FROM:M*.snap*}
 BRANCH_EXT_FROM=	${PKG_VERSION_FROM:C/.snap.*$//}.snap
@@ -2517,8 +2527,12 @@ ${_bt}-lib/libdwarf: ${_bt_m4_depend}
 _bt_libelf_depend=${_bt}-lib/libelf
 .endif
 
+_libkldelf=	lib/libkldelf
+${_bt}-lib/libkldelf: ${_bt_libelf_depend}
+_bt_libkldelf_depend=${_bt}-lib/libkldelf
+
 _kldxref=	usr.sbin/kldxref
-${_bt}-usr.sbin/kldxref: ${_bt_libelf_depend}
+${_bt}-usr.sbin/kldxref: ${_bt_libelf_depend} ${_bt_libkldelf_depend}
 
 # flua is required to regenerate syscall files.  It first appeared during the
 # 13.0-CURRENT cycle, thus needs to be built on -older releases and stable
@@ -2781,6 +2795,7 @@ bootstrap-tools: ${_bt}-links .PHONY
     ${_cat} \
     ${_kbdcontrol} \
     ${_elftoolchain_libs} \
+    ${_libkldelf} \
     ${_kldxref} \
     lib/libopenbsd \
     usr.bin/mandoc \
@@ -3224,7 +3239,8 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		lib/libfigpar \
 		${_lib_libgssapi} \
 		lib/libjail \
-		lib/libkiconv lib/libkvm lib/liblzma lib/libmd lib/libnv \
+		lib/libkiconv lib/libkldelf lib/libkvm \
+		lib/liblzma lib/libmd lib/libnv \
 		lib/libzstd \
 		${_lib_casper} \
 		lib/ncurses/tinfo \
@@ -3259,6 +3275,7 @@ _prebuild_libs+= lib/libregex
 .endif
 
 lib/libgeom__L: lib/libexpat__L lib/libsbuf__L
+lib/libkldelf__L: lib/libelf__L
 lib/libkvm__L: lib/libelf__L
 
 .if ${MK_RADIUS_SUPPORT} != "no"
