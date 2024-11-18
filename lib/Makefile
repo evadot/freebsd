@@ -128,6 +128,7 @@ SUBDIR_DEPEND_libc++:= libcxxrt
 SUBDIR_DEPEND_libc= libsys libcompiler_rt libssp_nonshared
 SUBDIR_DEPEND_libcam= libsbuf
 SUBDIR_DEPEND_libcasper= libnv
+SUBDIR_DEPEND_libcrypt= libmd
 SUBDIR_DEPEND_libdevstat= libkvm
 SUBDIR_DEPEND_libdpv= libfigpar ncurses libutil
 SUBDIR_DEPEND_libedit= ncurses
@@ -201,7 +202,8 @@ SUBDIR.${MK_PMC}+=	libopencsd
 SUBDIR.${MK_PMC}+=	libipt
 .endif
 
-.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "aarch64"
+.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "aarch64" || \
+    ${MACHINE_CPUARCH} == "riscv"
 SUBDIR.${MK_BHYVE}+=	libvmmapi
 .endif
 

@@ -58,7 +58,6 @@
 #include <sys/refcount.h>
 #include <sys/mbuf.h>
 #include <sys/priv.h>
-#include <sys/proc.h>
 #include <sys/sdt.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -1593,24 +1592,10 @@ SYSINIT(tcp_init, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD, tcp_init, NULL);
 static void
 tcp_destroy(void *unused __unused)
 {
-	int n;
 #ifdef TCP_HHOOK
 	int error;
 #endif
 
-	/*
-	 * All our processes are gone, all our sockets should be cleaned
-	 * up, which means, we should be past the tcp_discardcb() calls.
-	 * Sleep to let all tcpcb timers really disappear and cleanup.
-	 */
-	for (;;) {
-		INP_INFO_WLOCK(&V_tcbinfo);
-		n = V_tcbinfo.ipi_count;
-		INP_INFO_WUNLOCK(&V_tcbinfo);
-		if (n == 0)
-			break;
-		pause("tcpdes", hz / 10);
-	}
 	tcp_hc_destroy();
 	syncache_destroy();
 	in_pcbinfo_destroy(&V_tcbinfo);
@@ -2309,7 +2294,8 @@ tcp_newtcpcb(struct inpcb *inp, struct tcpcb *listening_tcb)
 	tp->t_hpts_cpu = HPTS_CPU_NONE;
 	tp->t_lro_cpu = HPTS_CPU_NONE;
 
-	callout_init_rw(&tp->t_callout, &inp->inp_lock, CALLOUT_RETURNUNLOCKED);
+	callout_init_rw(&tp->t_callout, &inp->inp_lock,
+	    CALLOUT_TRYLOCK | CALLOUT_RETURNUNLOCKED);
 	for (int i = 0; i < TT_N; i++)
 		tp->t_timers[i] = SBT_MAX;
 
@@ -3345,7 +3331,7 @@ tcp_mtudisc(struct inpcb *inp, int mtuoffer)
 	tcp_mss_update(tp, -1, mtuoffer, NULL, NULL);
 
 	so = inp->inp_socket;
-	SOCKBUF_LOCK(&so->so_snd);
+	SOCK_SENDBUF_LOCK(so);
 	/* If the mss is larger than the socket buffer, decrease the mss. */
 	if (so->so_snd.sb_hiwat < tp->t_maxseg) {
 		tp->t_maxseg = so->so_snd.sb_hiwat;
@@ -3360,7 +3346,7 @@ tcp_mtudisc(struct inpcb *inp, int mtuoffer)
 			tp->t_flags2 &= ~TF2_PROC_SACK_PROHIBIT;
 		}
 	}
-	SOCKBUF_UNLOCK(&so->so_snd);
+	SOCK_SENDBUF_UNLOCK(so);
 
 	TCPSTAT_INC(tcps_mturesent);
 	tp->t_rtttime = 0;

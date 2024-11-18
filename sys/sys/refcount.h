@@ -28,14 +28,13 @@
 #ifndef __SYS_REFCOUNT_H__
 #define __SYS_REFCOUNT_H__
 
-#include <machine/atomic.h>
-
-#if defined(_KERNEL) || defined(_STANDALONE)
-#include <sys/systm.h>
-#else
+#include <sys/types.h>
+#include <sys/kassert.h>
+#if !defined(_KERNEL) && !defined(_STANDALONE)
 #include <stdbool.h>
-#define	KASSERT(exp, msg)	/* */
 #endif
+
+#include <machine/atomic.h>
 
 #define	REFCOUNT_SATURATED(val)		(((val) & (1U << 31)) != 0)
 #define	REFCOUNT_SATURATION_VALUE	(3U << 30)

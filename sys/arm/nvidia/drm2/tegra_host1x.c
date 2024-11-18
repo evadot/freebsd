@@ -448,7 +448,7 @@ host1x_new_pass(device_t dev)
 	 * but some of our FDT resources are not ready until BUS_PASS_DEFAULT
 	 */
 	sc = device_get_softc(dev);
-	if (sc->attach_done || bus_current_pass < BUS_PASS_DEFAULT) {
+	if (sc->attach_done || bus_get_pass() < BUS_PASS_DEFAULT) {
 		bus_generic_new_pass(dev);
 		return;
 	}
@@ -586,6 +586,11 @@ static int
 host1x_detach(device_t dev)
 {
 	struct host1x_softc *sc;
+	int error;
+
+	error = bus_generic_detach(dev);
+	if (error != 0)
+		return (error);
 
 	sc = device_get_softc(dev);
 
@@ -608,7 +613,7 @@ host1x_detach(device_t dev)
 	if (sc->mem_res != NULL)
 		bus_release_resource(dev, SYS_RES_MEMORY, 0, sc->mem_res);
 	LOCK_DESTROY(sc);
-	return (bus_generic_detach(dev));
+	return (0);
 }
 
 static device_method_t host1x_methods[] = {

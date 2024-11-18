@@ -37,13 +37,16 @@
 #include <sys/fcntl.h>
 #include <sys/unistd.h>
 #else
-#include <sys/queue.h>
-#include <sys/refcount.h>
+#include <sys/errno.h>
 #include <sys/_lock.h>
 #include <sys/_mutex.h>
+#include <sys/_null.h>
+#include <sys/queue.h>
+#include <sys/refcount.h>
 #include <vm/vm.h>
 
 struct filedesc;
+struct proc;
 struct stat;
 struct thread;
 struct uio;
@@ -186,7 +189,7 @@ struct file {
 	volatile u_int	f_flag;		/* see fcntl.h */
 	volatile u_int 	f_count;	/* reference count */
 	void		*f_data;	/* file descriptor specific data */
-	struct fileops	*f_ops;		/* File operations */
+	const struct fileops *f_ops;	/* File operations */
 	struct vnode 	*f_vnode;	/* NULL or applicable vnode */
 	struct ucred	*f_cred;	/* associated credentials. */
 	short		f_type;		/* descriptor type */

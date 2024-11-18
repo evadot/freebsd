@@ -225,15 +225,10 @@ enum {
 	SND_DEV_MIDIN,		/* Raw midi access */
 	SND_DEV_DSP,		/* Digitized voice /dev/dsp */
 	SND_DEV_STATUS,		/* /dev/sndstat */
-	SND_DEV_DSPHW_PLAY,	/* specific playback channel */
-	SND_DEV_DSPHW_VPLAY,	/* specific virtual playback channel */
-	SND_DEV_DSPHW_REC,	/* specific record channel */
-	SND_DEV_DSPHW_VREC,	/* specific virtual record channel */
 };
 
 #define DSP_DEFAULT_SPEED	8000
 
-extern int pcm_veto_load;
 extern int snd_unit;
 extern int snd_verbose;
 extern devclass_t pcm_devclass;
@@ -250,9 +245,9 @@ int pcm_chnalloc(struct snddev_info *d, struct pcm_channel **ch, int direction,
 
 int pcm_addchan(device_t dev, int dir, kobj_class_t cls, void *devinfo);
 unsigned int pcm_getbuffersize(device_t dev, unsigned int minbufsz, unsigned int deflt, unsigned int maxbufsz);
-int pcm_register(device_t dev, void *devinfo, int numplay, int numrec);
+void pcm_init(device_t dev, void *devinfo);
+int pcm_register(device_t dev, char *str);
 int pcm_unregister(device_t dev);
-int pcm_setstatus(device_t dev, char *str);
 u_int32_t pcm_getflags(device_t dev);
 void pcm_setflags(device_t dev, u_int32_t val);
 void *pcm_getdevinfo(device_t dev);

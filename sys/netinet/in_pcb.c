@@ -916,8 +916,10 @@ in_pcbbind_setup(struct inpcb *inp, struct sockaddr_in *sin, in_addr_t *laddrp,
 				return (EINVAL);
 			lport = sin->sin_port;
 		}
+		laddr = sin->sin_addr;
+
 		/* NB: lport is left as 0 if the port isn't being changed. */
-		if (IN_MULTICAST(ntohl(sin->sin_addr.s_addr))) {
+		if (IN_MULTICAST(ntohl(laddr.s_addr))) {
 			/*
 			 * Treat SO_REUSEADDR as SO_REUSEPORT for multicast;
 			 * allow complete duplication of binding if
@@ -934,7 +936,7 @@ in_pcbbind_setup(struct inpcb *inp, struct sockaddr_in *sin, in_addr_t *laddrp,
 			if ((so->so_options &
 			    (SO_REUSEADDR|SO_REUSEPORT_LB)) != 0)
 				reuseport_lb = SO_REUSEADDR|SO_REUSEPORT_LB;
-		} else if (sin->sin_addr.s_addr != INADDR_ANY) {
+		} else if (!in_nullhost(laddr)) {
 			sin->sin_port = 0;		/* yech... */
 			bzero(&sin->sin_zero, sizeof(sin->sin_zero));
 			/*
@@ -943,50 +945,44 @@ in_pcbbind_setup(struct inpcb *inp, struct sockaddr_in *sin, in_addr_t *laddrp,
 			 * to any endpoint address, local or not.
 			 */
 			if ((inp->inp_flags & INP_BINDANY) == 0 &&
-			    ifa_ifwithaddr_check((struct sockaddr *)sin) == 0)
+			    ifa_ifwithaddr_check(
+			    (const struct sockaddr *)sin) == 0)
 				return (EADDRNOTAVAIL);
 		}
-		laddr = sin->sin_addr;
 		if (lport) {
 			struct inpcb *t;
 
-			/* GROSS */
 			if (ntohs(lport) <= V_ipport_reservedhigh &&
 			    ntohs(lport) >= V_ipport_reservedlow &&
 			    priv_check_cred(cred, PRIV_NETINET_RESERVEDPORT))
 				return (EACCES);
-			if (!IN_MULTICAST(ntohl(sin->sin_addr.s_addr)) &&
+
+			if (!IN_MULTICAST(ntohl(laddr.s_addr)) &&
 			    priv_check_cred(inp->inp_cred, PRIV_NETINET_REUSEPORT) != 0) {
-				t = in_pcblookup_local(pcbinfo, sin->sin_addr,
-				    lport, INPLOOKUP_WILDCARD, cred);
-	/*
-	 * XXX
-	 * This entire block sorely needs a rewrite.
-	 */
+				t = in_pcblookup_local(pcbinfo, laddr, lport,
+				    INPLOOKUP_WILDCARD, cred);
 				if (t != NULL &&
 				    (so->so_type != SOCK_STREAM ||
-				     ntohl(t->inp_faddr.s_addr) == INADDR_ANY) &&
-				    (ntohl(sin->sin_addr.s_addr) != INADDR_ANY ||
-				     ntohl(t->inp_laddr.s_addr) != INADDR_ANY ||
+				     in_nullhost(t->inp_faddr)) &&
+				    (!in_nullhost(laddr) ||
+				     !in_nullhost(t->inp_laddr) ||
 				     (t->inp_socket->so_options & SO_REUSEPORT) ||
 				     (t->inp_socket->so_options & SO_REUSEPORT_LB) == 0) &&
 				    (inp->inp_cred->cr_uid !=
 				     t->inp_cred->cr_uid))
 					return (EADDRINUSE);
 			}
-			t = in_pcblookup_local(pcbinfo, sin->sin_addr,
-			    lport, lookupflags, cred);
-			if (t != NULL && (reuseport & t->inp_socket->so_options) == 0 &&
-			    (reuseport_lb & t->inp_socket->so_options) == 0) {
+			t = in_pcblookup_local(pcbinfo, laddr, lport,
+			    lookupflags, cred);
+			if (t != NULL && ((reuseport | reuseport_lb) &
+			    t->inp_socket->so_options) == 0) {
 #ifdef INET6
-				if (ntohl(sin->sin_addr.s_addr) !=
-				    INADDR_ANY ||
-				    ntohl(t->inp_laddr.s_addr) !=
-				    INADDR_ANY ||
+				if (!in_nullhost(laddr) ||
+				    !in_nullhost(t->inp_laddr) ||
 				    (inp->inp_vflag & INP_IPV6PROTO) == 0 ||
 				    (t->inp_vflag & INP_IPV6PROTO) == 0)
 #endif
-						return (EADDRINUSE);
+					return (EADDRINUSE);
 			}
 		}
 	}
@@ -1009,8 +1005,7 @@ in_pcbbind_setup(struct inpcb *inp, struct sockaddr_in *sin, in_addr_t *laddrp,
  * then pick one.
  */
 int
-in_pcbconnect(struct inpcb *inp, struct sockaddr_in *sin, struct ucred *cred,
-    bool rehash __unused)
+in_pcbconnect(struct inpcb *inp, struct sockaddr_in *sin, struct ucred *cred)
 {
 	u_short lport, fport;
 	in_addr_t laddr, faddr;
@@ -2179,9 +2174,8 @@ in_pcblookup_wild_match(const struct inpcb *inp, struct in_addr laddr,
 #define	INP_LOOKUP_AGAIN	((struct inpcb *)(uintptr_t)-1)
 
 static struct inpcb *
-in_pcblookup_hash_wild_smr(struct inpcbinfo *pcbinfo, struct in_addr faddr,
-    u_short fport, struct in_addr laddr, u_short lport,
-    const inp_lookup_t lockflags)
+in_pcblookup_hash_wild_smr(struct inpcbinfo *pcbinfo, struct in_addr laddr,
+    u_short lport, const inp_lookup_t lockflags)
 {
 	struct inpcbhead *head;
 	struct inpcb *inp;
@@ -2217,8 +2211,8 @@ in_pcblookup_hash_wild_smr(struct inpcbinfo *pcbinfo, struct in_addr faddr,
 }
 
 static struct inpcb *
-in_pcblookup_hash_wild_locked(struct inpcbinfo *pcbinfo, struct in_addr faddr,
-    u_short fport, struct in_addr laddr, u_short lport)
+in_pcblookup_hash_wild_locked(struct inpcbinfo *pcbinfo, struct in_addr laddr,
+    u_short lport)
 {
 	struct inpcbhead *head;
 	struct inpcb *inp, *local_wild, *local_exact, *jail_wild;
@@ -2319,8 +2313,8 @@ in_pcblookup_hash_locked(struct inpcbinfo *pcbinfo, struct in_addr faddr,
 		inp = in_pcblookup_lbgroup(pcbinfo, &faddr, fport,
 		    &laddr, lport, numa_domain);
 		if (inp == NULL) {
-			inp = in_pcblookup_hash_wild_locked(pcbinfo, faddr,
-			    fport, laddr, lport);
+			inp = in_pcblookup_hash_wild_locked(pcbinfo, laddr,
+			    lport);
 		}
 	}
 
@@ -2402,8 +2396,8 @@ in_pcblookup_hash_smr(struct inpcbinfo *pcbinfo, struct in_addr faddr,
 			}
 			inp = INP_LOOKUP_AGAIN;
 		} else {
-			inp = in_pcblookup_hash_wild_smr(pcbinfo, faddr, fport,
-			    laddr, lport, lockflags);
+			inp = in_pcblookup_hash_wild_smr(pcbinfo, laddr, lport,
+			    lockflags);
 		}
 		if (inp == INP_LOOKUP_AGAIN) {
 			return (in_pcblookup_hash(pcbinfo, faddr, fport, laddr,

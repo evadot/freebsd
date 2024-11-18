@@ -1125,9 +1125,9 @@ tcp_usr_send(struct socket *so, int flags, struct mbuf *m,
 		/*
 		 * XXXRW: PRUS_EOF not implemented with PRUS_OOB?
 		 */
-		SOCKBUF_LOCK(&so->so_snd);
+		SOCK_SENDBUF_LOCK(so);
 		if (sbspace(&so->so_snd) < -512) {
-			SOCKBUF_UNLOCK(&so->so_snd);
+			SOCK_SENDBUF_UNLOCK(so);
 			error = ENOBUFS;
 			goto out;
 		}
@@ -1142,7 +1142,7 @@ tcp_usr_send(struct socket *so, int flags, struct mbuf *m,
 		if (tp->t_acktime == 0)
 			tp->t_acktime = ticks;
 		sbappendstream_locked(&so->so_snd, m, flags);
-		SOCKBUF_UNLOCK(&so->so_snd);
+		SOCK_SENDBUF_UNLOCK(so);
 		m = NULL;
 		if (nam && tp->t_state < TCPS_SYN_SENT) {
 			/*
@@ -1237,9 +1237,9 @@ tcp_usr_ready(struct socket *so, struct mbuf *m, int count)
 	}
 	tp = intotcpcb(inp);
 
-	SOCKBUF_LOCK(&so->so_snd);
+	SOCK_SENDBUF_LOCK(so);
 	error = sbready(&so->so_snd, m, count);
-	SOCKBUF_UNLOCK(&so->so_snd);
+	SOCK_SENDBUF_UNLOCK(so);
 	if (error) {
 		INP_WUNLOCK(inp);
 		return (error);
@@ -1471,7 +1471,7 @@ tcp_connect(struct tcpcb *tp, struct sockaddr_in *sin, struct thread *td)
 		return (EISCONN);
 
 	INP_HASH_WLOCK(&V_tcbinfo);
-	error = in_pcbconnect(inp, sin, td->td_ucred, true);
+	error = in_pcbconnect(inp, sin, td->td_ucred);
 	INP_HASH_WUNLOCK(&V_tcbinfo);
 	if (error != 0)
 		return (error);

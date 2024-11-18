@@ -126,6 +126,14 @@ SDT_PROBE_DEFINE5(pf, ip, state, lookup, "struct pfi_kkif *",
     "struct pf_kstate *");
 SDT_PROBE_DEFINE2(pf, ip, , bound_iface, "struct pf_kstate *",
     "struct pfi_kkif *");
+SDT_PROBE_DEFINE4(pf, ip, route_to, entry, "struct mbuf *",
+    "struct pf_pdesc *", "struct pf_kstate *", "struct ifnet *");
+SDT_PROBE_DEFINE1(pf, ip, route_to, drop, "int");
+SDT_PROBE_DEFINE2(pf, ip, route_to, output, "struct ifnet *", "int");
+SDT_PROBE_DEFINE4(pf, ip6, route_to, entry, "struct mbuf *",
+    "struct pf_pdesc *", "struct pf_kstate *", "struct ifnet *");
+SDT_PROBE_DEFINE1(pf, ip6, route_to, drop, "int");
+SDT_PROBE_DEFINE2(pf, ip6, route_to, output, "struct ifnet *", "int");
 SDT_PROBE_DEFINE4(pf, sctp, multihome, test, "struct pfi_kkif *",
     "struct pf_krule *", "struct mbuf *", "int");
 SDT_PROBE_DEFINE2(pf, sctp, multihome, add, "uint32_t",
@@ -576,8 +584,10 @@ static bool
 pf_is_loopback(sa_family_t af, struct pf_addr *addr)
 {
 	switch (af) {
+#ifdef INET
 	case AF_INET:
 		return IN_LOOPBACK(ntohl(addr->v4.s_addr));
+#endif
 	case AF_INET6:
 		return IN6_IS_ADDR_LOOPBACK(&addr->v6);
 	default:
@@ -1431,7 +1441,9 @@ keyattach:
 					s->timeout = PFTM_UNLINKED;
 					PF_HASHROW_UNLOCK(ih);
 					KEYS_UNLOCK();
-					uma_zfree(V_pf_state_key_z, sk);
+					uma_zfree(V_pf_state_key_z, skw);
+					if (skw != sks)
+						uma_zfree(V_pf_state_key_z, sks);
 					if (idx == PF_SK_STACK)
 						pf_detach_state(s);
 					return (EEXIST); /* collision! */
@@ -1797,6 +1809,9 @@ pf_find_state_all(const struct pf_state_key_cmp *key, u_int dir, int *more)
 	struct pf_state_key	*sk;
 	struct pf_kstate	*s, *ret = NULL;
 	int			 idx, inout = 0;
+
+	if (more != NULL)
+		*more = 0;
 
 	pf_counter_u64_add(&V_pf_status.fcounters[FCNT_STATE_SEARCH], 1);
 
@@ -2207,6 +2222,9 @@ pf_intr(void *v)
 #ifdef INET
 		case PFSE_IP: {
 			if (pf_isforlocal(pfse->pfse_m, AF_INET)) {
+				KASSERT(pfse->pfse_m->m_pkthdr.rcvif == V_loif,
+				    ("%s: rcvif != loif", __func__));
+
 				pfse->pfse_m->m_flags |= M_SKIP_FIREWALL;
 				pfse->pfse_m->m_pkthdr.csum_flags |=
 				    CSUM_IP_VALID | CSUM_IP_CHECKED;
@@ -2225,7 +2243,11 @@ pf_intr(void *v)
 #ifdef INET6
 		case PFSE_IP6:
 			if (pf_isforlocal(pfse->pfse_m, AF_INET6)) {
-				pfse->pfse_m->m_flags |= M_SKIP_FIREWALL;
+				KASSERT(pfse->pfse_m->m_pkthdr.rcvif == V_loif,
+				    ("%s: rcvif != loif", __func__));
+
+				pfse->pfse_m->m_flags |= M_SKIP_FIREWALL |
+				    M_LOOP;
 				ip6_input(pfse->pfse_m);
 			} else {
 				ip6_output(pfse->pfse_m, NULL, NULL, 0, NULL,
@@ -2574,7 +2596,8 @@ pf_unlink_state(struct pf_kstate *s)
 		    s->key[PF_SK_WIRE]->port[1],
 		    s->key[PF_SK_WIRE]->port[0],
 		    s->src.seqhi, s->src.seqlo + 1,
-		    TH_RST|TH_ACK, 0, 0, 0, true, s->tag, 0, s->act.rtableid);
+		    TH_RST|TH_ACK, 0, 0, 0, M_SKIP_FIREWALL, s->tag, 0,
+		    s->act.rtableid);
 	}
 
 	LIST_REMOVE(s, entry);
@@ -3334,7 +3357,7 @@ pf_build_tcp(const struct pf_krule *r, sa_family_t af,
     const struct pf_addr *saddr, const struct pf_addr *daddr,
     u_int16_t sport, u_int16_t dport, u_int32_t seq, u_int32_t ack,
     u_int8_t tcp_flags, u_int16_t win, u_int16_t mss, u_int8_t ttl,
-    bool skip_firewall, u_int16_t mtag_tag, u_int16_t mtag_flags, int rtableid)
+    int mbuf_flags, u_int16_t mtag_tag, u_int16_t mtag_flags, int rtableid)
 {
 	struct mbuf	*m;
 	int		 len, tlen;
@@ -3380,8 +3403,7 @@ pf_build_tcp(const struct pf_krule *r, sa_family_t af,
 		m_freem(m);
 		return (NULL);
 	}
-	if (skip_firewall)
-		m->m_flags |= M_SKIP_FIREWALL;
+	m->m_flags |= mbuf_flags;
 	pf_mtag->tag = mtag_tag;
 	pf_mtag->flags = mtag_flags;
 
@@ -3598,13 +3620,13 @@ pf_send_tcp(const struct pf_krule *r, sa_family_t af,
     const struct pf_addr *saddr, const struct pf_addr *daddr,
     u_int16_t sport, u_int16_t dport, u_int32_t seq, u_int32_t ack,
     u_int8_t tcp_flags, u_int16_t win, u_int16_t mss, u_int8_t ttl,
-    bool skip_firewall, u_int16_t mtag_tag, u_int16_t mtag_flags, int rtableid)
+    int mbuf_flags, u_int16_t mtag_tag, u_int16_t mtag_flags, int rtableid)
 {
 	struct pf_send_entry *pfse;
 	struct mbuf	*m;
 
 	m = pf_build_tcp(r, af, saddr, daddr, sport, dport, seq, ack, tcp_flags,
-	    win, mss, ttl, skip_firewall, mtag_tag, mtag_flags, rtableid);
+	    win, mss, ttl, mbuf_flags, mtag_tag, mtag_flags, rtableid);
 	if (m == NULL)
 		return;
 
@@ -3672,7 +3694,7 @@ pf_return(struct pf_krule *r, struct pf_krule *nr, struct pf_pdesc *pd,
 			pf_send_tcp(r, pd->af, pd->dst,
 				pd->src, th->th_dport, th->th_sport,
 				ntohl(th->th_ack), ack, TH_RST|TH_ACK, 0, 0,
-				r->return_ttl, true, 0, 0, rtableid);
+				r->return_ttl, M_SKIP_FIREWALL, 0, 0, rtableid);
 		}
 	} else if (pd->proto == IPPROTO_SCTP &&
 	    (r->rule_flag & PFRULE_RETURN)) {
@@ -5537,7 +5559,7 @@ pf_create_state(struct pf_krule *r, struct pf_krule *nr, struct pf_krule *a,
 		s->src.mss = mss;
 		pf_send_tcp(r, pd->af, pd->dst, pd->src, th->th_dport,
 		    th->th_sport, s->src.seqhi, ntohl(th->th_seq) + 1,
-		    TH_SYN|TH_ACK, 0, s->src.mss, 0, true, 0, 0,
+		    TH_SYN|TH_ACK, 0, s->src.mss, 0, M_SKIP_FIREWALL, 0, 0,
 		    pd->act.rtableid);
 		REASON_SET(&reason, PFRES_SYNPROXY);
 		return (PF_SYNPROXY_DROP);
@@ -5898,8 +5920,8 @@ pf_tcp_track_full(struct pf_kstate **state, struct pf_pdesc *pd,
 				    pd->dst, pd->src, th->th_dport,
 				    th->th_sport, ntohl(th->th_ack), 0,
 				    TH_RST, 0, 0,
-				    (*state)->rule->return_ttl, true, 0, 0,
-				    (*state)->act.rtableid);
+				    (*state)->rule->return_ttl, M_SKIP_FIREWALL,
+				    0, 0, (*state)->act.rtableid);
 			src->seqlo = 0;
 			src->seqhi = 1;
 			src->max_win = 1;
@@ -6035,8 +6057,8 @@ pf_synproxy(struct pf_pdesc *pd, struct pf_kstate **state, u_short *reason)
 			pf_send_tcp((*state)->rule, pd->af, pd->dst,
 			    pd->src, th->th_dport, th->th_sport,
 			    (*state)->src.seqhi, ntohl(th->th_seq) + 1,
-			    TH_SYN|TH_ACK, 0, (*state)->src.mss, 0, true, 0, 0,
-			    (*state)->act.rtableid);
+			    TH_SYN|TH_ACK, 0, (*state)->src.mss, 0,
+			    M_SKIP_FIREWALL, 0, 0, (*state)->act.rtableid);
 			REASON_SET(reason, PFRES_SYNPROXY);
 			return (PF_SYNPROXY_DROP);
 		} else if ((th->th_flags & (TH_ACK|TH_RST|TH_FIN)) != TH_ACK ||
@@ -6067,8 +6089,9 @@ pf_synproxy(struct pf_pdesc *pd, struct pf_kstate **state, u_short *reason)
 			    &sk->addr[pd->sidx], &sk->addr[pd->didx],
 			    sk->port[pd->sidx], sk->port[pd->didx],
 			    (*state)->dst.seqhi, 0, TH_SYN, 0,
-			    (*state)->src.mss, 0, false, (*state)->tag, 0,
-			    (*state)->act.rtableid);
+			    (*state)->src.mss, 0,
+			    (*state)->orig_kif->pfik_ifp == V_loif ? M_LOOP : 0,
+			    (*state)->tag, 0, (*state)->act.rtableid);
 			REASON_SET(reason, PFRES_SYNPROXY);
 			return (PF_SYNPROXY_DROP);
 		} else if (((th->th_flags & (TH_SYN|TH_ACK)) !=
@@ -6082,14 +6105,14 @@ pf_synproxy(struct pf_pdesc *pd, struct pf_kstate **state, u_short *reason)
 			pf_send_tcp((*state)->rule, pd->af, pd->dst,
 			    pd->src, th->th_dport, th->th_sport,
 			    ntohl(th->th_ack), ntohl(th->th_seq) + 1,
-			    TH_ACK, (*state)->src.max_win, 0, 0, false,
+			    TH_ACK, (*state)->src.max_win, 0, 0, 0,
 			    (*state)->tag, 0, (*state)->act.rtableid);
 			pf_send_tcp((*state)->rule, pd->af,
 			    &sk->addr[pd->sidx], &sk->addr[pd->didx],
 			    sk->port[pd->sidx], sk->port[pd->didx],
 			    (*state)->src.seqhi + 1, (*state)->src.seqlo + 1,
-			    TH_ACK, (*state)->dst.max_win, 0, 0, true, 0, 0,
-			    (*state)->act.rtableid);
+			    TH_ACK, (*state)->dst.max_win, 0, 0,
+			    M_SKIP_FIREWALL, 0, 0, (*state)->act.rtableid);
 			(*state)->src.seqdiff = (*state)->dst.seqhi -
 			    (*state)->src.seqlo;
 			(*state)->dst.seqdiff = (*state)->src.seqhi -
@@ -7645,6 +7668,8 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 
 	KASSERT(m && *m && r && oifp, ("%s: invalid parameters", __func__));
 
+	SDT_PROBE4(pf, ip, route_to, entry, *m, pd, s, oifp);
+
 	if (s) {
 		r_rt = s->rt;
 		r_dir = s->direction;
@@ -7662,6 +7687,7 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 	    pd->pf_mtag->routed++ > 3) {
 		m0 = *m;
 		*m = NULL;
+		SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 		goto bad_locked;
 	}
 
@@ -7684,6 +7710,7 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 			} else {
 				m0 = *m;
 				*m = NULL;
+				SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 				goto bad;
 			}
 		} else {
@@ -7717,6 +7744,7 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 		if (TAILQ_EMPTY(&r->rpool.list)) {
 			DPFPRINTF(PF_DEBUG_URGENT,
 			    ("%s: TAILQ_EMPTY(&r->rpool.list)\n", __func__));
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto bad_locked;
 		}
 		pf_map_addr(AF_INET, r, (struct pf_addr *)&ip->ip_src,
@@ -7749,18 +7777,24 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 		PF_STATE_UNLOCK(s);
 	}
 
-	if (ifp == NULL)
+	if (ifp == NULL) {
+		SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 		goto bad;
+	}
 
 	if (pd->dir == PF_IN) {
 		if (pf_test(AF_INET, PF_OUT, PFIL_FWD, ifp, &m0, inp,
-		    &pd->act) != PF_PASS)
+		    &pd->act) != PF_PASS) {
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto bad;
-		else if (m0 == NULL)
+		} else if (m0 == NULL) {
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto done;
+		}
 		if (m0->m_len < sizeof(struct ip)) {
 			DPFPRINTF(PF_DEBUG_URGENT,
 			    ("%s: m0->m_len < sizeof(struct ip)\n", __func__));
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto bad;
 		}
 		ip = mtod(m0, struct ip *);
@@ -7819,8 +7853,10 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 
 		md = m0;
 		error = pf_dummynet_route(pd, s, r, ifp, sintosa(&dst), &md);
-		if (md != NULL)
+		if (md != NULL) {
 			error = (*ifp->if_output)(ifp, md, sintosa(&dst), NULL);
+			SDT_PROBE2(pf, ip, route_to, output, ifp, error);
+		}
 		goto done;
 	}
 
@@ -7836,14 +7872,19 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 
 			icmp_error(m0, ICMP_UNREACH, ICMP_UNREACH_NEEDFRAG, 0,
 			    ifp->if_mtu);
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto done;
-		} else
+		} else {
+			SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 			goto bad;
+		}
 	}
 
 	error = ip_fragment(ip, &m0, ifp->if_mtu, ifp->if_hwassist);
-	if (error)
+	if (error) {
+		SDT_PROBE1(pf, ip, route_to, drop, __LINE__);
 		goto bad;
+	}
 
 	for (; m0; m0 = m1) {
 		m1 = m0->m_nextpkt;
@@ -7854,9 +7895,11 @@ pf_route(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 			pd->pf_mtag = pf_find_mtag(md);
 			error = pf_dummynet_route(pd, s, r, ifp,
 			    sintosa(&dst), &md);
-			if (md != NULL)
+			if (md != NULL) {
 				error = (*ifp->if_output)(ifp, md,
 				    sintosa(&dst), NULL);
+				SDT_PROBE2(pf, ip, route_to, output, ifp, error);
+			}
 		} else
 			m_freem(m0);
 	}
@@ -7893,6 +7936,8 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 
 	KASSERT(m && *m && r && oifp, ("%s: invalid parameters", __func__));
 
+	SDT_PROBE4(pf, ip6, route_to, entry, *m, pd, s, oifp);
+
 	if (s) {
 		r_rt = s->rt;
 		r_dir = s->direction;
@@ -7910,6 +7955,7 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 	    pd->pf_mtag->routed++ > 3) {
 		m0 = *m;
 		*m = NULL;
+		SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 		goto bad_locked;
 	}
 
@@ -7932,6 +7978,7 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 			} else {
 				m0 = *m;
 				*m = NULL;
+				SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 				goto bad;
 			}
 		} else {
@@ -7965,6 +8012,7 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 		if (TAILQ_EMPTY(&r->rpool.list)) {
 			DPFPRINTF(PF_DEBUG_URGENT,
 			    ("%s: TAILQ_EMPTY(&r->rpool.list)\n", __func__));
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 			goto bad_locked;
 		}
 		pf_map_addr(AF_INET6, r, (struct pf_addr *)&ip6->ip6_src,
@@ -7999,19 +8047,25 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 	if (s)
 		PF_STATE_UNLOCK(s);
 
-	if (ifp == NULL)
+	if (ifp == NULL) {
+		SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 		goto bad;
+	}
 
 	if (pd->dir == PF_IN) {
 		if (pf_test(AF_INET6, PF_OUT, PFIL_FWD, ifp, &m0, inp,
-		    &pd->act) != PF_PASS)
+		    &pd->act) != PF_PASS) {
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 			goto bad;
-		else if (m0 == NULL)
+		} else if (m0 == NULL) {
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 			goto done;
+		}
 		if (m0->m_len < sizeof(struct ip6_hdr)) {
 			DPFPRINTF(PF_DEBUG_URGENT,
 			    ("%s: m0->m_len < sizeof(struct ip6_hdr)\n",
 			    __func__));
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 			goto bad;
 		}
 		ip6 = mtod(m0, struct ip6_hdr *);
@@ -8036,8 +8090,11 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 	if ((u_long)m0->m_pkthdr.len <= ifp->if_mtu) {
 		md = m0;
 		pf_dummynet_route(pd, s, r, ifp, sintosa(&dst), &md);
-		if (md != NULL)
-			nd6_output_ifp(ifp, ifp, md, &dst, NULL);
+		if (md != NULL) {
+			int ret;
+			ret = nd6_output_ifp(ifp, ifp, md, &dst, NULL);
+			SDT_PROBE2(pf, ip6, route_to, output, ifp, ret);
+		}
 	}
 	else {
 		in6_ifstat_inc(ifp, ifs6_in_toobig);
@@ -8048,8 +8105,11 @@ pf_route6(struct mbuf **m, struct pf_krule *r, struct ifnet *oifp,
 				    sizeof(struct ip6_hdr), s);
 
 			icmp6_error(m0, ICMP6_PACKET_TOO_BIG, 0, ifp->if_mtu);
-		} else
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
+		} else {
+			SDT_PROBE1(pf, ip6, route_to, drop, __LINE__);
 			goto bad;
+		}
 	}
 
 done:

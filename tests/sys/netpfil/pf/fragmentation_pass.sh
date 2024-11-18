@@ -344,61 +344,6 @@ no_df_body()
 {
 	setup_router_server_ipv4
 
-	ifconfig ${epair_tester}a mtu 9000
-	jexec router ifconfig ${epair_tester}b mtu 9000
-	jexec router ifconfig ${epair_server}a mtu 1500
-	jexec server ifconfig ${epair_server}b mtu 1500
-
-	# Sanity check.
-	ping_server_check_reply exit:0 --ping-type=icmp
-
-	pft_set_rules router \
-		"set reassemble no" \
-		"pass out" \
-		"block in" \
-		"pass in inet proto icmp all icmp-type echoreq"
-
-	# Ping with normal, fragmentable packets.
-	ping_server_check_reply exit:1 --ping-type=icmp --send-length=2000
-
-	pft_set_rules router \
-		"set reassemble yes" \
-		"pass out" \
-		"block in" \
-		"pass in inet proto icmp all icmp-type echoreq"
-
-	# Ping with normal, fragmentable packets.
-	ping_server_check_reply exit:0 --ping-type=icmp --send-length=2000
-
-	# Ping with non-fragmentable packets.
-	ping_server_check_reply exit:1 --ping-type=icmp --send-length=2000 --send-flags DF
-
-	pft_set_rules router \
-		"set reassemble yes no-df" \
-		"pass out" \
-		"block in" \
-		"pass in inet proto icmp all icmp-type echoreq"
-
-	# Ping with non-fragmentable packets again.
-	# This time pf will strip the DF flag.
-	ping_server_check_reply exit:0 --ping-type=icmp --send-length=2000 --send-flags DF
-}
-no_df_cleanup()
-{
-	pft_cleanup
-}
-
-atf_test_case "no_df" "cleanup"
-no_df_head()
-{
-	atf_set descr 'Test removing of DF flag'
-	atf_set require.user root
-}
-
-no_df_body()
-{
-	setup_router_server_ipv4
-
 	# Tester can send long packets which will get fragmented by the router.
 	# Replies from server will come in fragments which might get
 	# reassembled resulting in a long reply packet sent back to tester.
@@ -420,6 +365,7 @@ no_df_body()
 	# getting properly forwarded.
 	ping_server_check_reply exit:0 --ping-type=icmp --send-length=2000 --send-flags DF
 }
+
 no_df_cleanup()
 {
 	pft_cleanup
@@ -580,13 +526,12 @@ dummynet_fragmented_body()
 	ping_dummy_check_request exit:0 --ping-type=udp --send-length=10000 --send-frag-length=1280
 
 	rules=$(mktemp) || exit 1
-	jexec router pfctl -qvsr > $rules
+	jexec router pfctl -qvsr | normalize_pfctl_s > $rules
 
 	# Count that fragmented packets have hit the rule only once and that
 	# they have not created states. There is no stateful firewall support
 	# for fragmented packets.
-	grep -A2 'pass in on epair0b inet proto udp all keep state dnpipe(1, 1)' $rules |
-		grep -qE 'Packets: 8\s+Bytes: 10168\s+States: 0\s+' ||
+	grep -qE 'pass in on epair0b inet proto udp all keep state dnpipe\(1, 1\) .* Packets: 8 Bytes: 10168 States: 0 ' $rules ||
 		atf_fail "Fragmented packets not counted correctly"
 }
 

@@ -1264,7 +1264,7 @@ pf_handle_natlook(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	struct pf_state_key	*sk;
 	struct pf_kstate	*state;
 	struct genlmsghdr	*ghdr_new;
-	int			 error, m;
+	int			 error, m = 0;
 	int			 sidx, didx;
 
 	error = nl_parse_nlmsg(hdr, &natlook_parser, npt, &attrs);
@@ -1613,7 +1613,7 @@ pf_handle_get_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 		return (ENOMEM);
 
 	ghdr_new = nlmsg_reserve_object(nw, struct genlmsghdr);
-	ghdr_new->cmd = PFNL_CMD_GET_ADDRS;
+	ghdr_new->cmd = PFNL_CMD_GET_ADDR;
 	ghdr_new->version = 0;
 	ghdr_new->reserved = 0;
 
