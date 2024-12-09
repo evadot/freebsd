@@ -274,6 +274,16 @@ struct ieee80211_qosframe_addr4 {
 	 IEEE80211_FC0_TYPE_DATA,			\
 	 IEEE80211_FC0_SUBTYPE_QOS_DATA))
 
+/*
+ * Return true if this frame is a QoS NULL data frame.
+ */
+#define	IEEE80211_IS_QOS_NULL(wh)			\
+	(IEEE80211_IS_FC0_CHECK_VER_TYPE_SUBTYPE(wh,	\
+	 IEEE80211_FC0_VERSION_0,			\
+	 IEEE80211_FC0_TYPE_DATA,			\
+	 IEEE80211_FC0_SUBTYPE_QOS_NULL))
+
+
 #define	IEEE80211_FC1_DIR_MASK			0x03
 #define	IEEE80211_FC1_DIR_NODS			0x00	/* STA->STA */
 #define	IEEE80211_FC1_DIR_TODS			0x01	/* STA->AP  */
@@ -921,6 +931,7 @@ enum ieee80211_vht_mcs_support {
 	IEEE80211_VHT_MCS_NOT_SUPPORTED		= 3	/* not supported */
 };
 
+/* 802.11ac-2013, 8.4.2.160.3 Supported VHT-MCS and NSS Set field */
 struct ieee80211_vht_mcs_info {
 	uint16_t rx_mcs_map;
 	uint16_t rx_highest;
@@ -963,7 +974,7 @@ struct ieee80211_vht_operation {
 
 #define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_MASK	0x0000000C
 #define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_MASK_S	2
-#define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_NONE		0
+#define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_NO160		0
 #define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_160MHZ		1
 #define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_160_80P80MHZ	2
 #define	IEEE80211_VHTCAP_SUPP_CHAN_WIDTH_RESERVED	3

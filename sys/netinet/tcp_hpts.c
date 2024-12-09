@@ -173,6 +173,7 @@
 /* Each hpts has its own p_mtx which is used for locking */
 #define	HPTS_MTX_ASSERT(hpts)	mtx_assert(&(hpts)->p_mtx, MA_OWNED)
 #define	HPTS_LOCK(hpts)		mtx_lock(&(hpts)->p_mtx)
+#define	HPTS_TRYLOCK(hpts)	mtx_trylock(&(hpts)->p_mtx)
 #define	HPTS_UNLOCK(hpts)	mtx_unlock(&(hpts)->p_mtx)
 struct tcp_hpts_entry {
 	/* Cache line 0x00 */
@@ -239,7 +240,7 @@ static int tcp_bind_threads = 2;
 static int tcp_use_irq_cpu = 0;
 static int hpts_does_tp_logging = 0;
 
-static int32_t tcp_hptsi(struct tcp_hpts_entry *hpts, int from_callout);
+static int32_t tcp_hptsi(struct tcp_hpts_entry *hpts, bool from_callout);
 static void tcp_hpts_thread(void *ctx);
 
 int32_t tcp_min_hptsi_time = DEFAULT_MIN_SLEEP;
@@ -430,7 +431,7 @@ hpts_random_cpu(void)
 
 static void
 tcp_hpts_log(struct tcp_hpts_entry *hpts, struct tcpcb *tp, struct timeval *tv,
-	     int slots_to_run, int idx, int from_callout)
+    int slots_to_run, int idx, bool from_callout)
 {
 	union tcp_log_stackspecific log;
 	/*
@@ -1075,7 +1076,7 @@ tcp_hpts_set_max_sleep(struct tcp_hpts_entry *hpts, int wrap_loop_cnt)
 }
 
 static int32_t
-tcp_hptsi(struct tcp_hpts_entry *hpts, int from_callout)
+tcp_hptsi(struct tcp_hpts_entry *hpts, bool from_callout)
 {
 	struct tcpcb *tp;
 	struct timeval tv;
@@ -1086,7 +1087,10 @@ tcp_hptsi(struct tcp_hpts_entry *hpts, int from_callout)
 	int32_t wrap_loop_cnt = 0;
 	int32_t slot_pos_of_endpoint = 0;
 	int32_t orig_exit_slot;
-	int8_t completed_measure = 0, seen_endpoint = 0;
+	bool completed_measure, seen_endpoint;
+
+	completed_measure = false;
+	seen_endpoint = false;
 
 	HPTS_MTX_ASSERT(hpts);
 	NET_EPOCH_ASSERT();
@@ -1251,11 +1255,11 @@ again:
 			}
 
 			/* For debugging */
-			if (seen_endpoint == 0) {
-				seen_endpoint = 1;
+			if (!seen_endpoint) {
+				seen_endpoint = true;
 				orig_exit_slot = slot_pos_of_endpoint =
 				    runningslot;
-			} else if (completed_measure == 0) {
+			} else if (!completed_measure) {
 				/* Record the new position */
 				orig_exit_slot = runningslot;
 			}
@@ -1350,7 +1354,8 @@ again:
 			CURVNET_SET(inp->inp_vnet);
 			/* Lets do any logging that we might want to */
 			if (hpts_does_tp_logging && tcp_bblogging_on(tp)) {
-				tcp_hpts_log(hpts, tp, &tv, slots_to_run, i, from_callout);
+				tcp_hpts_log(hpts, tp, &tv, slots_to_run, i,
+				    from_callout);
 			}
 
 			if (tp->t_fb_ptr != NULL) {
@@ -1397,7 +1402,7 @@ again:
 			 * is where we calculated the end of our cycle to
 			 * be when we first entered.
 			 */
-			completed_measure = 1;
+			completed_measure = true;
 		}
 		HPTS_LOCK(hpts);
 		hpts->p_runningslot++;
@@ -1414,7 +1419,7 @@ no_one:
 	 */
 	hpts->p_prev_slot = hpts->p_cur_slot;
 	hpts->p_lasttick = hpts->p_curtick;
-	if ((from_callout == 0) || (loop_cnt > max_pacer_loops)) {
+	if (!from_callout || (loop_cnt > max_pacer_loops)) {
 		/*
 		 * Something is serious slow we have
 		 * looped through processing the wheel
@@ -1435,7 +1440,7 @@ no_one:
 	}
 	hpts->p_curtick = tcp_gethptstick(&tv);
 	hpts->p_cur_slot = tick_to_wheel(hpts->p_curtick);
-	if (seen_endpoint == 0) {
+	if (!seen_endpoint) {
 		/* We saw no endpoint but we may be looping */
 		orig_exit_slot = hpts->p_cur_slot;
 	}
@@ -1462,11 +1467,11 @@ no_run:
 	 * multiple times so the slots may not align either.
 	 */
 	KASSERT(((hpts->p_prev_slot == hpts->p_cur_slot) ||
-		 (wrap_loop_cnt >= 2) || (from_callout == 0)),
+		 (wrap_loop_cnt >= 2) || !from_callout),
 		("H:%p p_prev_slot:%u not equal to p_cur_slot:%u", hpts,
 		 hpts->p_prev_slot, hpts->p_cur_slot));
 	KASSERT(((hpts->p_lasttick == hpts->p_curtick)
-		 || (wrap_loop_cnt >= 2) || (from_callout == 0)),
+		 || (wrap_loop_cnt >= 2) || !from_callout),
 		("H:%p p_lasttick:%u not equal to p_curtick:%u", hpts,
 		 hpts->p_lasttick, hpts->p_curtick));
 	if (from_callout && (hpts->p_lasttick != hpts->p_curtick)) {
@@ -1476,7 +1481,7 @@ no_run:
 		goto again;
 	}
 
-	if (from_callout){
+	if (from_callout) {
 		tcp_hpts_set_max_sleep(hpts, wrap_loop_cnt);
 	}
 	if (seen_endpoint)
@@ -1499,7 +1504,7 @@ __tcp_set_hpts(struct tcpcb *tp, int32_t line)
 		if (failed == 0)
 			tp->t_flags2 |= TF2_HPTS_CPU_SET;
 	}
-	mtx_unlock(&hpts->p_mtx);
+	HPTS_UNLOCK(hpts);
 }
 
 static struct tcp_hpts_entry *
@@ -1556,7 +1561,7 @@ __tcp_run_hpts(void)
 		/* Already active */
 		return;
 	}
-	if (mtx_trylock(&hpts->p_mtx) == 0) {
+	if (!HPTS_TRYLOCK(hpts)) {
 		/* Someone else got the lock */
 		return;
 	}
@@ -1566,7 +1571,7 @@ __tcp_run_hpts(void)
 	hpts->syscall_cnt++;
 	counter_u64_add(hpts_direct_call, 1);
 	hpts->p_hpts_active = 1;
-	ticks_ran = tcp_hptsi(hpts, 0);
+	ticks_ran = tcp_hptsi(hpts, false);
 	/* We may want to adjust the sleep values here */
 	if (hpts->p_on_queue_cnt >= conn_cnt_thresh) {
 		if (ticks_ran > ticks_indicate_less_sleep) {
@@ -1611,8 +1616,7 @@ __tcp_run_hpts(void)
 	}
 	hpts->p_hpts_active = 0;
 out_with_mtx:
-	HPTS_MTX_ASSERT(hpts);
-	mtx_unlock(&hpts->p_mtx);
+	HPTS_UNLOCK(hpts);
 	NET_EPOCH_EXIT(et);
 }
 
@@ -1626,7 +1630,7 @@ tcp_hpts_thread(void *ctx)
 	int ticks_ran;
 
 	hpts = (struct tcp_hpts_entry *)ctx;
-	mtx_lock(&hpts->p_mtx);
+	HPTS_LOCK(hpts);
 	if (hpts->p_direct_wake) {
 		/* Signaled by input or output with low occupancy count. */
 		callout_stop(&hpts->co);
@@ -1636,7 +1640,7 @@ tcp_hpts_thread(void *ctx)
 		counter_u64_add(hpts_wake_timeout, 1);
 		if (callout_pending(&hpts->co) ||
 		    !callout_active(&hpts->co)) {
-			mtx_unlock(&hpts->p_mtx);
+			HPTS_UNLOCK(hpts);
 			return;
 		}
 	}
@@ -1682,7 +1686,7 @@ tcp_hpts_thread(void *ctx)
 	}
 	hpts->sleeping = 0;
 	hpts->p_hpts_active = 1;
-	ticks_ran = tcp_hptsi(hpts, 1);
+	ticks_ran = tcp_hptsi(hpts, true);
 	tv.tv_sec = 0;
 	tv.tv_usec = hpts->p_hpts_sleep_time * HPTS_TICKS_PER_SLOT;
 	if ((hpts->p_on_queue_cnt > conn_cnt_thresh) && (hpts->hit_callout_thresh == 0)) {
@@ -1765,7 +1769,7 @@ back_to_sleep:
 			     hpts_timeout_swi, hpts, hpts->p_cpu,
 			     (C_DIRECT_EXEC | C_PREL(tcp_hpts_precision)));
 	NET_EPOCH_EXIT(et);
-	mtx_unlock(&hpts->p_mtx);
+	HPTS_UNLOCK(hpts);
 }
 
 #undef	timersub

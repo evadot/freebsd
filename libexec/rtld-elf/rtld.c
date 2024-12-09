@@ -1672,12 +1672,6 @@ digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry, const char *path)
 	    obj->stack_flags = ph->p_flags;
 	    break;
 
-	case PT_GNU_RELRO:
-	    obj->relro_page = obj->relocbase + rtld_trunc_page(ph->p_vaddr);
-	    obj->relro_size = rtld_trunc_page(ph->p_vaddr + ph->p_memsz) -
-	      rtld_trunc_page(ph->p_vaddr);
-	    break;
-
 	case PT_NOTE:
 	    note_start = (Elf_Addr)obj->relocbase + ph->p_vaddr;
 	    note_end = note_start + ph->p_filesz;
@@ -2369,11 +2363,6 @@ parse_rtld_phdr(Obj_Entry *obj)
 		case PT_GNU_STACK:
 			obj->stack_flags = ph->p_flags;
 			break;
-		case PT_GNU_RELRO:
-			obj->relro_page = obj->relocbase +
-			    rtld_trunc_page(ph->p_vaddr);
-			obj->relro_size = rtld_round_page(ph->p_memsz);
-			break;
 		case PT_NOTE:
 			note_start = (Elf_Addr)obj->relocbase + ph->p_vaddr;
 			note_end = note_start + ph->p_filesz;
@@ -2396,11 +2385,6 @@ init_rtld(caddr_t mapbase, Elf_Auxinfo **aux_info)
     const Elf_Dyn *dyn_rpath;
     const Elf_Dyn *dyn_soname;
     const Elf_Dyn *dyn_runpath;
-
-#ifdef RTLD_INIT_PAGESIZES_EARLY
-    /* The page size is required by the dynamic memory allocator. */
-    init_pagesizes(aux_info);
-#endif
 
     /*
      * Conjure up an Obj_Entry structure for the dynamic linker.
@@ -2436,10 +2420,8 @@ init_rtld(caddr_t mapbase, Elf_Auxinfo **aux_info)
     /* Now that non-local variables can be accesses, copy out obj_rtld. */
     memcpy(&obj_rtld, &objtmp, sizeof(obj_rtld));
 
-#ifndef RTLD_INIT_PAGESIZES_EARLY
     /* The page size is required by the dynamic memory allocator. */
     init_pagesizes(aux_info);
-#endif
 
     if (aux_info[AT_OSRELDATE] != NULL)
 	    osreldate = aux_info[AT_OSRELDATE]->a_un.a_val;
@@ -3335,7 +3317,7 @@ relocate_object(Obj_Entry *obj, bool bind_now, Obj_Entry *rtldobj,
 	    lockstate) == -1)
 		return (-1);
 
-	if (!obj->mainprog && obj_enforce_relro(obj) == -1)
+	if (obj != rtldobj && !obj->mainprog && obj_enforce_relro(obj) == -1)
 		return (-1);
 
 	/*
@@ -5916,12 +5898,26 @@ _rtld_is_dlopened(void *arg)
 static int
 obj_remap_relro(Obj_Entry *obj, int prot)
 {
+	const Elf_Phdr *ph;
+	caddr_t relro_page;
+	size_t relro_size;
 
-	if (obj->relro_size > 0 && mprotect(obj->relro_page, obj->relro_size,
-	    prot) == -1) {
-		_rtld_error("%s: Cannot set relro protection to %#x: %s",
-		    obj->path, prot, rtld_strerror(errno));
-		return (-1);
+	for (ph = obj->phdr;  (const char *)ph < (const char *)obj->phdr +
+	    obj->phsize; ph++) {
+		switch (ph->p_type) {
+		case PT_GNU_RELRO:
+			relro_page = obj->relocbase +
+			    rtld_trunc_page(ph->p_vaddr);
+			relro_size =
+			    rtld_round_page(ph->p_vaddr + ph->p_memsz) -
+			    rtld_trunc_page(ph->p_vaddr);
+			if (mprotect(relro_page, relro_size, prot) == -1) {
+				_rtld_error("%s: Cannot set relro protection to %#x: %s",
+				    obj->path, prot, rtld_strerror(errno));
+				return (-1);
+			}
+			break;
+		}
 	}
 	return (0);
 }

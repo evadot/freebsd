@@ -505,6 +505,8 @@
         ..
         route
         ..
+        savecore
+        ..
         sysctl
         ..
     ..
@@ -542,6 +544,10 @@
         audit
         ..
         auditpipe
+        ..
+        cam
+            ctl
+            ..
         ..
         capsicum
         ..
@@ -793,10 +799,6 @@
         ..
         compat32
         ..
-        cam
-            ctl
-            ..
-        ..
         devrandom
         ..
         dtrace
@@ -947,6 +949,8 @@
         ..
         ses
         ..
+        sound
+        ..
         sys
         ..
         vfs
@@ -1088,8 +1092,6 @@
         csplit
         ..
         cut
-        ..
-        dc
         ..
         diff
         ..

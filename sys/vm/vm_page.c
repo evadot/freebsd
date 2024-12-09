@@ -1639,14 +1639,18 @@ vm_page_insert_radixdone(vm_page_t m, vm_object_t object, vm_page_t mpred)
 }
 
 /*
- * Do the work to remove a page from its object.  The caller is responsible for
- * updating the page's fields to reflect this removal.
+ *	vm_page_remove_radixdone
+ *
+ *	Complete page "m" removal from the specified object after the radix trie
+ *	unhooking.
+ *
+ *	The caller is responsible for updating the page's fields to reflect this
+ *	removal.
  */
 static void
-vm_page_object_remove(vm_page_t m)
+vm_page_remove_radixdone(vm_page_t m)
 {
 	vm_object_t object;
-	vm_page_t mrem __diagused;
 
 	vm_page_assert_xbusied(m);
 	object = m->object;
@@ -1659,10 +1663,7 @@ vm_page_object_remove(vm_page_t m)
 		vm_pager_page_unswapped(m);
 
 	vm_pager_page_removed(object, m);
-
 	m->object = NULL;
-	mrem = vm_radix_remove(&object->rtree, m->pindex);
-	KASSERT(mrem == m, ("removed page %p, expected page %p", mrem, m));
 
 	/*
 	 * Now remove from the object's list of backed pages.
@@ -1679,6 +1680,50 @@ vm_page_object_remove(vm_page_t m)
 	 */
 	if (object->resident_page_count == 0 && object->type == OBJT_VNODE)
 		vdrop(object->handle);
+}
+
+/*
+ *	vm_page_free_object_prep:
+ *
+ *	Disassociates the given page from its VM object.
+ *
+ *	The object must be locked, and the page must be xbusy.
+ */
+static void
+vm_page_free_object_prep(vm_page_t m)
+{
+	KASSERT(((m->oflags & VPO_UNMANAGED) != 0) ==
+	    ((m->object->flags & OBJ_UNMANAGED) != 0),
+	    ("%s: managed flag mismatch for page %p",
+	     __func__, m));
+	vm_page_assert_xbusied(m);
+
+	/*
+	 * The object reference can be released without an atomic
+	 * operation.
+	 */
+	KASSERT((m->flags & PG_FICTITIOUS) != 0 ||
+	    m->ref_count == VPRC_OBJREF,
+	    ("%s: page %p has unexpected ref_count %u",
+	    __func__, m, m->ref_count));
+	vm_page_remove_radixdone(m);
+	m->ref_count -= VPRC_OBJREF;
+}
+
+/*
+ *	vm_page_iter_free:
+ *
+ *	Free the given page, and use the iterator to remove it from the radix
+ *	tree.
+ */
+void
+vm_page_iter_free(struct pctrie_iter *pages, vm_page_t m)
+{
+	vm_radix_iter_remove(pages);
+	vm_page_free_object_prep(m);
+	vm_page_xunbusy(m);
+	m->flags &= ~PG_ZERO;
+	vm_page_free_toq(m);
 }
 
 /*
@@ -1705,6 +1750,40 @@ vm_page_remove(vm_page_t m)
 }
 
 /*
+ *	vm_page_iter_remove:
+ *
+ *	Remove the current page, and use the iterator to remove it from the
+ *	radix tree.
+ */
+bool
+vm_page_iter_remove(struct pctrie_iter *pages, vm_page_t m)
+{
+	bool dropped;
+
+	vm_radix_iter_remove(pages);
+	vm_page_remove_radixdone(m);
+	dropped = (vm_page_drop(m, VPRC_OBJREF) == VPRC_OBJREF);
+	vm_page_xunbusy(m);
+
+	return (dropped);
+}
+
+/*
+ *	vm_page_radix_remove
+ *
+ *	Removes the specified page from the radix tree.
+ */
+static void
+vm_page_radix_remove(vm_page_t m)
+{
+	vm_page_t mrem __diagused;
+
+	mrem = vm_radix_remove(&m->object->rtree, m->pindex);
+	KASSERT(mrem == m,
+	    ("removed page %p, expected page %p", mrem, m));
+}
+
+/*
  *	vm_page_remove_xbusy
  *
  *	Removes the page but leaves the xbusy held.  Returns true if this
@@ -1714,7 +1793,8 @@ bool
 vm_page_remove_xbusy(vm_page_t m)
 {
 
-	vm_page_object_remove(m);
+	vm_page_radix_remove(m);
+	vm_page_remove_radixdone(m);
 	return (vm_page_drop(m, VPRC_OBJREF) == VPRC_OBJREF);
 }
 
@@ -1983,10 +2063,14 @@ vm_page_replace(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex,
 }
 
 /*
- *	vm_page_rename:
+ *	vm_page_iter_rename:
  *
- *	Move the given memory entry from its
- *	current object to the specified target object/offset.
+ *	Tries to move the specified page from its current object to a new object
+ *	and pindex, using the given iterator to remove the page from its current
+ *	object.  Returns true if the move was successful, and false if the move
+ *	was aborted due to a failed memory allocation.
+ *
+ *	Panics if a page already resides in the new object at the new pindex.
  *
  *	Note: swap associated with the page must be invalidated by the move.  We
  *	      have to do this for several reasons:  (1) we aren't freeing the
@@ -2000,15 +2084,17 @@ vm_page_replace(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex,
  *
  *	The objects must be locked.
  */
-int
-vm_page_rename(vm_page_t m, vm_object_t new_object, vm_pindex_t new_pindex)
+bool
+vm_page_iter_rename(struct pctrie_iter *old_pages, vm_page_t m,
+    vm_object_t new_object, vm_pindex_t new_pindex)
 {
 	vm_page_t mpred;
 	vm_pindex_t opidx;
 
+	KASSERT((m->ref_count & VPRC_OBJREF) != 0,
+	    ("%s: page %p is missing object ref", __func__, m));
+	VM_OBJECT_ASSERT_WLOCKED(m->object);
 	VM_OBJECT_ASSERT_WLOCKED(new_object);
-
-	KASSERT(m->ref_count != 0, ("vm_page_rename: page %p has no refs", m));
 
 	/*
 	 * Create a custom version of vm_page_insert() which does not depend
@@ -2019,7 +2105,7 @@ vm_page_rename(vm_page_t m, vm_object_t new_object, vm_pindex_t new_pindex)
 	m->pindex = new_pindex;
 	if (vm_radix_insert_lookup_lt(&new_object->rtree, m, &mpred) != 0) {
 		m->pindex = opidx;
-		return (1);
+		return (false);
 	}
 
 	/*
@@ -2027,7 +2113,8 @@ vm_page_rename(vm_page_t m, vm_object_t new_object, vm_pindex_t new_pindex)
 	 * the listq iterator is tainted.
 	 */
 	m->pindex = opidx;
-	vm_page_object_remove(m);
+	vm_radix_iter_remove(old_pages);
+	vm_page_remove_radixdone(m);
 
 	/* Return back to the new pindex to complete vm_page_insert(). */
 	m->pindex = new_pindex;
@@ -2036,7 +2123,7 @@ vm_page_rename(vm_page_t m, vm_object_t new_object, vm_pindex_t new_pindex)
 	vm_page_insert_radixdone(m, new_object, mpred);
 	vm_page_dirty(m);
 	vm_pager_page_inserted(new_object, m);
-	return (0);
+	return (true);
 }
 
 /*
@@ -4106,22 +4193,8 @@ vm_page_free_prep(vm_page_t m)
 	VM_CNT_INC(v_tfree);
 
 	if (m->object != NULL) {
-		KASSERT(((m->oflags & VPO_UNMANAGED) != 0) ==
-		    ((m->object->flags & OBJ_UNMANAGED) != 0),
-		    ("vm_page_free_prep: managed flag mismatch for page %p",
-		    m));
-		vm_page_assert_xbusied(m);
-
-		/*
-		 * The object reference can be released without an atomic
-		 * operation.
-		 */
-		KASSERT((m->flags & PG_FICTITIOUS) != 0 ||
-		    m->ref_count == VPRC_OBJREF,
-		    ("vm_page_free_prep: page %p has unexpected ref_count %u",
-		    m, m->ref_count));
-		vm_page_object_remove(m);
-		m->ref_count -= VPRC_OBJREF;
+		vm_page_radix_remove(m);
+		vm_page_free_object_prep(m);
 	} else
 		vm_page_assert_unbusied(m);
 

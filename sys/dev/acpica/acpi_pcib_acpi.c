@@ -528,14 +528,15 @@ acpi_pcib_acpi_attach(device_t dev)
     /* Don't fail to attach if the domain can't be queried or set. */
     error = 0;
 
-    bus_generic_probe(dev);
+    bus_identify_children(dev);
     if (device_add_child(dev, "pci", -1) == NULL) {
 	bus_dma_tag_destroy(sc->ap_dma_tag);
 	sc->ap_dma_tag = NULL;
 	error = ENXIO;
 	goto errout;
     }
-    return (bus_generic_attach(dev));
+    bus_attach_children(dev);
+    return (0);
 
 errout:
     device_printf(device_get_parent(dev), "couldn't attach pci bus\n");

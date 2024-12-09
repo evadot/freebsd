@@ -50,11 +50,13 @@ In
 .Cd kern.vt.color.<colornum>.rgb="<colorspec>"
 .Cd kern.vt.fb.default_mode="<X>x<Y>"
 .Cd kern.vt.fb.modes.<connector>="<X>x<Y>"
+.Cd kern.vt.slow_down=<delay>"
 .Cd screen.font="<X>x<Y>"
 .Pp
 In
 .Xr loader.conf 5 or
 .Xr sysctl.conf 5 :
+.Cd kern.consmute=1
 .Cd kern.vt.kbd_halt=1
 .Cd kern.vt.kbd_poweroff=1
 .Cd kern.vt.kbd_reboot=1
@@ -266,6 +268,16 @@ It will contain a list of connectors and their associated tunables.
 This is currently only supported by the
 .Cm vt_fb
 backend when it is paired with a KMS video driver.
+.It Va kern.vt.slow_down
+When debugging the kernel on modern laptops, the screen is often
+the only available console, and relevant information will scroll
+out of view before it can be captured by eye or camera.
+.Pp
+Setting
+.Va kern.vt.slow_down
+to a non-zero number will make console output synchronous (ie:
+not dependent on timers and interrupts) and slow it down in proportion
+to the number.
 .It Va screen.font
 Set this value to the base name of the desired font file located in
 .Pa /boot/fonts .
@@ -308,6 +320,8 @@ prompt, set in
 or changed at runtime with
 .Xr sysctl 8 .
 .Bl -tag -width indent
+.It Va kern.consmute
+Disable printing kernel messages to the system console.
 .It Va kern.vt.enable_bell
 Enable the terminal bell.
 .El

@@ -177,8 +177,8 @@ nexus_attach(device_t dev)
 	if (rman_init(&irq_rman) || rman_manage_region(&irq_rman, 0, ~0))
 		panic("nexus_attach irq_rman");
 
-	bus_generic_probe(dev);
-	bus_generic_attach(dev);
+	bus_identify_children(dev);
+	bus_attach_children(dev);
 
 	return (0);
 }

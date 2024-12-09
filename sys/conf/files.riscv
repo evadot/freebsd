@@ -36,6 +36,7 @@ riscv/riscv/bus_machdep.c	standard
 riscv/riscv/bus_space_asm.S	standard
 riscv/riscv/busdma_bounce.c	standard
 riscv/riscv/busdma_machdep.c	standard
+riscv/riscv/cache.c		standard
 riscv/riscv/clock.c		standard
 riscv/riscv/copyinout.S		standard
 riscv/riscv/cpufunc_asm.S	standard
@@ -82,6 +83,8 @@ riscv/vmm/vmm_instruction_emul.c		optional	vmm
 riscv/vmm/vmm_riscv.c				optional	vmm
 riscv/vmm/vmm_sbi.c				optional	vmm
 riscv/vmm/vmm_switch.S				optional	vmm
+
+riscv/thead/thead.c		standard
 
 # Zstd
 contrib/zstd/lib/freebsd/zstd_kfreebsd.c		optional zstdio compile-with ${ZSTD_C}

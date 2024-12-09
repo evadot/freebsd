@@ -51,6 +51,24 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20241206: Remove Altera DE4 drivers
+OLD_FILES+=usr/share/man/man4/altera_atse.4.gz
+OLD_FILES+=usr/share/man/man4/altera_avgen.4.gz
+OLD_FILES+=usr/share/man/man4/altera_jtag_uart.4.gz
+OLD_FILES+=usr/share/man/man4/altera_sdcard.4.gz
+OLD_FILES+=usr/share/man/man4/altera_sdcardc.4.gz
+OLD_FILES+=usr/share/man/man4/atse.4.gz
+
+# 20241124: library and tests of OpenBSD dc
+OLD_FILES+=usr/share/misc/bc.library
+OLD_FILES+=usr/tests/usr.bin/dc/Kyuafile
+OLD_FILES+=usr/tests/usr.bin/dc/bcode
+OLD_FILES+=usr/tests/usr.bin/dc/inout
+OLD_DIRS+=usr/tests/usr.bin/dc
+
+# 20241119: rewrite mv tests
+OLD_FILES+=usr/tests/bin/mv/legacy_test
+
 # 20241112: Retire MK_PROFILE support
 OLD_FILES+=usr/lib/lib80211_p.a
 OLD_FILES+=usr/lib/lib9p_p.a

@@ -155,6 +155,7 @@
 #define	__unused	__attribute__((__unused__))
 #define	__used		__attribute__((__used__))
 #define __deprecated	__attribute__((__deprecated__))
+#define __deprecated1(msg)	__attribute__((__deprecated__(msg)))
 #define	__packed	__attribute__((__packed__))
 #define	__aligned(x)	__attribute__((__aligned__(x)))
 #define	__section(x)	__attribute__((__section__(x)))
@@ -596,7 +597,7 @@
 #undef __ISO_C_VISIBLE
 #define __ISO_C_VISIBLE		2011
 #endif
-#else
+#else /* _POSIX_C_SOURCE */
 /*-
  * Deal with _ANSI_SOURCE:
  * If it is defined, and no other compilation environment is explicitly
@@ -640,7 +641,7 @@
 #define	__ISO_C_VISIBLE		2023
 #define	__EXT1_VISIBLE		1
 #endif
-#endif
+#endif /* _POSIX_C_SOURCE */
 
 /* User override __EXT1_VISIBLE */
 #if defined(__STDC_WANT_LIB_EXT1__)

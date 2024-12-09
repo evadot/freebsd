@@ -717,8 +717,8 @@ superio_attach(device_t dev)
 		    sc->known_devices[i].ldn);
 	}
 
-	bus_generic_probe(dev);
-	bus_generic_attach(dev);
+	bus_identify_children(dev);
+	bus_attach_children(dev);
 
 	sc->chardev = make_dev(&superio_cdevsw, device_get_unit(dev),
 	    UID_ROOT, GID_WHEEL, 0600, "superio%d", device_get_unit(dev));

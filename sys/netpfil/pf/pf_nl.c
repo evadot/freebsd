@@ -173,7 +173,7 @@ dump_state(struct nlpcb *nlp, const struct nlmsghdr *hdr, struct pf_kstate *s,
 
 	nlattr_add_string(nw, PF_ST_IFNAME, s->kif->pfik_name);
 	nlattr_add_string(nw, PF_ST_ORIG_IFNAME, s->orig_kif->pfik_name);
-	dump_addr(nw, PF_ST_RT_ADDR, &s->rt_addr, af);
+	dump_addr(nw, PF_ST_RT_ADDR, &s->act.rt_addr, af);
 	nlattr_add_u32(nw, PF_ST_CREATION, time_uptime - (s->creation / 1000));
 	uint32_t expire = pf_state_expires(s);
 	if (expire > time_uptime)
@@ -205,9 +205,9 @@ dump_state(struct nlpcb *nlp, const struct nlmsghdr *hdr, struct pf_kstate *s,
 	nlattr_add_u16(nw, PF_ST_MAX_MSS, s->act.max_mss);
 	nlattr_add_u16(nw, PF_ST_DNPIPE, s->act.dnpipe);
 	nlattr_add_u16(nw, PF_ST_DNRPIPE, s->act.dnrpipe);
-	nlattr_add_u8(nw, PF_ST_RT, s->rt);
-	if (s->rt_kif != NULL)
-		nlattr_add_string(nw, PF_ST_RT_IFNAME, s->rt_kif->pfik_name);
+	nlattr_add_u8(nw, PF_ST_RT, s->act.rt);
+	if (s->act.rt_kif != NULL)
+		nlattr_add_string(nw, PF_ST_RT_IFNAME, s->act.rt_kif->pfik_name);
 
 	if (!dump_state_peer(nw, PF_ST_PEER_SRC, &s->src))
 		goto enomem;
@@ -1714,13 +1714,23 @@ pf_handle_get_ruleset(struct nlmsghdr *hdr, struct nl_pstate *npt)
 }
 
 static bool
-nlattr_add_pf_threshold(struct nl_writer *nw, int attrtype, struct pf_threshold *t)
+nlattr_add_pf_threshold(struct nl_writer *nw, int attrtype,
+    struct pf_threshold *t, int secs)
 {
-	int off = nlattr_add_nested(nw, attrtype);
+	int	 off = nlattr_add_nested(nw, attrtype);
+	int	 diff, conn_rate_count;
+
+	/* Adjust the connection rate estimate. */
+	conn_rate_count = t->count;
+	diff = secs - t->last;
+	if (diff >= t->seconds)
+		conn_rate_count = 0;
+	else
+		conn_rate_count -= t->count * diff / t->seconds;
 
 	nlattr_add_u32(nw, PF_TH_LIMIT, t->limit);
 	nlattr_add_u32(nw, PF_TH_SECONDS, t->seconds);
-	nlattr_add_u32(nw, PF_TH_COUNT, t->count);
+	nlattr_add_u32(nw, PF_TH_COUNT, conn_rate_count);
 	nlattr_add_u32(nw, PF_TH_LAST, t->last);
 
 	nlattr_set_len(nw, off);
@@ -1736,6 +1746,7 @@ pf_handle_get_srcnodes(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	struct pf_ksrc_node	*n;
 	struct pf_srchash	*sh;
 	int			 i;
+	int			 secs;
 
 	hdr->nlmsg_flags |= NLM_F_MULTI;
 
@@ -1746,6 +1757,8 @@ pf_handle_get_srcnodes(struct nlmsghdr *hdr, struct nl_pstate *npt)
 			continue;
 
 		PF_HASHROW_LOCK(sh);
+		secs = time_uptime;
+
 		LIST_FOREACH(n, &sh->nodes, entry) {
 			if (!nlmsg_reply(nw, hdr, sizeof(struct genlmsghdr))) {
 				nlmsg_abort(nw);
@@ -1768,9 +1781,15 @@ pf_handle_get_srcnodes(struct nlmsghdr *hdr, struct nl_pstate *npt)
 			nlattr_add_u32(nw, PF_SN_CONNECTIONS, n->conn);
 			nlattr_add_u8(nw, PF_SN_AF, n->af);
 			nlattr_add_u8(nw, PF_SN_RULE_TYPE, n->ruletype);
-			nlattr_add_u64(nw, PF_SN_CREATION, n->creation);
-			nlattr_add_u64(nw, PF_SN_EXPIRE, n->expire);
-			nlattr_add_pf_threshold(nw, PF_SN_CONNECTION_RATE, &n->conn_rate);
+
+			nlattr_add_u64(nw, PF_SN_CREATION, secs - n->creation);
+			if (n->expire > secs)
+				nlattr_add_u64(nw, PF_SN_EXPIRE, n->expire - secs);
+			else
+				nlattr_add_u64(nw, PF_SN_EXPIRE, 0);
+
+			nlattr_add_pf_threshold(nw, PF_SN_CONNECTION_RATE,
+			    &n->conn_rate, secs);
 
 			if (!nlmsg_end(nw)) {
 				PF_HASHROW_UNLOCK(sh);
@@ -1985,7 +2004,7 @@ pf_nl_register(void)
 	NL_VERIFY_PARSERS(all_parsers);
 
 	family_id = genl_register_family(PFNL_FAMILY_NAME, 0, 2, PFNL_CMD_MAX);
-	genl_register_cmds(PFNL_FAMILY_NAME, pf_cmds, NL_ARRAY_LEN(pf_cmds));
+	genl_register_cmds(PFNL_FAMILY_NAME, pf_cmds, nitems(pf_cmds));
 }
 
 void

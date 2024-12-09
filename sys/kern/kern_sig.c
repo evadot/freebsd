@@ -117,7 +117,7 @@ static void	sigqueue_start(void);
 static void	sigfastblock_setpend(struct thread *td, bool resched);
 
 static uma_zone_t	ksiginfo_zone = NULL;
-struct filterops sig_filtops = {
+const struct filterops sig_filtops = {
 	.f_isfd = 0,
 	.f_attach = filt_sigattach,
 	.f_detach = filt_sigdetach,
@@ -365,6 +365,16 @@ sigqueue_start(void)
 	SIGFILLSET(fastblock_mask);
 	SIG_CANTMASK(fastblock_mask);
 	ast_register(TDA_SIG, ASTR_UNCOND, 0, ast_sig);
+
+	/*
+	 * TDA_PSELECT is for the case where the signal mask should be restored
+	 * before delivering any signals so that we do not deliver any that are
+	 * blocked by the normal thread mask.  It is mutually exclusive with
+	 * TDA_SIGSUSPEND, which should be used if we *do* want to deliver
+	 * signals that are normally blocked, e.g., if it interrupted our sleep.
+	 */
+	ast_register(TDA_PSELECT, ASTR_ASTF_REQUIRED | ASTR_TDP,
+	    TDP_OLDMASK, ast_sigsuspend);
 	ast_register(TDA_SIGSUSPEND, ASTR_ASTF_REQUIRED | ASTR_TDP,
 	    TDP_OLDMASK, ast_sigsuspend);
 }

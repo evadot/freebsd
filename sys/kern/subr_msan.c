@@ -179,6 +179,9 @@ kmsan_report_hook(const void *addr, msan_orig_t *orig, size_t size, size_t off,
 
 	if (__predict_false(KERNEL_PANICKED() || kdb_active || kmsan_reporting))
 		return;
+	if (__predict_false(curthread != NULL &&
+	    (curthread->td_pflags2 & TDP2_SAN_QUIET) != 0))
+		return;
 
 	kmsan_reporting = true;
 	__compiler_membar();
@@ -231,6 +234,9 @@ kmsan_report_inline(msan_orig_t orig, unsigned long pc)
 	int type;
 
 	if (__predict_false(KERNEL_PANICKED() || kdb_active || kmsan_reporting))
+		return;
+	if (__predict_false(curthread != NULL &&
+	    (curthread->td_pflags2 & TDP2_SAN_QUIET) != 0))
 		return;
 
 	kmsan_reporting = true;
@@ -1289,11 +1295,13 @@ MSAN_ATOMIC_FUNC_TESTANDCLEAR(32, uint32_t);
 MSAN_ATOMIC_FUNC_TESTANDCLEAR(64, uint64_t);
 MSAN_ATOMIC_FUNC_TESTANDCLEAR(int, u_int);
 MSAN_ATOMIC_FUNC_TESTANDCLEAR(long, u_long);
+MSAN_ATOMIC_FUNC_TESTANDCLEAR(ptr, uintptr_t);
 
 MSAN_ATOMIC_FUNC_TESTANDSET(32, uint32_t);
 MSAN_ATOMIC_FUNC_TESTANDSET(64, uint64_t);
 MSAN_ATOMIC_FUNC_TESTANDSET(int, u_int);
 MSAN_ATOMIC_FUNC_TESTANDSET(long, u_long);
+MSAN_ATOMIC_FUNC_TESTANDSET(ptr, uintptr_t);
 
 MSAN_ATOMIC_FUNC_SWAP(32, uint32_t);
 MSAN_ATOMIC_FUNC_SWAP(64, uint64_t);

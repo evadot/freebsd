@@ -173,6 +173,11 @@ r12au_adj_devcaps(struct rtwn_softc *sc)
 				 IEEE80211_HTC_TXLDPC;
 	}
 
+	ic->ic_htcaps |=
+	    IEEE80211_HTCAP_CHWIDTH40 /* 40 MHz channel width */
+	    | IEEE80211_HTCAP_SHORTGI40 /* short GI in 40MHz */
+	;
+
 	/* TODO: STBC, VHT etc */
 }
 
@@ -200,6 +205,7 @@ r12au_attach(struct rtwn_usb_softc *uc)
 	sc->sc_get_rssi_ofdm		= r88e_get_rssi_ofdm;
 	sc->sc_classify_intr		= r12au_classify_intr;
 	sc->sc_handle_tx_report		= r12a_ratectl_tx_complete;
+	sc->sc_handle_tx_report2	= rtwn_nop_softc_uint8_int;
 	sc->sc_handle_c2h_report	= r12a_handle_c2h_report;
 	sc->sc_check_frame		= r12a_check_frame_checksum;
 	sc->sc_rf_write			= r12a_rf_write;
@@ -290,6 +296,8 @@ r12au_attach(struct rtwn_usb_softc *uc)
 
 	sc->ntxchains			= 2;
 	sc->nrxchains			= 2;
+
+	sc->sc_ht40			= 1;
 
 	r12a_attach_private(sc);
 }

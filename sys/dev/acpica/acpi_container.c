@@ -103,8 +103,9 @@ static int
 acpi_syscont_attach(device_t dev)
 {
 
-    bus_generic_probe(dev);
-    return (bus_generic_attach(dev));
+    bus_identify_children(dev);
+    bus_attach_children(dev);
+    return (0);
 }
 
 static int

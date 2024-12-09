@@ -206,7 +206,7 @@ static int sysctl_bufspace(SYSCTL_HANDLER_ARGS);
 int vmiodirenable = TRUE;
 SYSCTL_INT(_vfs, OID_AUTO, vmiodirenable, CTLFLAG_RW, &vmiodirenable, 0,
     "Use the VM system for directory writes");
-long runningbufspace;
+static long runningbufspace;
 SYSCTL_LONG(_vfs, OID_AUTO, runningbufspace, CTLFLAG_RD, &runningbufspace, 0,
     "Amount of presently outstanding async buffer io");
 SYSCTL_PROC(_vfs, OID_AUTO, bufspace, CTLTYPE_LONG|CTLFLAG_MPSAFE|CTLFLAG_RD,
@@ -941,6 +941,16 @@ runningbufwakeup(struct buf *bp)
 	runningwakeup();
 }
 
+long
+runningbufclaim(struct buf *bp, int space)
+{
+	long old;
+
+	old = atomic_fetchadd_long(&runningbufspace, space);
+	bp->b_runningbufspace = space;
+	return (old);
+}
+
 /*
  *	waitrunningbufspace()
  *
@@ -1253,15 +1263,16 @@ bufinit(void)
 	bufspacethresh = lobufspace + (hibufspace - lobufspace) / 2;
 
 	/*
-	 * Note: The 16 MiB upper limit for hirunningspace was chosen
-	 * arbitrarily and may need further tuning. It corresponds to
-	 * 128 outstanding write IO requests (if IO size is 128 KiB),
-	 * which fits with many RAID controllers' tagged queuing limits.
+	 * Note: The upper limit for hirunningspace was chosen arbitrarily and
+	 * may need further tuning. It corresponds to 128 outstanding write IO
+	 * requests, which fits with many RAID controllers' tagged queuing
+	 * limits.
+	 *
 	 * The lower 1 MiB limit is the historical upper limit for
 	 * hirunningspace.
 	 */
 	hirunningspace = lmax(lmin(roundup(hibufspace / 64, maxbcachebuf),
-	    16 * 1024 * 1024), 1024 * 1024);
+	    128 * maxphys), 1024 * 1024);
 	lorunningspace = roundup((hirunningspace * 2) / 3, maxbcachebuf);
 
 	/*
@@ -2351,8 +2362,7 @@ bufwrite(struct buf *bp)
 	/*
 	 * Normal bwrites pipeline writes
 	 */
-	bp->b_runningbufspace = bp->b_bufsize;
-	space = atomic_fetchadd_long(&runningbufspace, bp->b_runningbufspace);
+	space = runningbufclaim(bp, bp->b_bufsize);
 
 #ifdef RACCT
 	if (racct_enable) {

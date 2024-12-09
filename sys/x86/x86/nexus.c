@@ -262,7 +262,7 @@ nexus_attach(device_t dev)
 {
 
 	nexus_init_resources();
-	bus_generic_probe(dev);
+	bus_identify_children(dev);
 
 	/*
 	 * Explicitly add the legacy0 device here.  Other platform
@@ -271,7 +271,7 @@ nexus_attach(device_t dev)
 	 */
 	if (BUS_ADD_CHILD(dev, 10, "legacy", 0) == NULL)
 		panic("legacy: could not attach");
-	bus_generic_attach(dev);
+	bus_attach_children(dev);
 	return (0);
 }
 

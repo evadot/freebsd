@@ -52,6 +52,7 @@
 #include <machine/cpufunc.h>
 #include <machine/elf.h>
 #include <machine/md_var.h>
+#include <machine/thead.h>
 
 #ifdef FDT
 #include <dev/fdt/fdt_common.h>
@@ -463,6 +464,38 @@ identify_cpu_ids(struct cpu_desc *desc)
 	}
 }
 
+static void
+handle_thead_quirks(u_int cpu, struct cpu_desc *desc)
+{
+	if (cpu != 0)
+		return;
+
+	/*
+	 * For now, it is assumed that T-HEAD CPUs have both marchid and mimpid
+	 * values of zero (although we leave this unchecked). It is true in
+	 * practice for the early generations of this hardware (C906, C910,
+	 * C920). In the future, the identity checks may need to become more
+	 * granular, but until then all known T-HEAD quirks are applied
+	 * indiscriminantly.
+	 *
+	 * Note: any changes in this function relating to has_errata_thead_pbmt
+	 * may need to be applied to get_pte_fixup_bits (in locore.S) as well.
+	 */
+
+	has_errata_thead_pbmt = true;
+	thead_setup_cache();
+}
+
+static void
+handle_cpu_quirks(u_int cpu, struct cpu_desc *desc)
+{
+	switch (mvendorid) {
+	case MVENDORID_THEAD:
+		handle_thead_quirks(cpu, desc);
+		break;
+	}
+}
+
 void
 identify_cpu(u_int cpu)
 {
@@ -472,6 +505,7 @@ identify_cpu(u_int cpu)
 	identify_cpu_features(cpu, desc);
 
 	update_global_capabilities(cpu, desc);
+	handle_cpu_quirks(cpu, desc);
 }
 
 void

@@ -935,15 +935,15 @@ struct {
 	{0x6402, "Chelsio T6225-SO-CR"},	/* 2 x 10/25G, nomem */
 	{0x6403, "Chelsio T6425-CR"},		/* 4 x 10/25G */
 	{0x6404, "Chelsio T6425-SO-CR"},	/* 4 x 10/25G, nomem */
-	{0x6405, "Chelsio T6225-OCP-SO"},	/* 2 x 10/25G, nomem */
-	{0x6406, "Chelsio T62100-OCP-SO"},	/* 2 x 40/50/100G, nomem */
+	{0x6405, "Chelsio T6225-SO-OCP3"},	/* 2 x 10/25G, nomem */
+	{0x6406, "Chelsio T6225-OCP3"},		/* 2 x 10/25G */
 	{0x6407, "Chelsio T62100-LP-CR"},	/* 2 x 40/50/100G */
 	{0x6408, "Chelsio T62100-SO-CR"},	/* 2 x 40/50/100G, nomem */
 	{0x6409, "Chelsio T6210-BT"},		/* 2 x 10GBASE-T */
 	{0x640d, "Chelsio T62100-CR"},		/* 2 x 40/50/100G */
 	{0x6410, "Chelsio T6-DBG-100"},		/* 2 x 40/50/100G, debug */
 	{0x6411, "Chelsio T6225-LL-CR"},	/* 2 x 10/25G */
-	{0x6414, "Chelsio T61100-OCP-SO"},	/* 1 x 40/50/100G, nomem */
+	{0x6414, "Chelsio T62100-SO-OCP3"},	/* 2 x 40/50/100G, nomem */
 	{0x6415, "Chelsio T6201-BT"},		/* 2 x 1000BASE-T */
 
 	/* Custom */
@@ -1624,11 +1624,7 @@ t4_attach(device_t dev)
 		goto done;
 	}
 
-	rc = bus_generic_probe(dev);
-	if (rc != 0) {
-		device_printf(dev, "failed to probe child drivers: %d\n", rc);
-		goto done;
-	}
+	bus_identify_children(dev);
 
 	/*
 	 * Ensure thread-safe mailbox access (in debug builds).
@@ -1639,12 +1635,7 @@ t4_attach(device_t dev)
 	 */
 	sc->flags |= CHK_MBOX_ACCESS;
 
-	rc = bus_generic_attach(dev);
-	if (rc != 0) {
-		device_printf(dev,
-		    "failed to attach all child ports: %d\n", rc);
-		goto done;
-	}
+	bus_attach_children(dev);
 	t4_calibration_start(sc);
 
 	device_printf(dev,
@@ -2779,7 +2770,7 @@ cxgbe_attach(device_t dev)
 
 	cxgbe_sysctls(pi);
 
-	bus_generic_attach(dev);
+	bus_attach_children(dev);
 
 	return (0);
 }

@@ -494,6 +494,7 @@ enum {
 	TDA_RACCT,
 	TDA_MOD1,		/* For third party use, before signals are */
 	TAD_MOD2,		/* processed .. */
+	TDA_PSELECT,		/* For discarding temporary signal mask */
 	TDA_SIG,
 	TDA_KTRACE,
 	TDA_SUSPEND,
@@ -560,13 +561,14 @@ enum {
 #define	TDP_RESETSPUR	0x04000000 /* Reset spurious page fault history. */
 #define	TDP_NERRNO	0x08000000 /* Last errno is already in td_errno */
 #define	TDP_UIOHELD	0x10000000 /* Current uio has pages held in td_ma */
-#define	TDP_UNUSED0	0x20000000 /* UNUSED */
+#define	TDP_EFIRT	0x20000000 /* In firmware (EFI RT) call */
 #define	TDP_EXECVMSPC	0x40000000 /* Execve destroyed old vmspace */
 #define	TDP_SIGFASTPENDING 0x80000000 /* Pending signal due to sigfastblock */
 
 #define	TDP2_SBPAGES	0x00000001 /* Owns sbusy on some pages */
 #define	TDP2_COMPAT32RB	0x00000002 /* compat32 ABI for robust lists */
 #define	TDP2_ACCT	0x00000004 /* Doing accounting */
+#define	TDP2_SAN_QUIET	0x00000008 /* Disable warnings from K(A|M)SAN */
 
 /*
  * Reasons that the current thread can not be run yet.
