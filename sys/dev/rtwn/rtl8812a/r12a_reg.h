@@ -45,6 +45,10 @@
 #define R12A_AMPDU_MAX_TIME		0x456
 #define R12A_AMPDU_MAX_LENGTH		R92C_AGGLEN_LMT
 #define R12A_DATA_SEC			0x483
+#define R12A_DATA_SEC_TXSC_20M_M	0x0000000f
+#define R12A_DATA_SEC_TXSC_20M_S	0
+#define R12A_DATA_SEC_TXSC_40M_M	0x000000f0
+#define R12A_DATA_SEC_TXSC_40M_S	4
 #define R12A_ARFR_2G(i)			(0x48c + (i) * 8)
 #define R12A_HT_SINGLE_AMPDU		0x4c7
 
@@ -120,6 +124,7 @@
 #define R12A_TXAGC_NSS2IX5_2IX2(chain)	(0xc48 + (chain) * 0x200)
 #define R12A_TXAGC_NSS2IX9_2IX6(chain)	(0xc4c + (chain) * 0x200)
 #define R12A_INITIAL_GAIN(chain)	(0xc50 + (chain) * 0x200)
+#define R12A_TX_PWR_TRAINING(chain)	(0xc54 + (chain) * 0x200)
 #define R12A_AFE_POWER_1(chain)		(0xc60 + (chain) * 0x200)
 #define R12A_AFE_POWER_2(chain)		(0xc64 + (chain) * 0x200)
 #define R12A_SLEEP_NAV(chain)		(0xc80 + (chain) * 0x200)

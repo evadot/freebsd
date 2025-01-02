@@ -493,14 +493,14 @@ enum {
 	TDA_KQUEUE,
 	TDA_RACCT,
 	TDA_MOD1,		/* For third party use, before signals are */
-	TAD_MOD2,		/* processed .. */
+	TDA_MOD2,		/* processed .. */
 	TDA_PSELECT,		/* For discarding temporary signal mask */
 	TDA_SIG,
 	TDA_KTRACE,
 	TDA_SUSPEND,
 	TDA_SIGSUSPEND,
 	TDA_MOD3,		/* .. and after */
-	TAD_MOD4,
+	TDA_MOD4,
 	TDA_MAX,
 };
 #define	TDAI(tda)		(1U << (tda))
@@ -886,6 +886,9 @@ struct proc {
 #define	P2_MEMBAR_GLOBE		0x00400000	/* membar global expedited
 						   registered */
 
+#define	P2_LOGSIGEXIT_ENABLE	0x00800000	/* Disable logging on sigexit */
+#define	P2_LOGSIGEXIT_CTL	0x01000000	/* Override kern.logsigexit */
+
 /* Flags protected by proctree_lock, kept in p_treeflags. */
 #define	P_TREE_ORPHANED		0x00000001	/* Reparented, on orphan list */
 #define	P_TREE_FIRST_ORPHAN	0x00000002	/* First element of orphan
@@ -1176,6 +1179,7 @@ int	p_canwait(struct thread *td, struct proc *p);
 struct	pargs *pargs_alloc(int len);
 void	pargs_drop(struct pargs *pa);
 void	pargs_hold(struct pargs *pa);
+int	pgrp_calc_jobc(struct pgrp *pgrp);
 void	proc_add_orphan(struct proc *child, struct proc *parent);
 int	proc_get_binpath(struct proc *p, char *binname, char **fullpath,
 	    char **freepath);

@@ -178,6 +178,7 @@ struct rtwn_softc {
 	int			sc_hwcrypto;
 	int			sc_ratectl_sysctl;
 	int			sc_ratectl;
+	uint32_t		sc_reg_addr;
 
 	uint8_t			sc_detached;
 	uint8_t			sc_flags;
@@ -329,6 +330,8 @@ struct rtwn_softc {
 	uint8_t		(*sc_rx_radiotap_flags)(const void *);
 	void		(*sc_beacon_init)(struct rtwn_softc *, void *, int);
 	void		(*sc_beacon_enable)(struct rtwn_softc *, int, int);
+	void		(*sc_sta_beacon_enable)(struct rtwn_softc *, int,
+			    bool);
 	void		(*sc_beacon_set_rate)(void *, int);
 	void		(*sc_beacon_select)(struct rtwn_softc *, int);
 	void		(*sc_set_chan)(struct rtwn_softc *,
@@ -366,6 +369,8 @@ struct rtwn_softc {
 	void		(*sc_init_antsel)(struct rtwn_softc *);
 	void		(*sc_post_init)(struct rtwn_softc *);
 	int		(*sc_init_bcnq1_boundary)(struct rtwn_softc *);
+	int		(*sc_set_tx_power)(struct rtwn_softc *,
+			    struct ieee80211vap *);
 
 	const uint8_t			*chan_list_5ghz[3];
 	int				chan_num_5ghz[3];
@@ -396,6 +401,7 @@ struct rtwn_softc {
 	uint16_t			rx_dma_size;
 
 	int				macid_limit;
+	int				macid_rpt2_max_num;
 	int				cam_entry_limit;
 	int				fwsize_limit;
 	int				temp_delta;
@@ -562,6 +568,8 @@ void	rtwn_suspend(struct rtwn_softc *);
 	(((_sc)->sc_beacon_init)((_sc), (_buf), (_id)))
 #define rtwn_beacon_enable(_sc, _id, _enable) \
 	(((_sc)->sc_beacon_enable)((_sc), (_id), (_enable)))
+#define rtwn_sta_beacon_enable(_sc, _id, _enable) \
+	(((_sc)->sc_sta_beacon_enable)((_sc), (_id), (_enable)))
 #define rtwn_beacon_set_rate(_sc, _buf, _is5ghz) \
 	(((_sc)->sc_beacon_set_rate)((_buf), (_is5ghz)))
 #define rtwn_beacon_select(_sc, _id) \
@@ -590,6 +598,8 @@ void	rtwn_suspend(struct rtwn_softc *);
 	(((_sc)->sc_post_init)((_sc)))
 #define rtwn_init_bcnq1_boundary(_sc) \
 	(((_sc)->sc_init_bcnq1_boundary)((_sc)))
+#define rtwn_set_tx_power(_sc, _vap) \
+	(((_sc)->sc_set_tx_power)((_sc), (_vap)))
 
 /*
  * Methods to access subfields in registers.

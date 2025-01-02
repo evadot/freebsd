@@ -223,6 +223,7 @@ r21au_attach(struct rtwn_usb_softc *uc)
 #endif
 	sc->sc_beacon_init		= r21a_beacon_init;
 	sc->sc_beacon_enable		= r92c_beacon_enable;
+	sc->sc_sta_beacon_enable	= r12a_sta_beacon_enable;
 	sc->sc_beacon_set_rate		= r12a_beacon_set_rate;
 	sc->sc_beacon_select		= r21a_beacon_select;
 	sc->sc_temp_measure		= r88e_temp_measure;
@@ -237,6 +238,7 @@ r21au_attach(struct rtwn_usb_softc *uc)
 	sc->sc_init_antsel		= r12a_init_antsel;
 	sc->sc_post_init		= r12au_post_init;
 	sc->sc_init_bcnq1_boundary	= r21a_init_bcnq1_boundary;
+	sc->sc_set_tx_power		= rtwn_nop_int_softc_vap;
 
 	sc->chan_list_5ghz[0]		= r12a_chan_5ghz_0;
 	sc->chan_list_5ghz[1]		= r12a_chan_5ghz_1;

@@ -133,6 +133,8 @@ dump_state_key(struct nl_writer *nw, int attr, const struct pf_state_key *key)
 	dump_addr(nw, PF_STK_ADDR1, &key->addr[1], key->af);
 	nlattr_add_u16(nw, PF_STK_PORT0, key->port[0]);
 	nlattr_add_u16(nw, PF_STK_PORT1, key->port[1]);
+	nlattr_add_u8(nw, PF_STK_AF, key->af);
+	nlattr_add_u16(nw, PF_STK_PROTO, key->proto);
 
 	nlattr_set_len(nw, off);
 
@@ -678,7 +680,7 @@ static const struct nlattr_parser nla_p_rule[] = {
 	{ .type = PF_RT_TAGNAME, .off = _OUT(tagname), .arg = (void *)PF_TAG_NAME_SIZE, .cb = nlattr_get_chara },
 	{ .type = PF_RT_MATCH_TAGNAME, .off = _OUT(match_tagname), .arg = (void *)PF_TAG_NAME_SIZE, .cb = nlattr_get_chara },
 	{ .type = PF_RT_OVERLOAD_TBLNAME, .off = _OUT(overload_tblname), .arg = (void *)PF_TABLE_NAME_SIZE, .cb = nlattr_get_chara },
-	{ .type = PF_RT_RPOOL, .off = _OUT(rpool), .arg = &pool_parser, .cb = nlattr_get_nested },
+	{ .type = PF_RT_RPOOL_RDR, .off = _OUT(rdr), .arg = &pool_parser, .cb = nlattr_get_nested },
 	{ .type = PF_RT_OS_FINGERPRINT, .off = _OUT(os_fingerprint), .cb = nlattr_get_uint32 },
 	{ .type = PF_RT_RTABLEID, .off = _OUT(rtableid), .cb = nlattr_get_uint32 },
 	{ .type = PF_RT_TIMEOUT, .off = _OUT(timeout), .arg = &timeout_parser, .cb = nlattr_get_nested_timeouts },
@@ -732,6 +734,8 @@ static const struct nlattr_parser nla_p_rule[] = {
 	{ .type = PF_RT_DIVERT_PORT, .off = _OUT(divert.port), .cb = nlattr_get_uint16 },
 	{ .type = PF_RT_RCV_IFNAME, .off = _OUT(rcv_ifname), .arg = (void *)IFNAMSIZ, .cb = nlattr_get_chara },
 	{ .type = PF_RT_MAX_SRC_CONN, .off = _OUT(max_src_conn), .cb = nlattr_get_uint32 },
+	{ .type = PF_RT_RPOOL_NAT, .off = _OUT(nat), .arg = &pool_parser, .cb = nlattr_get_nested },
+	{ .type = PF_RT_NAF, .off = _OUT(naf), .cb = nlattr_get_uint8 },
 };
 NL_DECLARE_ATTR_PARSER(rule_parser, nla_p_rule);
 #undef _OUT
@@ -915,7 +919,8 @@ pf_handle_getrule(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	nlattr_add_string(nw, PF_RT_TAGNAME, rule->tagname);
 	nlattr_add_string(nw, PF_RT_MATCH_TAGNAME, rule->match_tagname);
 	nlattr_add_string(nw, PF_RT_OVERLOAD_TBLNAME, rule->overload_tblname);
-	nlattr_add_pool(nw, PF_RT_RPOOL, &rule->rpool);
+	nlattr_add_pool(nw, PF_RT_RPOOL_RDR, &rule->rdr);
+	nlattr_add_pool(nw, PF_RT_RPOOL_NAT, &rule->nat);
 	nlattr_add_u32(nw, PF_RT_OS_FINGERPRINT, rule->os_fingerprint);
 	nlattr_add_u32(nw, PF_RT_RTABLEID, rule->rtableid);
 	nlattr_add_timeout(nw, PF_RT_TIMEOUT, rule->timeout);
@@ -958,6 +963,7 @@ pf_handle_getrule(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	nlattr_add_u8(nw, PF_RT_KEEP_STATE, rule->keep_state);
 
 	nlattr_add_u8(nw, PF_RT_AF, rule->af);
+	nlattr_add_u8(nw, PF_RT_NAF, rule->naf);
 	nlattr_add_u8(nw, PF_RT_PROTO, rule->proto);
 	nlattr_add_u8(nw, PF_RT_TYPE, rule->type);
 	nlattr_add_u8(nw, PF_RT_CODE, rule->code);
@@ -1528,7 +1534,7 @@ static const struct nlattr_parser nla_p_pool_addr[] = {
 NL_DECLARE_ATTR_PARSER(pool_addr_parser, nla_p_pool_addr);
 #undef _OUT
 
-#define	_OUT(_field)	offsetof(struct pfioc_pooladdr, _field)
+#define	_OUT(_field)	offsetof(struct pf_nl_pooladdr, _field)
 static const struct nlattr_parser nla_p_add_addr[] = {
 	{ .type = PF_AA_ACTION, .off = _OUT(action), .cb = nlattr_get_uint32 },
 	{ .type = PF_AA_TICKET, .off = _OUT(ticket), .cb = nlattr_get_uint32 },
@@ -1539,6 +1545,7 @@ static const struct nlattr_parser nla_p_add_addr[] = {
 	{ .type = PF_AA_AF, .off = _OUT(af), .cb = nlattr_get_uint8 },
 	{ .type = PF_AA_ANCHOR, .off = _OUT(anchor), .arg = (void *)MAXPATHLEN, .cb = nlattr_get_chara },
 	{ .type = PF_AA_ADDR, .off = _OUT(addr), .arg = &pool_addr_parser, .cb = nlattr_get_nested },
+	{ .type = PF_AA_WHICH, .off = _OUT(which), .cb = nlattr_get_uint32 },
 };
 static const struct nlfield_parser nlf_p_add_addr[] = {};
 #undef _OUT
@@ -1547,12 +1554,15 @@ NL_DECLARE_PARSER(add_addr_parser, struct genlmsghdr, nlf_p_add_addr, nla_p_add_
 static int
 pf_handle_add_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 {
-	struct pfioc_pooladdr attrs = { 0 };
+	struct pf_nl_pooladdr attrs = { 0 };
 	int error;
 
 	error = nl_parse_nlmsg(hdr, &add_addr_parser, npt, &attrs);
 	if (error != 0)
 		return (error);
+
+	if (attrs.which == 0)
+		attrs.which = PF_RDR;
 
 	error = pf_ioctl_add_addr(&attrs);
 
@@ -1562,7 +1572,7 @@ pf_handle_add_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 static int
 pf_handle_get_addrs(struct nlmsghdr *hdr, struct nl_pstate *npt)
 {
-	struct pfioc_pooladdr attrs = { 0 };
+	struct pf_nl_pooladdr attrs = { 0 };
 	struct nl_writer *nw = npt->nw;
 	struct genlmsghdr *ghdr_new;
 	int error;
@@ -1570,6 +1580,9 @@ pf_handle_get_addrs(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	error = nl_parse_nlmsg(hdr, &add_addr_parser, npt, &attrs);
 	if (error != 0)
 		return (error);
+
+	if (attrs.which == 0)
+		attrs.which = PF_RDR;
 
 	error = pf_ioctl_get_addrs(&attrs);
 	if (error != 0)
@@ -1596,7 +1609,7 @@ pf_handle_get_addrs(struct nlmsghdr *hdr, struct nl_pstate *npt)
 static int
 pf_handle_get_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 {
-	struct pfioc_pooladdr attrs = { 0 };
+	struct pf_nl_pooladdr attrs = { 0 };
 	struct nl_writer *nw = npt->nw;
 	struct genlmsghdr *ghdr_new;
 	int error;
@@ -1604,6 +1617,9 @@ pf_handle_get_addr(struct nlmsghdr *hdr, struct nl_pstate *npt)
 	error = nl_parse_nlmsg(hdr, &add_addr_parser, npt, &attrs);
 	if (error != 0)
 		return (error);
+
+	if (attrs.which == 0)
+		attrs.which = PF_RDR;
 
 	error = pf_ioctl_get_addr(&attrs);
 	if (error != 0)
@@ -1780,6 +1796,7 @@ pf_handle_get_srcnodes(struct nlmsghdr *hdr, struct nl_pstate *npt)
 			nlattr_add_u32(nw, PF_SN_STATES, n->states);
 			nlattr_add_u32(nw, PF_SN_CONNECTIONS, n->conn);
 			nlattr_add_u8(nw, PF_SN_AF, n->af);
+			nlattr_add_u8(nw, PF_SN_NAF, n->naf);
 			nlattr_add_u8(nw, PF_SN_RULE_TYPE, n->ruletype);
 
 			nlattr_add_u64(nw, PF_SN_CREATION, secs - n->creation);

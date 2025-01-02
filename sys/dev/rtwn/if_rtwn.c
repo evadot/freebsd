@@ -232,6 +232,7 @@ rtwn_attach(struct rtwn_softc *sc)
 		| IEEE80211_C_WME		/* 802.11e */
 		| IEEE80211_C_SWAMSDUTX		/* Do software A-MSDU TX */
 		| IEEE80211_C_FF		/* Atheros fast-frames */
+		| IEEE80211_C_TXPMGT		/* TX power control */
 		;
 
 	if (sc->sc_hwcrypto != RTWN_CRYPTO_SW) {
@@ -320,11 +321,45 @@ rtwn_radiotap_attach(struct rtwn_softc *sc)
 	    &rxtap->wr_ihdr, sizeof(*rxtap), RTWN_RX_RADIOTAP_PRESENT);
 }
 
+#ifdef	RTWN_DEBUG
+static int
+rtwn_sysctl_reg_readwrite(SYSCTL_HANDLER_ARGS)
+{
+	struct rtwn_softc *sc = arg1;
+	int error;
+	uint32_t val;
+
+	if (sc->sc_reg_addr > 0xffff)
+		return (EINVAL);
+
+	RTWN_LOCK(sc);
+	val = rtwn_read_4(sc, sc->sc_reg_addr);
+	RTWN_UNLOCK(sc);
+	error = sysctl_handle_int(oidp, &val, 0, req);
+	if (error || !req->newptr)
+		return (error);
+	RTWN_LOCK(sc);
+	rtwn_write_4(sc, sc->sc_reg_addr, val);
+	RTWN_UNLOCK(sc);
+	return (0);
+}
+#endif	/* RTWN_DEBUG */
+
 void
 rtwn_sysctlattach(struct rtwn_softc *sc)
 {
 	struct sysctl_ctx_list *ctx = device_get_sysctl_ctx(sc->sc_dev);
 	struct sysctl_oid *tree = device_get_sysctl_tree(sc->sc_dev);
+
+	sc->sc_reg_addr = 0;
+#ifdef	RTWN_DEBUG
+	SYSCTL_ADD_UINT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	    "reg_addr", CTLFLAG_RW, &sc->sc_reg_addr,
+	    sc->sc_reg_addr, "debug register address");
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	   "reg_val", CTLTYPE_INT | CTLFLAG_RW, sc, 0,
+	    rtwn_sysctl_reg_readwrite, "I", "debug register read/write");
+#endif	/* RTWN_DEBUG */
 
 	sc->sc_ht40 = 0;
 	SYSCTL_ADD_INT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
@@ -696,6 +731,14 @@ rtwn_ioctl_reset(struct ieee80211vap *vap, u_long cmd)
 	case IEEE80211_IOC_LDPC:
 		error = 0;
 		break;
+	case IEEE80211_IOC_TXPOWER:
+		{
+			struct rtwn_softc *sc = vap->iv_ic->ic_softc;
+			RTWN_LOCK(sc);
+			error = rtwn_set_tx_power(sc, vap);
+			RTWN_UNLOCK(sc);
+		}
+		break;
 	default:
 		error = ENETRESET;
 		break;
@@ -959,6 +1002,8 @@ rtwn_tsf_sync_enable(struct rtwn_softc *sc, struct ieee80211vap *vap)
 		/* Enable TSF synchronization. */
 		rtwn_setbits_1(sc, R92C_BCN_CTRL(uvp->id),
 		    R92C_BCN_CTRL_DIS_TSF_UDT0, 0);
+		/* Enable TSF beacon handling, needed for RA */
+		rtwn_sta_beacon_enable(sc, uvp->id, true);
 		break;
 	case IEEE80211_M_IBSS:
 		ieee80211_runtask(ic, &uvp->tsf_sync_adhoc_task);
@@ -1100,6 +1145,7 @@ rtwn_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 
 		/* Disable TSF synchronization / beaconing. */
 		rtwn_beacon_enable(sc, uvp->id, 0);
+		rtwn_sta_beacon_enable(sc, uvp->id, false);
 		rtwn_setbits_1(sc, R92C_BCN_CTRL(uvp->id),
 		    0, R92C_BCN_CTRL_DIS_TSF_UDT0);
 
@@ -1193,7 +1239,8 @@ rtwn_calc_basicrates(struct rtwn_softc *sc)
 		struct rtwn_vap *rvp;
 		struct ieee80211vap *vap;
 		struct ieee80211_node *ni;
-		uint32_t rates;
+		struct ieee80211_htrateset *rs_ht;
+		uint32_t rates = 0, htrates = 0;
 
 		rvp = sc->vaps[i];
 		if (rvp == NULL || rvp->curr_mode == R92C_MSR_NOLINK)
@@ -1204,15 +1251,45 @@ rtwn_calc_basicrates(struct rtwn_softc *sc)
 			continue;
 
 		ni = ieee80211_ref_node(vap->iv_bss);
-		rtwn_get_rates(sc, &ni->ni_rates, NULL, &rates, NULL, 1);
+		if (ni->ni_flags & IEEE80211_NODE_HT)
+			rs_ht = &ni->ni_htrates;
+		else
+			rs_ht = NULL;
+		/*
+		 * Only fetches basic rates; fetch 802.11abg and 11n basic
+		 * rates
+		 */
+		rtwn_get_rates(sc, &ni->ni_rates, rs_ht, &rates, &htrates,
+		    NULL, 1);
+
+		/*
+		 * We need at least /an/ OFDM and/or MCS rate for HT
+		 * operation, or the MAC will generate MCS7 ACK/Block-ACK
+		 * frames and thus performance will suffer.
+		 */
+		if (ni->ni_flags & IEEE80211_NODE_HT) {
+			htrates |= 0x01; /* MCS0 */
+			rates |= (1 << RTWN_RIDX_OFDM6);
+		}
+
 		basicrates |= rates;
+		basicrates |= (htrates << RTWN_RIDX_HT_MCS_SHIFT);
+
+		/* Filter out undesired high rates */
+		if (ni->ni_chan != IEEE80211_CHAN_ANYC &&
+		    IEEE80211_IS_CHAN_5GHZ(ni->ni_chan))
+			basicrates &= R92C_RRSR_RATE_MASK_5GHZ;
+		else
+			basicrates &= R92C_RRSR_RATE_MASK_2GHZ;
+
 		ieee80211_free_node(ni);
 	}
+
 
 	if (basicrates == 0)
 		return;
 
-	/* XXX initial RTS rate? */
+	/* XXX also set initial RTS rate? */
 	rtwn_set_basicrates(sc, basicrates);
 }
 

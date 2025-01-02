@@ -311,6 +311,7 @@ MAN+=	abort2.2 \
 	semget.2 \
 	semop.2 \
 	send.2 \
+	setcred.2 \
 	setfib.2 \
 	sendfile.2 \
 	setgroups.2 \
@@ -453,6 +454,7 @@ MLINKS+=jail.2 jail_attach.2 \
 	jail.2 jail_set.2
 MLINKS+=kldunload.2 kldunloadf.2
 MLINKS+=kqueue.2 kevent.2 \
+	kqueue.2 kqueue1.2 \
 	kqueue.2 kqueuex.2 \
 	kqueue.2 EV_SET.3
 MLINKS+=link.2 linkat.2

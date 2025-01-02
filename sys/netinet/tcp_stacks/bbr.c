@@ -4614,7 +4614,7 @@ need_retran:
 	 */
 	if (collapsed_win == 0) {
 		rsm = TAILQ_LAST_FAST(&bbr->r_ctl.rc_map, bbr_sendmap, r_next);
-		if (rsm && (BBR_ACKED | BBR_HAS_FIN)) {
+		if (rsm && (rsm->r_flags & (BBR_ACKED | BBR_HAS_FIN))) {
 			rsm = bbr_find_high_nonack(bbr, rsm);
 		}
 		if (rsm == NULL) {
@@ -6329,8 +6329,6 @@ tcp_bbr_xmit_timer_commit(struct tcp_bbr *bbr, struct tcpcb *tp, uint32_t cts)
 	}
 	/* Round it up */
 	rtt_ticks = USEC_2_TICKS((rtt + (USECS_IN_MSEC - 1)));
-	if (rtt_ticks == 0)
-		rtt_ticks = 1;
 	if (tp->t_srtt != 0) {
 		/*
 		 * srtt is stored as fixed point with 5 bits after the
@@ -7324,11 +7322,9 @@ bbr_log_ack(struct tcpcb *tp, struct tcpopt *to, struct tcphdr *th,
 	p_maxseg = min(bbr->r_ctl.rc_pace_max_segs, maxseg);
 	th_ack = th->th_ack;
 	if (SEQ_GT(th_ack, tp->snd_una)) {
-		acked = th_ack - tp->snd_una;
 		bbr_log_progress_event(bbr, tp, ticks, PROGRESS_UPDATE, __LINE__);
 		bbr->rc_tp->t_acktime = ticks;
-	} else
-		acked = 0;
+	}
 	if (SEQ_LEQ(th_ack, tp->snd_una)) {
 		/* Only sent here for sack processing */
 		goto proc_sack;
@@ -14589,6 +14585,7 @@ bbr_get_sockopt(struct tcpcb *tp, struct sockopt *sopt)
 {
 	struct inpcb *inp = tptoinpcb(tp);
 	struct tcp_bbr *bbr;
+	uint64_t loptval;
 	int32_t error, optval;
 
 	bbr = (struct tcp_bbr *)tp->t_fb_ptr;
@@ -14649,7 +14646,7 @@ bbr_get_sockopt(struct tcpcb *tp, struct sockopt *sopt)
 		optval = bbr->rc_loss_exit;
 		break;
 	case TCP_BBR_USEDEL_RATE:
-		error = EINVAL;
+		loptval = get_filter_value(&bbr->r_ctl.rc_delrate);
 		break;
 	case TCP_BBR_MIN_RTO:
 		optval = bbr->r_ctl.rc_min_rto_ms;
@@ -14733,7 +14730,10 @@ bbr_get_sockopt(struct tcpcb *tp, struct sockopt *sopt)
 		break;
 	}
 	INP_WUNLOCK(inp);
-	error = sooptcopyout(sopt, &optval, sizeof optval);
+	if (sopt->sopt_name == TCP_BBR_USEDEL_RATE)
+		error = sooptcopyout(sopt, &loptval, sizeof loptval);
+	else
+		error = sooptcopyout(sopt, &optval, sizeof optval);
 	return (error);
 }
 
