@@ -1789,7 +1789,7 @@ t4_detach_common(device_t dev)
 	}
 
 	if (device_is_attached(dev)) {
-		rc = bus_generic_detach(dev);
+		rc = bus_detach_children(dev);
 		if (rc) {
 			device_printf(dev,
 			    "failed to detach child devices: %d\n", rc);
@@ -1807,8 +1807,6 @@ t4_detach_common(device_t dev)
 		pi = sc->port[i];
 		if (pi) {
 			t4_free_vi(sc, sc->mbox, sc->pf, 0, pi->vi[0].viid);
-			if (pi->dev)
-				device_delete_child(dev, pi->dev);
 
 			mtx_destroy(&pi->pi_lock);
 			free(pi->vi, M_CXGBE);
@@ -2816,7 +2814,6 @@ cxgbe_detach(device_t dev)
 	rc = bus_generic_detach(dev);
 	if (rc)
 		return (rc);
-	device_delete_children(dev);
 
 	sysctl_ctx_free(&pi->ctx);
 	begin_vi_detach(sc, &pi->vi[0]);

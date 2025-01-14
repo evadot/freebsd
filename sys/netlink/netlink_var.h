@@ -147,7 +147,6 @@ void nl_buf_free(struct nl_buf *nb);
 struct genl_family {
 	const char	*family_name;
 	uint16_t	family_hdrsize;
-	uint16_t	family_id;
 	uint16_t	family_version;
 	uint16_t	family_attr_max;
 	uint16_t	family_cmd_size;
@@ -168,7 +167,10 @@ struct genl_group *genl_get_group(uint32_t group_id);
 
 #define	MIN_GROUP_NUM	48
 
+#define	CTRL_FAMILY_ID		0
 #define	CTRL_FAMILY_NAME	"nlctrl"
+#define	CTRL_GROUP_ID		0
+#define	CTRL_GROUP_NAME		"notify"
 
 struct ifnet;
 struct nl_parsed_link;
@@ -187,7 +189,7 @@ struct nl_function_wrapper {
 	bool (*nl_writer_unicast)(struct nl_writer *nw, size_t size,
 	    struct nlpcb *nlp, bool waitok);
 	bool (*nl_writer_group)(struct nl_writer *nw, size_t size,
-	    uint16_t protocol, uint16_t group_id, bool waitok);
+	    uint16_t protocol, uint16_t group_id, int priv, bool waitok);
 	bool (*nlmsg_end_dump)(struct nl_writer *nw, int error, struct nlmsghdr *hdr);
 	int (*nl_modify_ifp_generic)(struct ifnet *ifp, struct nl_parsed_link *lattrs,
 	    const struct nlattr_bmask *bm, struct nl_pstate *npt);

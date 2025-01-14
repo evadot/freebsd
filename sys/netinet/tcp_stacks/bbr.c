@@ -607,7 +607,7 @@ activate_rxt:
 			TCPT_RANGESET_NOSLOP(to, tov,
 			    (bbr->r_ctl.rc_min_rto_ms * MS_IN_USEC),
 			    (bbr->rc_max_rto_sec * USECS_IN_SECOND));
-			bbr_log_timer_var(bbr, 2, cts, 0, srtt, 0, to);
+			bbr_log_timer_var(bbr, 2, cts, 0, bbr_get_rtt(bbr, BBR_SRTT), 0, to);
 			return (to);
 		}
 		return (0);
@@ -978,14 +978,6 @@ bbr_timer_audit(struct tcpcb *tp, struct tcp_bbr *bbr, uint32_t cts, struct sock
 				 * and we do
 				 */
 				return;
-		} else if (sbavail(&inp->inp_socket->so_snd) &&
-		    (tmr_up == PACE_TMR_RXT)) {
-			/*
-			 * if we hit enobufs then we would expect the
-			 * possibility of nothing outstanding and the RXT up
-			 * (and the hptsi timer).
-			 */
-			return;
 		} else if (((V_tcp_always_keepalive ||
 			    inp->inp_socket->so_options & SO_KEEPALIVE) &&
 			    (tp->t_state <= TCPS_CLOSING)) &&
@@ -2993,9 +2985,6 @@ use_initial_window:
 		/* We should not be at 0, go to the initial window then  */
 		goto use_initial_window;
 	}
-	if (bw < 1)
-		/* Probably should panic */
-		bw = 1;
 	if (bw < min_bw)
 		bw = min_bw;
 	return (bw);
@@ -3843,7 +3832,7 @@ bbr_post_recovery(struct tcpcb *tp)
 		else if (bbr->r_ctl.rc_delivered == 0)
 			lr2use = 1000;
 		else {
-			lr2use = bbr->r_ctl.rc_lost * 1000;
+			lr2use = (uint64_t)bbr->r_ctl.rc_lost * (uint64_t)1000;
 			lr2use /= bbr->r_ctl.rc_delivered;
 		}
 		lr2use += bbr->r_ctl.recovery_lr;
@@ -5553,7 +5542,7 @@ lost_rate:
 		bbr_type_log_hdwr_pacing(bbr,
 					 bbr->r_ctl.crte->ptbl->rs_ifp,
 					 rate,
-					 ((bbr->r_ctl.crte == NULL) ? 0 : bbr->r_ctl.crte->rate),
+					 bbr->r_ctl.crte->rate,
 					 __LINE__,
 					 cts,
 					 error);
@@ -6712,7 +6701,7 @@ bbr_update_bbr_info(struct tcp_bbr *bbr, struct bbr_sendmap *rsm, uint32_t rtt, 
 		bbr_log_rtt_shrinks(bbr, cts, 0, rtt, __LINE__, BBR_RTTS_NEWRTT, 0);
 		bbr_set_reduced_rtt(bbr, cts, __LINE__);
 	}
-	bbr_log_type_bbrrttprop(bbr, rtt, (rsm ? rsm->r_end : 0), uts, cts,
+	bbr_log_type_bbrrttprop(bbr, rtt, rsm->r_end, uts, cts,
 	    match, rsm->r_start, rsm->r_flags);
 	apply_filter_min_small(&bbr->r_ctl.rc_rttprop, rtt, cts);
 	if (old_rttprop != bbr_get_rtt(bbr, BBR_RTT_PROP)) {
@@ -6792,8 +6781,6 @@ bbr_update_rtt(struct tcpcb *tp, struct tcp_bbr *bbr,
 			t = cts - rsm->r_tim_lastsent[0];
 		else
 			t = 1;
-		if ((int)t <= 0)
-			t = 1;
 		bbr->r_ctl.rc_last_rtt = t;
 		bbr_update_bbr_info(bbr, rsm, t, cts, to->to_tsecr, 0,
 				    BBR_RTT_BY_EXACTMATCH, rsm->r_tim_lastsent[0], ack_type, to);
@@ -6833,8 +6820,6 @@ bbr_update_rtt(struct tcpcb *tp, struct tcp_bbr *bbr,
 				if (TSTMP_GT(cts, rsm->r_tim_lastsent[i]))
 					t = cts - rsm->r_tim_lastsent[i];
 				else
-					t = 1;
-				if ((int)t <= 0)
 					t = 1;
 				bbr->r_ctl.rc_last_rtt = t;
 				bbr_update_bbr_info(bbr, rsm, t, cts, to->to_tsecr, uts, BBR_RTT_BY_TSMATCHING,
@@ -10313,10 +10298,6 @@ bbr_substate_change(struct tcp_bbr *bbr, uint32_t cts, int32_t line, int dolog)
 			bbr->r_ctl.bbr_smallest_srtt_state2 = bbr->r_ctl.bbr_smallest_srtt_this_state;
 	}
 	bbr->rc_bbr_substate++;
-	if (bbr->rc_bbr_substate >= BBR_SUBSTATE_COUNT) {
-		/* Cycle back to first state-> gain */
-		bbr->rc_bbr_substate = 0;
-	}
 	if (bbr_state_val(bbr) == BBR_SUB_GAIN) {
 		/*
 		 * We enter the gain(5/4) cycle (possibly less if

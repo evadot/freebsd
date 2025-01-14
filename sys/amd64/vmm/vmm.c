@@ -427,8 +427,6 @@ vm_exitinfo_cpuset(struct vcpu *vcpu)
 static int
 vmm_init(void)
 {
-	int error;
-
 	if (!vmm_is_hw_supported())
 		return (ENXIO);
 
@@ -448,10 +446,6 @@ vmm_init(void)
 	    &IDTVEC(justreturn));
 	if (vmm_ipinum < 0)
 		vmm_ipinum = IPI_AST;
-
-	error = vmm_mem_init();
-	if (error)
-		return (error);
 
 	vmm_suspend_p = vmmops_modsuspend;
 	vmm_resume_p = vmmops_modresume;
@@ -473,6 +467,8 @@ vmm_handler(module_t mod, int what, void *arg)
 			error = vmm_init();
 			if (error == 0)
 				vmm_initialized = 1;
+			else
+				(void)vmmdev_cleanup();
 		} else {
 			error = ENXIO;
 		}
@@ -2683,9 +2679,8 @@ vcpu_notify_event(struct vcpu *vcpu, bool lapic_intr)
 }
 
 struct vmspace *
-vm_get_vmspace(struct vm *vm)
+vm_vmspace(struct vm *vm)
 {
-
 	return (vm->vmspace);
 }
 

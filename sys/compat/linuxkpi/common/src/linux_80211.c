@@ -3704,7 +3704,16 @@ lkpi_ic_raw_xmit(struct ieee80211_node *ni, struct mbuf *m,
 
 	lsta = ni->ni_drv_data;
 	LKPI_80211_LSTA_TXQ_LOCK(lsta);
+#if 0
 	if (!lsta->added_to_drv || !lsta->txq_ready) {
+#else
+	/*
+	 * Backout this part of 886653492945f which breaks rtw88 or
+	 * in general drivers without (*sta_state)() but only the
+	 * legacy fallback to (*sta_add)().
+	 */
+	if (!lsta->txq_ready) {
+#endif
 		LKPI_80211_LSTA_TXQ_UNLOCK(lsta);
 		/*
 		 * Free the mbuf (do NOT release ni ref for the m_pkthdr.rcvif!
@@ -3952,7 +3961,16 @@ lkpi_80211_txq_task(void *ctx, int pending)
 	 * We also use txq_ready as a semaphore and will drain the txq manually
 	 * if needed on our way towards SCAN/INIT in the state machine.
 	 */
+#if 0
 	shall_tx = lsta->added_to_drv && lsta->txq_ready;
+#else
+	/*
+	 * Backout this part of 886653492945f which breaks rtw88 or
+	 * in general drivers without (*sta_state)() but only the
+	 * legacy fallback to (*sta_add)().
+	 */
+	shall_tx = lsta->txq_ready;
+#endif
 	if (__predict_true(shall_tx))
 		mbufq_concat(&mq, &lsta->txq);
 	/*
@@ -5315,13 +5333,13 @@ linuxkpi_ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb,
 
 	/* Implement a dump_rxcb() !!! */
 	if (linuxkpi_debug_80211 & D80211_TRACE_RX)
-		printf("TRACE-RX: %s: RXCB: %ju %ju %u, %#0x, %u, %#0x, %#0x, "
+		printf("TRACE-RX: %s: RXCB: %ju %ju %u, %b, %u, %#0x, %#0x, "
 		    "%u band %u, %u { %d %d %d %d }, %d, %#x %#x %#x %#x %u %u %u\n",
 			__func__,
 			(uintmax_t)rx_status->boottime_ns,
 			(uintmax_t)rx_status->mactime,
 			rx_status->device_timestamp,
-			rx_status->flag,
+			rx_status->flag, IEEE80211_RX_STATUS_FLAGS_BITS,
 			rx_status->freq,
 			rx_status->bw,
 			rx_status->encoding,

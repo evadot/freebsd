@@ -259,21 +259,26 @@ vmm_handler(module_t mod, int what, void *arg)
 
 	switch (what) {
 	case MOD_LOAD:
-		/* TODO: check if has_hyp here? */
 		error = vmmdev_init();
 		if (error != 0)
 			break;
 		error = vmm_init();
 		if (error == 0)
 			vmm_initialized = true;
+		else
+			(void)vmmdev_cleanup();
 		break;
 	case MOD_UNLOAD:
-		/* TODO: check if has_hyp here? */
 		error = vmmdev_cleanup();
 		if (error == 0 && vmm_initialized) {
 			error = vmmops_modcleanup();
-			if (error)
+			if (error) {
+				/*
+				 * Something bad happened - prevent new
+				 * VMs from being created
+				 */
 				vmm_initialized = false;
+			}
 		}
 		break;
 	default:
@@ -1125,8 +1130,7 @@ vcpu_set_state_locked(struct vcpu *vcpu, enum vcpu_state newstate,
 	if (from_idle) {
 		while (vcpu->state != VCPU_IDLE) {
 			vcpu_notify_event_locked(vcpu);
-			msleep_spin(&vcpu->state, &vcpu->mtx, "vmstat",
-			    hz / 1000);
+			msleep_spin(&vcpu->state, &vcpu->mtx, "vmstat", hz);
 		}
 	} else {
 		KASSERT(vcpu->state != VCPU_IDLE, ("invalid transition from "
@@ -1414,6 +1418,9 @@ vm_handle_wfi(struct vcpu *vcpu, struct vm_exit *vme, bool *retu)
 		if (riscv_check_ipi(vcpu->cookie, false))
 			break;
 
+		if (riscv_check_interrupts_pending(vcpu->cookie))
+			break;
+
 		if (vcpu_should_yield(vcpu))
 			break;
 
@@ -1422,7 +1429,7 @@ vm_handle_wfi(struct vcpu *vcpu, struct vm_exit *vme, bool *retu)
 		 * XXX msleep_spin() cannot be interrupted by signals so
 		 * wake up periodically to check pending signals.
 		 */
-		msleep_spin(vcpu, &vcpu->mtx, "vmidle", hz / 1000);
+		msleep_spin(vcpu, &vcpu->mtx, "vmidle", hz);
 		vcpu_require_state_locked(vcpu, VCPU_FROZEN);
 	}
 	vcpu_unlock(vcpu);

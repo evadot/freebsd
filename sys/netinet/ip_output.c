@@ -667,18 +667,19 @@ again:
 sendit:
 #if defined(IPSEC) || defined(IPSEC_SUPPORT)
 	if (IPSEC_ENABLED(ipv4)) {
-		m = mb_unmapped_to_ext(m);
-		if (m == NULL) {
-			IPSTAT_INC(ips_odropped);
-			error = ENOBUFS;
-			goto bad;
-		}
+		struct ip ip_hdr;
+
 		if ((error = IPSEC_OUTPUT(ipv4, ifp, m, inp, mtu)) != 0) {
 			if (error == EINPROGRESS)
 				error = 0;
 			goto done;
 		}
+
+		/* Update variables that are affected by ipsec4_output(). */
+		m_copydata(m, 0, sizeof(ip_hdr), (char *)&ip_hdr);
+		hlen = ip_hdr.ip_hl << 2;
 	}
+
 	/*
 	 * Check if there was a route for this packet; return error if not.
 	 */
@@ -687,9 +688,6 @@ sendit:
 		error = EHOSTUNREACH;
 		goto bad;
 	}
-	/* Update variables that are affected by ipsec4_output(). */
-	ip = mtod(m, struct ip *);
-	hlen = ip->ip_hl << 2;
 #endif /* IPSEC */
 
 	/* Jump over all PFIL processing if hooks are not active. */
@@ -731,11 +729,20 @@ sendit:
 
 	/* Ensure the packet data is mapped if the interface requires it. */
 	if ((ifp->if_capenable & IFCAP_MEXTPG) == 0) {
-		m = mb_unmapped_to_ext(m);
-		if (m == NULL) {
+		struct mbuf *m1;
+
+		error = mb_unmapped_to_ext(m, &m1);
+		if (error != 0) {
+			if (error == EINVAL) {
+				if_printf(ifp, "TLS packet\n");
+				/* XXXKIB */
+			} else if (error == ENOMEM) {
+				error = ENOBUFS;
+			}
 			IPSTAT_INC(ips_odropped);
-			error = ENOBUFS;
 			goto bad;
+		} else {
+			m = m1;
 		}
 	}
 

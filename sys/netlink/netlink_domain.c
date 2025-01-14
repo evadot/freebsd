@@ -47,7 +47,7 @@
 #include <sys/socketvar.h>
 #include <sys/sysent.h>
 #include <sys/syslog.h>
-#include <sys/priv.h> /* priv_check */
+#include <sys/priv.h>
 #include <sys/uio.h>
 
 #include <netlink/netlink.h>
@@ -138,8 +138,7 @@ nl_port_lookup(uint32_t port_id)
 static void
 nl_add_group_locked(struct nlpcb *nlp, unsigned int group_id)
 {
-	MPASS(group_id <= NLP_MAX_GROUPS);
-	--group_id;
+	MPASS(group_id < NLP_MAX_GROUPS);
 
 	/* TODO: add family handler callback */
 	if (!nlp_unconstrained_vnet(nlp))
@@ -151,8 +150,7 @@ nl_add_group_locked(struct nlpcb *nlp, unsigned int group_id)
 static void
 nl_del_group_locked(struct nlpcb *nlp, unsigned int group_id)
 {
-	MPASS(group_id <= NLP_MAX_GROUPS);
-	--group_id;
+	MPASS(group_id < NLP_MAX_GROUPS);
 
 	BIT_CLR(NLP_MAX_GROUPS, group_id, &nlp->nl_groups);
 }
@@ -160,8 +158,7 @@ nl_del_group_locked(struct nlpcb *nlp, unsigned int group_id)
 static bool
 nl_isset_group_locked(struct nlpcb *nlp, unsigned int group_id)
 {
-	MPASS(group_id <= NLP_MAX_GROUPS);
-	--group_id;
+	MPASS(group_id < NLP_MAX_GROUPS);
 
 	return (BIT_ISSET(NLP_MAX_GROUPS, group_id, &nlp->nl_groups));
 }
@@ -225,8 +222,10 @@ nl_send_group(struct nl_writer *nw)
 	NLCTL_RLOCK(ctl);
 
 	CK_LIST_FOREACH(nlp, &ctl->ctl_pcb_head, nl_next) {
-		if (nl_isset_group_locked(nlp, nw->group.id) &&
-		    nlp->nl_proto == nw->group.proto) {
+		if ((nw->group.priv == 0 || priv_check_cred(
+		    nlp->nl_socket->so_cred, nw->group.priv) == 0) &&
+		    nlp->nl_proto == nw->group.proto &&
+		    nl_isset_group_locked(nlp, nw->group.id)) {
 			if (nlp_last != NULL) {
 				struct nl_buf *copy;
 
