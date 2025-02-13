@@ -187,7 +187,7 @@ struct rk_clk_pll_rate rk3588_pll_rates[] = {
 	},							\
 }
 
-PLIST(mux_pll_p) = {"xin24m", "xin32k"};
+PLIST(xin24m_xin32k_p) = {"xin24m", "xin32k"};
 PLIST(gpll_aupll_p) = {"gpll", "aupll"};
 PLIST(gpll_cpll_p) = {"gpll", "cpll"};
 PLIST(gpll_lpll_p) = {"gpll", "lpll"};
@@ -212,23 +212,23 @@ static struct rk_clk rk3588_clks[] = {
 	FFACT(0, "xin_osc0_half", "xin24m", 1, 2),
 
 	/* BIGCORE0CRU */
-	RK3588_PLL(PLL_B0PLL, "b0pll", mux_pll_p, RK3588_B0_PLLSEL_CON(0), RK3588_B0_PLL_MODE_CON0, 0),
+	RK3588_PLL(PLL_B0PLL, "b0pll", xin24m_xin32k_p, RK3588_B0_PLLSEL_CON(0), RK3588_B0_PLL_MODE_CON0, 0),
 
 	/* BIGCORE1CRU */
-	RK3588_PLL(PLL_B1PLL, "b1pll", mux_pll_p, RK3588_B1_PLLSEL_CON(0), RK3588_B1_PLL_MODE_CON0, 0),
+	RK3588_PLL(PLL_B1PLL, "b1pll", xin24m_xin32k_p, RK3588_B1_PLLSEL_CON(0), RK3588_B1_PLL_MODE_CON0, 0),
 
 	/* DSUCRU */
-	RK3588_PLL(PLL_LPLL, "lpll", mux_pll_p, RK3588_LPLL_PLLSEL_CON(0), RK3588_LPLL_MODE_CON0, 0),
+	RK3588_PLL(PLL_LPLL, "lpll", xin24m_xin32k_p, RK3588_LPLL_PLLSEL_CON(0), RK3588_LPLL_MODE_CON0, 0),
 
 	/* CRU PLL */
-	RK3588_PLL(PLL_V0PLL, "v0pll", mux_pll_p, RK3588_PLLSEL_CON(0), RK3588_MODE_CON, 4),
-	RK3588_PLL(PLL_AUPLL, "aupll", mux_pll_p, RK3588_PLLSEL_CON(1), RK3588_MODE_CON, 6),
-	RK3588_PLL(PLL_CPLL, "cpll", mux_pll_p, RK3588_PLLSEL_CON(2), RK3588_MODE_CON, 8),
-	RK3588_PLL(PLL_GPLL, "gpll", mux_pll_p, RK3588_PLLSEL_CON(3), RK3588_MODE_CON, 2),
-	RK3588_PLL(PLL_NPLL, "npll", mux_pll_p, RK3588_PLLSEL_CON(4), RK3588_MODE_CON, 0),
+	RK3588_PLL(PLL_V0PLL, "v0pll", xin24m_xin32k_p, RK3588_PLLSEL_CON(0), RK3588_MODE_CON, 4),
+	RK3588_PLL(PLL_AUPLL, "aupll", xin24m_xin32k_p, RK3588_PLLSEL_CON(1), RK3588_MODE_CON, 6),
+	RK3588_PLL(PLL_CPLL, "cpll", xin24m_xin32k_p, RK3588_PLLSEL_CON(2), RK3588_MODE_CON, 8),
+	RK3588_PLL(PLL_GPLL, "gpll", xin24m_xin32k_p, RK3588_PLLSEL_CON(3), RK3588_MODE_CON, 2),
+	RK3588_PLL(PLL_NPLL, "npll", xin24m_xin32k_p, RK3588_PLLSEL_CON(4), RK3588_MODE_CON, 0),
 
 	/* PHPCRU PLL */
-	RK3588_PLL(PLL_PPLL, "ppll", mux_pll_p, RK3588_PHPCRU_PLLSEL_CON(0), RK3588_MODE_CON, 10),
+	RK3588_PLL(PLL_PPLL, "ppll", xin24m_xin32k_p, RK3588_PHPCRU_PLLSEL_CON(0), RK3588_MODE_CON, 10),
 
 	/* CRU_CLKSEL_CON00 */
 	COMP(0, "clk_50m_src_c", gpll_cpll_p, 0, 0, 0, 5, 5, 1),
