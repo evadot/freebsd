@@ -237,10 +237,10 @@ rk3066_clk_pll_set_freq(struct clknode *clk, uint64_t fparent, uint64_t *fout,
 	/* Setting postdiv and refdiv */
 	reg = 0;
 	reg |= RK3066_CLK_PLL_POSTDIV_MASK << 16;
-	reg |= (rates->postdiv1 - 1) << RK3066_CLK_PLL_POSTDIV_SHIFT;
+	reg |= (rates->post_div - 1) << RK3066_CLK_PLL_POSTDIV_SHIFT;
 
 	reg |= RK3066_CLK_PLL_REFDIV_MASK << 16;
-	reg |= (rates->refdiv - 1)<< RK3066_CLK_PLL_REFDIV_SHIFT;
+	reg |= (rates->ref_div - 1)<< RK3066_CLK_PLL_REFDIV_SHIFT;
 
 	dprintf("Set PLL_CON0 to %x\n", reg);
 	WRITE4(clk, sc->base_offset, reg);
@@ -250,14 +250,14 @@ rk3066_clk_pll_set_freq(struct clknode *clk, uint64_t fparent, uint64_t *fout,
 	READ4(clk, sc->base_offset + 4, &reg);
 	reg &= ~RK3066_CLK_PLL_FBDIV_MASK;
 	reg |= RK3066_CLK_PLL_FBDIV_MASK << 16;
-	reg = (rates->fbdiv - 1) << RK3066_CLK_PLL_FBDIV_SHIFT;
+	reg = (rates->fb_div - 1) << RK3066_CLK_PLL_FBDIV_SHIFT;
 
 	dprintf("Set PLL_CON1 to %x\n", reg);
 	WRITE4(clk, sc->base_offset + 0x4, reg);
 
 	/* PLL loop bandwidth adjust */
-	reg =  rates->bwadj - 1;
-	dprintf("Set PLL_CON2 to %x (%x)\n", reg, rates->bwadj);
+	reg =  rates->bw_adj - 1;
+	dprintf("Set PLL_CON2 to %x (%x)\n", reg, rates->bw_adj);
 	WRITE4(clk, sc->base_offset + 0x8, reg);
 
 	/* Clear reset */
