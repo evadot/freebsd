@@ -47,14 +47,16 @@
 #define PLIST(_name) static const char *_name[]
 
 /* Pure gate */
-#define	GATE(_idx, _clkname, _pname, _o, _s)				\
+#define	GATERAW(_idx, _clkname, _pname, _o, _s)				\
 {									\
 	.id = _idx,							\
 	.name = _clkname,						\
 	.parent_name = _pname,						\
-	.offset = CRU_CLKGATE_CON(_o),					\
+	.offset = _o,							\
 	.shift = _s,							\
 }
+#define	GATE(_idx, _clkname, _pname, _o, _s)				\
+	GATERAW(_idx, _clkname, _pname, CRU_CLKGATE_CON(_o), _s)
 
 /* Fixed rate clock. */
 #define	FRATE(_id, _name, _freq)					\
@@ -136,7 +138,7 @@
 }
 
 /* Full composite clock. */
-#define COMP(_id, _name, _pnames, _f,  _o,  _ds, _dw,  _ms, _mw)	\
+#define COMPRAW(_id, _name, _pnames, _f,  _o,  _ds, _dw,  _ms, _mw)	\
 {									\
 	.type = RK_CLK_COMPOSITE,					\
 	.clk.composite = &(struct rk_clk_composite_def) {		\
@@ -145,7 +147,7 @@
 		.clkdef.parent_names = _pnames,				\
 		.clkdef.parent_cnt = nitems(_pnames),			\
 		.clkdef.flags = CLK_NODE_STATIC_STRINGS,		\
-		.muxdiv_offset = CRU_CLKSEL_CON(_o),			\
+		.muxdiv_offset = _o,					\
 		.mux_shift = _ms,					\
 		.mux_width = _mw,					\
 		.div_shift = _ds,					\
@@ -153,9 +155,11 @@
 		.flags = RK_CLK_COMPOSITE_HAVE_MUX | _f, 		\
 	},								\
 }
+#define COMP(_id, _name, _pnames, _f,  _o,  _ds, _dw,  _ms, _mw)	\
+	COMPRAW(_id, _name, _pnames, _f, CRU_CLKSEL_CON(_o), _ds, _dw, _ms, _mw)
 
 /* Composite clock without mux (divider only). */
-#define CDIV(_id, _name, _pname, _f, _o, _ds, _dw)			\
+#define CDIVRAW(_id, _name, _pname, _f, _o, _ds, _dw)			\
 {									\
 	.type = RK_CLK_COMPOSITE,					\
 	.clk.composite = &(struct rk_clk_composite_def) {		\
@@ -164,12 +168,14 @@
 		.clkdef.parent_names = (const char *[]){_pname},	\
 		.clkdef.parent_cnt = 1,					\
 		.clkdef.flags = CLK_NODE_STATIC_STRINGS,		\
-		.muxdiv_offset = CRU_CLKSEL_CON(_o),			\
+		.muxdiv_offset = _o,					\
 		.div_shift = _ds,					\
 		.div_width = _dw,					\
 		.flags =  _f,						\
 	},								\
 }
+#define CDIV(_id, _name, _pname, _f, _o, _ds, _dw)			\
+	CDIVRAW(_id, _name, _pname, _f, CRU_CLKSEL_CON(_o), _ds, _dw)
 
 /* Complex clock without divider (multiplexer only). */
 #define MUXRAW(_id, _name, _pn, _f,  _mo, _ms, _mw)			\
