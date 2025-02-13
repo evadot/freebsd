@@ -32,13 +32,31 @@
 
 struct rk_clk_pll_rate {
 	uint32_t	freq;
-	uint32_t	refdiv;
-	uint32_t	fbdiv;
-	uint32_t	postdiv1;
-	uint32_t	postdiv2;
-	uint32_t	dsmpd;
-	uint32_t	frac;
-	uint32_t	bwadj;
+	union {
+		/* RK3066 */
+		struct {
+			uint32_t	ref_div;
+			uint32_t	fb_div;
+			uint32_t	post_div;
+			uint32_t	bw_adj;
+		};
+		/* RK3328/RK3399/RK3568 */
+		struct {
+			uint32_t	refdiv;
+			uint32_t	fbdiv;
+			uint32_t	postdiv1;
+			uint32_t	postdiv2;
+			uint32_t	dsmpd;
+			uint32_t	frac;
+		};
+		/* RK3588 */
+		struct {
+			uint32_t	p;
+			uint32_t	m;
+			uint32_t	s;
+			uint32_t	k;
+		};
+	};
 };
 
 struct rk_clk_pll_def {
