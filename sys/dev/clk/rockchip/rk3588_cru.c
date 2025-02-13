@@ -204,6 +204,8 @@ PLIST(clk400m_xin24m_p) = {"clk_400m_src", "xin24m"};
 PLIST(clk400m_clk200m_clk100m_xin24m_p) = {"clk_400m_src", "clk_200m_src", "clk_100m_src", "xin24m"};
 PLIST(clk500m_clk300m_clk100m_xin24m_p) = {"clk_500m_src", "clk_300m_src", "clk_100m_src", "xin24m"};
 
+PLIST(pmu_200m_100m_p) = {"clk_pmu1_200m_src", "clk_pmu1_100m_src"};
+
 /* CLOCKS */
 static struct rk_clk rk3588_clks[] = {
 	/* External clocks */
@@ -999,7 +1001,7 @@ static struct rk_clk rk3588_clks[] = {
 
 	/* PMU1CRU_CLKSEL_CON03 */
 	/* reserved 0:5 */
-	/* clk_i2c0_sel 6 */
+	MUXRAW(0, "clk_i2c0_m", pmu_200m_100m_p, 0, RK3588_PMUCRU_CLKSEL_CON(3), 6, 1),
 	/* clk_uart0_src_div 7:11 */
 	/* reserved 12:15 */
 
@@ -2092,6 +2094,7 @@ static struct rk_cru_gate rk3588_gates[] = {
 	/* hclk_pmu1_root_i_en 5 */
 	/* hclk_pmu1_root_en 6 */
 	/* pclk_pmu1_root_i_en 7 */
+	GATERAW(PCLK_PMU1_ROOT, "pclk_pmu1_root", "pclk_pmu1_root_m", RK3588_PMUCRU_CLKGATE_CON(0), 7),
 	/* hclk_pmu_cm0_root_i_en 8 */
 	/* hclk_pmu_cm0_root_en 9 */
 	/* hclk_pmu1_biu_en 10 */
@@ -2122,7 +2125,9 @@ static struct rk_cru_gate rk3588_gates[] = {
 	/* PMU1CRU_GATE_CON02 */
 	/* reserved 0 */
 	/* pclk_i2c0_en 1 */
+	GATERAW(PCLK_I2C0, "pclk_i2c0", "pclk_pmu0_root", RK3588_PMUCRU_CLKGATE_CON(2), 1),
 	/* clk_i2c0_en 2 */
+	GATERAW(CLK_I2C0, "clk_i2c0", "clk_i2c0_m", RK3588_PMUCRU_CLKGATE_CON(2), 2),
 	/* clk_uart0_en 3 */
 	/* clk_uart0_frac_en 4 */
 	/* sclk_uart0_en 5 */
@@ -2155,12 +2160,12 @@ static struct rk_cru_gate rk3588_gates[] = {
 	/* reserved 12:15 */
 
 	/* PMU1CRU_GATE_CON05 */
-	/* pclk_pmu0_root_en 0 */
-	/* clk_pmu0_en 1 */
-	/* pclk_pmu0_en 2 */
+	GATERAW(PCLK_PMU0_ROOT, "pclk_pmu0_root", "pclk_pmu1_root", RK3588_PMUCRU_CLKGATE_CON(5), 0),
+	GATERAW(CLK_PMU0, "clk_pmu0", "xin24m", RK3588_PMUCRU_CLKGATE_CON(5), 1),
+	GATERAW(PCLK_PMU0, "pclk_pmu0", "pclk_pmu0_root", RK3588_PMUCRU_CLKGATE_CON(5), 2),
 	/* pclk_pmu0grf_en 3 */
-	/* pclk_pmu0ioc_en 4 */
-	/* pclk_gpio0_en 5 */
+	GATERAW(PCLK_PMU0IOC, "pclk_pmu0ioc", "pclk_pmu0_root", RK3588_PMUCRU_CLKGATE_CON(5), 4),
+	GATERAW(PCLK_GPIO0, "pclk_gpio0", "pclk_pmu0_root", RK3588_PMUCRU_CLKGATE_CON(5), 5),
 	GATERAW(DBCLK_GPIO0, "dbclk_gpio0", "dbclk_gpio0_m", RK3588_PMUCRU_CLKGATE_CON(5), 6),
 	/* reserved 7:15 */
 };
