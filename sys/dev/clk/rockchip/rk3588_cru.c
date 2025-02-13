@@ -198,7 +198,9 @@ PLIST(gpll_cpll_xin24m_p) = {"gpll", "cpll", "xin24m"};
 
 PLIST(clk100m_clk50m_xin24m_p) = {"clk_100m_src", "clk_50m_src", "xin24m"};
 PLIST(clk200m_clk100m_clk50m_xin24m_p) = {"clk_200m_src", "clk_100m_src", "clk_50m_src", "xin24m"};
+PLIST(clk300m_xin24m_p) = {"clk_300m_src", "xin24m"};
 PLIST(clk300m_clk200m_clk100m_xin24m_p) = {"clk_300m_src", "clk_200m_src", "clk_100m_src", "xin24m"};
+PLIST(clk400m_xin24m_p) = {"clk_400m_src", "xin24m"};
 PLIST(clk400m_clk200m_clk100m_xin24m_p) = {"clk_400m_src", "clk_200m_src", "clk_100m_src", "xin24m"};
 PLIST(clk500m_clk300m_clk100m_xin24m_p) = {"clk_500m_src", "clk_300m_src", "clk_100m_src", "xin24m"};
 
@@ -973,6 +975,90 @@ static struct rk_clk rk3588_clks[] = {
 	/* clk_ref_pipe_phy1_sel 7 */
 	/* clk_ref_pipe_phy0_sel 6 */
 	/* clk_ref_pipe_phy2_pll_src_di 5:0 */
+
+	/* PMU1CRU_CLKSEL_CON00 */
+	CDIVRAW(0, "clk_pmu1_50m_src_c", "clk_pmu1_400m_src", 0, RK3588_PMUCRU_CLKSEL_CON(0), 0, 3),
+	CDIVRAW(0, "clk_pmu1_100m_src_c", "clk_pmu1_400m_src", 0, RK3588_PMUCRU_CLKSEL_CON(0), 4, 3),
+	CDIVRAW(0, "clk_pmu1_200m_src_c", "clk_pmu1_400m_src", 0, RK3588_PMUCRU_CLKSEL_CON(0), 7, 3),
+	COMPRAW(0, "clk_pmu1_300m_src_c", clk300m_xin24m_p, 0, RK3588_PMUCRU_CLKSEL_CON(0), 10, 4, 15, 1),
+
+	/* PMU1CRU_CLKSEL_CON01 */
+	COMPRAW(0, "clk_pmu1_400m_src_c", clk400m_xin24m_p, 0, RK3588_PMUCRU_CLKSEL_CON(1), 0, 5, 5, 1),
+	MUXRAW(0, "hclk_pmu1_root_m", clk200m_clk100m_clk50m_xin24m_p, 0, RK3588_PMUCRU_CLKSEL_CON(1), 6, 2),
+	MUXRAW(0, "pclk_pmu1_root_m", clk100m_clk50m_xin24m_p, 0, RK3588_PMUCRU_CLKSEL_CON(1), 8, 2),
+	MUXRAW(0, "hclk_pmu_cm0_root_m", clk400m_clk200m_clk100m_xin24m_p, 0, RK3588_PMUCRU_CLKSEL_CON(1), 10, 2),
+	/* reserved 12:15 */
+
+	/* PMU1CRU_CLKSEL_CON02 */
+	/* clk_pmu_cm0_rtc_div 0:4 */
+	/* clk_pmu_cm0_rtc_sel 5 */
+	/* tclk_pmu1wdt_sel 6 */
+	/* clk_pmu1timer_root_sel 7:8 */
+	/* clk_pmu1pwm_sel 9:10 */
+	/* reserved 11:15 */
+
+	/* PMU1CRU_CLKSEL_CON03 */
+	/* reserved 0:5 */
+	/* clk_i2c0_sel 6 */
+	/* clk_uart0_src_div 7:11 */
+	/* reserved 12:15 */
+
+	/* PMU1CRU_CLKSEL_CON04 */
+	/* clk_uart0_frac_div 0:31 */
+
+	/* PMU1CRU_CLKSEL_CON05 */
+	/* sclk_uart0_sel 0:1 */
+	/* clk_i2s1_8ch_tx_src_div 2:6 */
+	/* reserved 7:15 */
+
+	/* PMU1CRU_CLKSEL_CON06 */
+	/* clk_i2s1_8ch_tx_frac_div 0:31 */
+
+	/* PMU1CRU_CLKSEL_CON07 */
+	/* mclk_i2s1_8ch_tx_sel 0:1 */
+	/* clk_i2s1_8ch_rx_src_div 2:6 */
+	/* reserved 7:15 */
+
+	/* PMU1CRU_CLKSEL_CON08 */
+	/* clk_i2s1_8ch_rx_frac_div 0:31 */
+
+	/* PMU1CRU_CLKSEL_CON09 */
+	/* mclk_i2s1_8ch_rx_sel 0:1 */
+	/* i2s1_8ch_mclkout_sel 2:3 */
+	/* mclk_pdm0_sel 4 */
+	/* clk_usbdp_combo_phy0_ref_xtal_div 5:9 */
+	/* clk_usbdp_combo_phy0_ref_xtal_sel 10 */
+	/* reserved 11:15 */
+
+	/* PMU1CRU_CLKSEL_CON10 Unused */
+	/* PMU1CRU_CLKSEL_CON11 Unused */
+
+	/* PMU1CRU_CLKSEL_CON12 */
+	/* reserved 0:5 */
+	/* clk_hdptx0_ref_xtal_div 6:10 */
+	/* clk_hdptx0_ref_xtal_sel 11 */
+	/* reserved 12:15 */
+
+	/* PMU1CRU_CLKSEL_CON13 Unused */
+
+	/* PMU1CRU_CLKSEL_CON14 */
+	/* clk_ref_mipi_dcphy0_div 0:6 */
+	/* clk_ref_mipi_dcphy0_sel 7:8 */
+	/* clk_otgphy_u3_0_div 9:13 */
+	/* clk_otgphy_u3_0_sel 14 */
+	/* reserved 15 */
+
+	/* PMU1CRU_CLKSEL_CON15 */
+	/* clk_cr_para_div 0:4 */
+	/* clk_cr_para_sel 5:6 */
+	/* reserved 7:15 */
+
+	/* PMU1CRU_CLKSEL_CON16 Unused */
+
+	/* PMU1CRU_CLKSEL_CON17 */
+	/* dbclk_gpio0_sel 0 */
+	MUXRAW(0, "dbclk_gpio0_m", xin24m_xin32k_p, 0, RK3588_PMUCRU_CLKSEL_CON(17), 0, 1),
+	/* reserved 1:15 */
 };
 
 /* GATES */
@@ -1996,6 +2082,87 @@ static struct rk_cru_gate rk3588_gates[] = {
 	/* clk_ref_pipe_phy1_pll_src_en 4 */
 	/* clk_ref_pipe_phy2_pll_src_en 5 */
 	/* reserved 15:6 */
+
+	/* PMU1CRU_GATE_CON00 */
+	GATERAW(CLK_PMU1_50M_SRC, "clk_pmu1_50m_src", "clk_pmu1_50m_src_c", RK3588_PMUCRU_CLKGATE_CON(0), 0),
+	GATERAW(CLK_PMU1_100M_SRC, "clk_pmu1_100m_src", "clk_pmu1_100m_src_c", RK3588_PMUCRU_CLKGATE_CON(0), 1),
+	GATERAW(CLK_PMU1_200M_SRC, "clk_pmu1_200m_src", "clk_pmu1_200m_src_c", RK3588_PMUCRU_CLKGATE_CON(0), 2),
+	GATERAW(CLK_PMU1_300M_SRC, "clk_pmu1_300m_src", "clk_pmu1_300m_src_c", RK3588_PMUCRU_CLKGATE_CON(0), 3),
+	GATERAW(CLK_PMU1_400M_SRC, "clk_pmu1_400m_src", "clk_pmu1_400m_src_c", RK3588_PMUCRU_CLKGATE_CON(0), 4),
+	/* hclk_pmu1_root_i_en 5 */
+	/* hclk_pmu1_root_en 6 */
+	/* pclk_pmu1_root_i_en 7 */
+	/* hclk_pmu_cm0_root_i_en 8 */
+	/* hclk_pmu_cm0_root_en 9 */
+	/* hclk_pmu1_biu_en 10 */
+	/* pclk_pmu1_biu_en 11 */
+	/* hclk_pmu_cm0_biu_en 12 */
+	/* fclk_pmu_cm0_core_en 13 */
+	/* reserved 14 */
+	/* clk_pmu_cm0_rtc_en 15 */
+
+	/* PMU1CRU_GATE_CON01 */
+	/* pclk_pmu1_en 0 */
+	/* clk_ddr_fail_safe_en 1 */
+	/* pclk_pmu1_cru_en 2 */
+	/* clk_pmu1_en 3 */
+	/* pclk_pmu1_grf_en 4 */
+	/* pclk_pmu1_ioc_en 5 */
+	/* pclk_pmu1wdt_en 6 */
+	/* tclk_pmu1wdt_en 7 */
+	/* pclk_pmu1timer_en 8 */
+	/* clk_pmu1timer_root_en 9 */
+	/* clk_pmu1timer0_en 10 */
+	/* clk_pmu1timer1_en 11 */
+	/* pclk_pmu1pwm_en 12 */
+	/* clk_pmu1pwm_en 13 */
+	/* clk_pmu1pwm_capture_en 14 */
+	/* reserved 15 */
+
+	/* PMU1CRU_GATE_CON02 */
+	/* reserved 0 */
+	/* pclk_i2c0_en 1 */
+	/* clk_i2c0_en 2 */
+	/* clk_uart0_en 3 */
+	/* clk_uart0_frac_en 4 */
+	/* sclk_uart0_en 5 */
+	/* pclk_uart0_en 6 */
+	/* hclk_i2s1_8ch_en 7 */
+	/* clk_i2s1_8ch_tx_en 8 */
+	/* clk_i2s1_8ch_frac_tx_en 9 */
+	/* mclk_i2s1_8ch_tx_en 10 */
+	/* clk_i2s1_8ch_rx_en 11 */
+	/* clk_i2s1_8ch_frac_rx_en 12 */
+	/* mclk_i2s1_8ch_rx_en 13 */
+	/* hclk_pdm0_en 14 */
+	/* mclk_pdm0_en 15 */
+
+	/* PMU1CRU_GATE_CON03 */
+	/* hclk_vad_en 0 */
+	/* reserved 1:4 */
+	/* clk_usbdp_combo_phy0_ref_xtal_en 5 */
+	/* reserved 6:10 */
+	/* clk_hdptx0_ref_xtal_en 11 */
+	/* reserved 12:15 */
+
+	/* PMU1CRU_GATE_CON04 */
+	/* reserved 0:2 */
+	/* clk_ref_mipi_dcphy0_en 3 */
+	/* reserved 4:6 */
+	/* clk_otgphy_u3_0_en 7 */
+	/* reserved 8:10 */
+	/* clk_cr_para_en 11 */
+	/* reserved 12:15 */
+
+	/* PMU1CRU_GATE_CON05 */
+	/* pclk_pmu0_root_en 0 */
+	/* clk_pmu0_en 1 */
+	/* pclk_pmu0_en 2 */
+	/* pclk_pmu0grf_en 3 */
+	/* pclk_pmu0ioc_en 4 */
+	/* pclk_gpio0_en 5 */
+	GATERAW(DBCLK_GPIO0, "dbclk_gpio0", "dbclk_gpio0_m", RK3588_PMUCRU_CLKGATE_CON(5), 6),
+	/* reserved 7:15 */
 };
 
 static int
