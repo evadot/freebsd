@@ -286,14 +286,11 @@ static struct rk_clk rk3588_clks[] = {
 	/* CRU_CLKSEL_CON14 Unused */
 
 	/* CRU_CLKSEL_CON15 */
-	/* refclko25m_eth0_out_sel 15 */
-	/* refclko25m_eth0_out_div 14:8 */
-	/* mclk_gmac0_out_sel 7 */
-	/* mclk_gmac0_out_div 6:0 */
+	COMP(0, "refclk025m_eth0_out_c", gpll_cpll_p, 0, 15, 8, 6, 15, 1),
+	COMP(0, "mclk_gmac0_out_c", gpll_cpll_p, 0, 15, 0, 7, 7, 1),
 
 	/* CRU_CLKSEL_CON16 */
-	/* refclko25m_eth1_out_sel 7 */
-	/* refclko25m_eth1_out_div 6:0 */
+	COMP(0, "refclk025m_eth1_out_c", gpll_cpll_p, 0, 16, 0, 7, 7, 1),
 
 	/* CRU_CLKSEL_CON17 */
 	/* clk_cifout_out_sel 9:8 */
@@ -1050,9 +1047,9 @@ static struct rk_cru_gate rk3588_gates[] = {
 	/* CRU_GATE_CON05 */
 	/* pclk_cru_en 0 */
 	/* reserved 2:1 */
-	/* mclk_gmac0_out_en 3 */
-	/* refclko25m_eth0_out_en 4 */
-	/* refclko25m_eth1_out_en 5 */
+	GATE(MCLK_GMAC0_OUT, "mclk_gmac0_out", "mclk_gmac0_out_c", 5, 3),
+	GATE(REFCLKO25M_ETH0_OUT, "refclk025m_eth0_out", "refclk025m_eth0_out_c", 5, 4),
+	GATE(REFCLKO25M_ETH1_OUT, "refclk025m_eth1_out", "refclk025m_eth1_out_c", 5, 5),
 	/* clk_cifout_out_en 6 */
 	/* aclk_channel_secure2vo1usb_en 7 */
 	/* aclk_channel_secure2center_en 8 */
