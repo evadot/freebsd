@@ -74,65 +74,15 @@ pfr_report_error(struct pfr_table *tbl, struct pfioc_table *io,
 }
 
 int
-pfr_clr_tables(struct pfr_table *filter, int *ndel, int flags)
+pfr_add_table(struct pfr_table *tbl, int *nadd, int flags)
 {
-	struct pfioc_table io;
-
-	bzero(&io, sizeof io);
-	io.pfrio_flags = flags;
-	if (filter != NULL)
-		io.pfrio_table = *filter;
-	if (ioctl(dev, DIOCRCLRTABLES, &io))
-		return (-1);
-	if (ndel != NULL)
-		*ndel = io.pfrio_ndel;
-	return (0);
+	return (pfctl_add_table(pfh, tbl, nadd, flags));
 }
 
 int
-pfr_add_tables(struct pfr_table *tbl, int size, int *nadd, int flags)
+pfr_del_table(struct pfr_table *tbl, int *ndel, int flags)
 {
-	struct pfioc_table io;
-
-	if (size < 0 || (size && tbl == NULL)) {
-		errno = EINVAL;
-		return (-1);
-	}
-	bzero(&io, sizeof io);
-	io.pfrio_flags = flags;
-	io.pfrio_buffer = tbl;
-	io.pfrio_esize = sizeof(*tbl);
-	io.pfrio_size = size;
-	if (ioctl(dev, DIOCRADDTABLES, &io)) {
-		pfr_report_error(tbl, &io, "add table");
-		return (-1);
-	}
-	if (nadd != NULL)
-		*nadd = io.pfrio_nadd;
-	return (0);
-}
-
-int
-pfr_del_tables(struct pfr_table *tbl, int size, int *ndel, int flags)
-{
-	struct pfioc_table io;
-
-	if (size < 0 || (size && tbl == NULL)) {
-		errno = EINVAL;
-		return (-1);
-	}
-	bzero(&io, sizeof io);
-	io.pfrio_flags = flags;
-	io.pfrio_buffer = tbl;
-	io.pfrio_esize = sizeof(*tbl);
-	io.pfrio_size = size;
-	if (ioctl(dev, DIOCRDELTABLES, &io)) {
-		pfr_report_error(tbl, &io, "delete table");
-		return (-1);
-	}
-	if (ndel != NULL)
-		*ndel = io.pfrio_ndel;
-	return (0);
+	return (pfctl_del_table(pfh, tbl, ndel, flags));
 }
 
 int

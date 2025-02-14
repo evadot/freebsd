@@ -28,6 +28,7 @@ MAN=	accept_filter.9 \
 	BUS_ADD_CHILD.9 \
 	bus_adjust_resource.9 \
 	bus_alloc_resource.9 \
+	bus_attach_children.9 \
 	BUS_BIND_INTR.9 \
 	bus_child_present.9 \
 	BUS_CHILD_DELETED.9 \
@@ -35,10 +36,8 @@ MAN=	accept_filter.9 \
 	BUS_CHILD_LOCATION.9 \
 	BUS_CHILD_PNPINFO.9 \
 	BUS_CONFIG_INTR.9 \
-	bus_delayed_attach_children.9 \
 	BUS_DESCRIBE_INTR.9 \
 	bus_dma.9 \
-	bus_generic_attach.9 \
 	bus_generic_detach.9 \
 	bus_generic_new_pass.9 \
 	bus_generic_print_child.9 \
@@ -47,6 +46,7 @@ MAN=	accept_filter.9 \
 	BUS_GET_CPUS.9 \
 	BUS_GET_PROPERTY.9 \
 	bus_get_resource.9 \
+	BUS_HINTED_CHILD.9 \
 	bus_map_resource.9 \
 	BUS_NEW_PASS.9 \
 	BUS_PRINT_CHILD.9 \
@@ -672,7 +672,12 @@ MLINKS+=buf_ring.9 buf_ring_alloc.9 \
 	buf_ring.9 buf_ring_peek.9
 MLINKS+=bus_activate_resource.9 bus_deactivate_resource.9
 MLINKS+=bus_alloc_resource.9 bus_alloc_resource_any.9
+MLINKS+=bus_attach_children.9 bus_delayed_attach_children.9 \
+	bus_attach_children.9 bus_detach_children.9 \
+	bus_attach_children.9 bus_enumerate_hinted_children.9 \
+	bus_attach_children.9 bus_identify_children.9
 MLINKS+=BUS_BIND_INTR.9 bus_bind_intr.9
+MLINKS+=BUS_CONFIG_INTR.9 bus_config_intr.9
 MLINKS+=BUS_DESCRIBE_INTR.9 bus_describe_intr.9
 MLINKS+=bus_dma.9 busdma.9 \
 	bus_dma.9 bus_dmamap_create.9 \
@@ -691,6 +696,9 @@ MLINKS+=bus_dma.9 busdma.9 \
 	bus_dma.9 bus_dmamem_free.9 \
 	bus_dma.9 bus_dma_tag_create.9 \
 	bus_dma.9 bus_dma_tag_destroy.9
+MLINKS+=bus_generic_print_child.9 bus_print_child_domain.9 \
+	bus_generic_print_child.9 bus_print_child_footer.9 \
+	bus_generic_print_child.9 bus_print_child_header.9
 MLINKS+=bus_generic_read_ivar.9 bus_generic_write_ivar.9
 MLINKS+=BUS_GET_CPUS.9 bus_get_cpus.9
 MLINKS+=bus_map_resource.9 bus_unmap_resource.9 \
@@ -927,7 +935,8 @@ MLINKS+=cpu_machdep.9 cpu_copy_thread.9 \
 	cpu_machdep.9 cpu_thread_clean.9 \
 	cpu_machdep.9 cpu_thread_exit.9 \
 	cpu_machdep.9 cpu_thread_free.9 \
-	cpu_machdep.9 cpu_throw.9
+	cpu_machdep.9 cpu_throw.9 \
+	cpu_machdep.9 cpu_update_pcb.9
 MLINKS+=cpuset.9 CPUSET_T_INITIALIZER.9 \
 	cpuset.9 CPUSET_FSET.9 \
 	cpuset.9 CPU_CLR.9 \
@@ -1039,6 +1048,9 @@ MLINKS+=device_set_desc.9 device_get_desc.9 \
 	device_set_desc.9 device_set_descf.9 \
 	device_set_desc.9 device_set_desc_copy.9
 MLINKS+=device_set_flags.9 device_get_flags.9
+MLINKS+=device_probe_and_attach.9 device_attach.9 \
+	device_probe_and_attach.9 device_detach.9 \
+	device_probe_and_attach.9 device_probe.9
 MLINKS+=devstat.9 devicestat.9 \
 	devstat.9 devstat_new_entry.9 \
 	devstat.9 devstat_end_transaction.9 \

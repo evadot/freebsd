@@ -96,8 +96,8 @@
  * NOTE: With regard to VNETs the general rule is that callers do not set
  * curvnet. Exceptions to this rule include soabort(), sodisconnect(),
  * sofree(), sorele(), sonewconn() and sorflush(), which are usually called
- * from a pre-set VNET context.  sopoll() currently does not need a VNET
- * context to be set.
+ * from a pre-set VNET context.  sopoll_generic() currently does not need a
+ * VNET context to be set.
  */
 
 #include <sys/cdefs.h>
@@ -2030,11 +2030,11 @@ sopeeraddr(struct socket *so, struct sockaddr *sa)
 #endif
 	int error;
 
-	CURVNET_SET(so->so_vnet);
+	CURVNET_ASSERT_SET();
+
 	error = so->so_proto->pr_peeraddr(so, sa);
 	KASSERT(sa->sa_len <= len,
 	    ("%s: protocol %p sockaddr overflow", __func__, so->so_proto));
-	CURVNET_RESTORE();
 
 	return (error);
 }
@@ -3699,6 +3699,19 @@ sorflush(struct socket *so)
 
 }
 
+int
+sosetfib(struct socket *so, int fibnum)
+{
+	if (fibnum < 0 || fibnum >= rt_numfibs)
+		return (EINVAL);
+
+	SOCK_LOCK(so);
+	so->so_fibnum = fibnum;
+	SOCK_UNLOCK(so);
+
+	return (0);
+}
+
 #ifdef SOCKET_HHOOK
 /*
  * Wrapper for Socket established helper hook.
@@ -3847,21 +3860,7 @@ sosetopt(struct socket *so, struct sockopt *sopt)
 			break;
 
 		case SO_SETFIB:
-			error = sooptcopyin(sopt, &optval, sizeof optval,
-			    sizeof optval);
-			if (error)
-				goto bad;
-
-			if (optval < 0 || optval >= rt_numfibs) {
-				error = EINVAL;
-				goto bad;
-			}
-			if (((so->so_proto->pr_domain->dom_family == PF_INET) ||
-			   (so->so_proto->pr_domain->dom_family == PF_INET6) ||
-			   (so->so_proto->pr_domain->dom_family == PF_ROUTE)))
-				so->so_fibnum = optval;
-			else
-				so->so_fibnum = 0;
+			error = so->so_proto->pr_ctloutput(so, sopt);
 			break;
 
 		case SO_USER_COOKIE:
@@ -4106,6 +4105,12 @@ sogetopt(struct socket *so, struct sockopt *sopt)
 integer:
 			error = sooptcopyout(sopt, &optval, sizeof optval);
 			break;
+
+		case SO_FIB:
+			SOCK_LOCK(so);
+			optval = so->so_fibnum;
+			SOCK_UNLOCK(so);
+			goto integer;
 
 		case SO_DOMAIN:
 			optval = so->so_proto->pr_domain->dom_family;
@@ -4405,20 +4410,7 @@ sohasoutofband(struct socket *so)
 }
 
 int
-sopoll(struct socket *so, int events, struct ucred *active_cred,
-    struct thread *td)
-{
-
-	/*
-	 * We do not need to set or assert curvnet as long as everyone uses
-	 * sopoll_generic().
-	 */
-	return (so->so_proto->pr_sopoll(so, events, active_cred, td));
-}
-
-int
-sopoll_generic(struct socket *so, int events, struct ucred *active_cred,
-    struct thread *td)
+sopoll_generic(struct socket *so, int events, struct thread *td)
 {
 	int revents;
 

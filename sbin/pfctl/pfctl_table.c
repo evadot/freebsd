@@ -89,7 +89,7 @@ static const char	*istats_text[2][2][2] = {
 		table.pfrt_flags |= PFR_TFLAG_PERSIST;			\
 		if ((!(opts & PF_OPT_NOACTION) ||			\
 		    (opts & PF_OPT_DUMMYACTION)) &&			\
-		    (pfr_add_tables(&table, 1, &nadd, flags)) &&	\
+		    (pfr_add_table(&table, &nadd, flags)) &&		\
 		    (errno != EPERM)) {					\
 			radix_perror();					\
 			goto _error;					\
@@ -104,7 +104,7 @@ static const char	*istats_text[2][2][2] = {
 	} while(0)
 
 int
-pfctl_clear_tables(const char *anchor, int opts)
+pfctl_do_clear_tables(const char *anchor, int opts)
 {
 	return pfctl_table(0, NULL, NULL, "-F", NULL, anchor, opts);
 }
@@ -157,7 +157,7 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 	if (!strcmp(command, "-F")) {
 		if (argc || file != NULL)
 			usage();
-		RVTEST(pfr_clr_tables(&table, &ndel, flags));
+		RVTEST(pfctl_clear_tables(pfh, &table, &ndel, flags));
 		xprintf(opts, "%d tables deleted", ndel);
 	} else if (!strcmp(command, "-s")) {
 		b.pfrb_type = (opts & PF_OPT_VERBOSE2) ?
@@ -189,7 +189,7 @@ pfctl_table(int argc, char *argv[], char *tname, const char *command,
 	} else if (!strcmp(command, "kill")) {
 		if (argc || file != NULL)
 			usage();
-		RVTEST(pfr_del_tables(&table, 1, &ndel, flags));
+		RVTEST(pfr_del_table(&table, &ndel, flags));
 		xprintf(opts, "%d table deleted", ndel);
 	} else if (!strcmp(command, "flush")) {
 		if (argc || file != NULL)

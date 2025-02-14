@@ -1200,6 +1200,7 @@ vattr_null(struct vattr *vap)
 	vap->va_flags = VNOVAL;
 	vap->va_gen = VNOVAL;
 	vap->va_vaflags = 0;
+	vap->va_filerev = VNOVAL;
 }
 
 /*
@@ -6223,6 +6224,7 @@ vop_remove_pre(void *ap)
 	a = ap;
 	dvp = a->a_dvp;
 	vp = a->a_vp;
+	vfs_notify_upper(vp, VFS_NOTIFY_UPPER_UNLINK);
 	vn_seqc_write_begin(dvp);
 	vn_seqc_write_begin(vp);
 }
@@ -6291,6 +6293,7 @@ vop_rmdir_pre(void *ap)
 	a = ap;
 	dvp = a->a_dvp;
 	vp = a->a_vp;
+	vfs_notify_upper(vp, VFS_NOTIFY_UPPER_UNLINK);
 	vn_seqc_write_begin(dvp);
 	vn_seqc_write_begin(vp);
 }

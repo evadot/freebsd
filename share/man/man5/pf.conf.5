@@ -27,7 +27,7 @@
 .\" ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd December 6, 2024
+.Dd February 10, 2025
 .Dt PF.CONF 5
 .Os
 .Sh NAME
@@ -265,7 +265,8 @@ firewall at the risk of dropping valid idle connections.
 .It Ar tcp.first
 The state after the first packet.
 .It Ar tcp.opening
-The state before the destination host ever sends a packet.
+The state after the second packet but before both endpoints have
+acknowledged the connection.
 .It Ar tcp.established
 The fully established state.
 .It Ar tcp.closing
@@ -706,7 +707,7 @@ For each packet processed by the packet filter, the filter rules are
 evaluated in sequential order, from first to last.
 The last matching rule decides what action is taken.
 If no rule matches the packet, the default action is to pass
-the packet.
+the packet without creating a state.
 .Pp
 The following actions can be used in the filter:
 .Bl -tag -width xxxx
@@ -1809,6 +1810,8 @@ Any address which is not currently routable.
 Any source address that fails a unicast reverse path forwarding (URPF)
 check, i.e. packets coming in on an interface other than that which holds
 the route back to the packet's source address.
+.It Ar self
+Expands to all addresses assigned to all interfaces.
 .It Aq Ar table
 Any address that matches the given table.
 .El
@@ -1821,7 +1824,9 @@ For instance:
 means all addresses from 10.1.1.10 to 10.1.1.12,
 hence addresses 10.1.1.10, 10.1.1.11, and 10.1.1.12.
 .Pp
-Interface names and interface group names can have modifiers appended:
+Interface names and interface group names, and
+.Ar self
+can have modifiers appended:
 .Pp
 .Bl -tag -width xxxxxxxxxxxx -compact
 .It Ar :network
@@ -1865,9 +1870,9 @@ Ports and ranges of ports are specified by using these operators:
 =	(equal)
 !=	(unequal)
 \*(Lt	(less than)
-\*(Le	(less than or equal)
+<=	(less than or equal)
 \*(Gt	(greater than)
-\*(Ge	(greater than or equal)
+>=	(greater than or equal)
 :	(range including boundaries)
 \*(Gt\*(Lt	(range excluding boundaries)
 \*(Lt\*(Gt	(except range)
@@ -1906,9 +1911,9 @@ The host, port and OS specifications are optional, as in the following examples:
 .Bd -literal -offset indent
 pass in all
 pass in from any to any
-pass in proto tcp from any port \*(Le 1024 to any
+pass in proto tcp from any port \*(Lt 1024 to any
 pass in proto tcp from any to any port 25
-pass in proto tcp from 10.0.0.0/8 port \*(Gt 1024 \e
+pass in proto tcp from 10.0.0.0/8 port >= 1024 \e
       to ! 10.1.2.3 port != ssh
 pass in proto tcp from any os "OpenBSD"
 .Ed
@@ -2508,6 +2513,10 @@ Cannot be used with modulate or synproxy state.
 States created by this rule are exported on the
 .Xr pflow 4
 interface.
+.It Ar allow-related
+Automatically allow connections related to this one, regardless of rules that
+might otherwise affect them.
+This currently only applies to SCTP multihomed connection.
 .El
 .Pp
 Multiple options can be specified, separated by commas:
@@ -3310,7 +3319,7 @@ filteropt      = user | group | flags | icmp-type | icmp6-type | "tos" tos |
                  "dnpipe" ( number | "(" number "," number ")" ) |
                  "dnqueue" ( number | "(" number "," number ")" ) |
                  "ridentifier" number |
-                 "received-on" ( interface-name | interface-group )
+                 [ ! ] "received-on" ( interface-name | interface-group )
 
 nat-rule       = [ "no" ] "nat" [ "pass" [ "log" [ "(" logopts ")" ] ] ]
                  [ "on" ifspec ] [ af ]
@@ -3416,7 +3425,7 @@ os             = "os"  ( os-name | "{" os-list "}" )
 user           = "user" ( unary-op | binary-op | "{" op-list "}" )
 group          = "group" ( unary-op | binary-op | "{" op-list "}" )
 
-unary-op       = [ "=" | "!=" | "\*(Lt" | "\*(Le" | "\*(Gt" | "\*(Ge" ]
+unary-op       = [ "=" | "!=" | "\*(Lt" | "<=" | "\*(Gt" | ">=" ]
                  ( name | number )
 binary-op      = number ( "\*(Lt\*(Gt" | "\*(Gt\*(Lt" | ":" ) number
 op-list        = ( unary-op | binary-op ) [ [ "," ] op-list ]

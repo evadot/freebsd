@@ -1754,7 +1754,7 @@
 #define OPENSSL_HAS_ECC 1
 
 /* libcrypto has ed25519 support */
-/* #undef OPENSSL_HAS_ED25519 */
+#define OPENSSL_HAS_ED25519 1
 
 /* libcrypto has NID_X9_62_prime256v1 */
 #define OPENSSL_HAS_NISTP256 1
@@ -1977,8 +1977,8 @@
 /* Define if you want to enable AIX4's authenticate function */
 /* #undef WITH_AIXAUTHENTICATE */
 
-/* Define if to enable DSA keys. */
-#define WITH_DSA 1
+/* DSA keys explicitly enabled */
+/* #undef WITH_DSA */
 
 /* Define if you have/want arrays (cluster-wide session management, not C
    arrays) */
@@ -2015,7 +2015,7 @@
 #endif
 
 /* Define if xauth is found in your path */
-#define XAUTH_PATH "/usr/local/bin/xauth"
+/* #undef XAUTH_PATH */
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */

@@ -1609,7 +1609,7 @@ ieee80211_csa_finish(struct ieee80211_vif *vif, uint32_t link_id)
 	TODO();
 }
 
-static __inline enum nl80211_iftype
+static inline enum nl80211_iftype
 ieee80211_vif_type_p2p(struct ieee80211_vif *vif)
 {
 
@@ -2186,15 +2186,6 @@ ieee80211_txq_get_depth(struct ieee80211_txq *txq, unsigned long *frame_cnt,
 	linuxkpi_ieee80211_txq_get_depth(txq, frame_cnt, byte_cnt);
 }
 
-static __inline int
-rate_lowest_index(struct ieee80211_supported_band *band,
-    struct ieee80211_sta *sta)
-{
-	IMPROVE();
-	return (0);
-}
-
-
 static __inline void
 SET_IEEE80211_PERM_ADDR	(struct ieee80211_hw *hw, uint8_t *addr)
 {
@@ -2273,14 +2264,6 @@ static __inline void
 ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif, bool _x)
 {
 	TODO();
-}
-
-static __inline const struct ieee80211_sta_he_cap *
-ieee80211_get_he_iftype_cap(const struct ieee80211_supported_band *band,
-    enum nl80211_iftype type)
-{
-	TODO();
-        return (NULL);
 }
 
 static __inline void
@@ -2431,20 +2414,24 @@ ieee80211_vif_is_mld(const struct ieee80211_vif *vif)
 	return (vif->valid_links != 0);
 }
 
-static __inline const struct ieee80211_sta_he_cap *
+static inline const struct ieee80211_sta_he_cap *
 ieee80211_get_he_iftype_cap_vif(const struct ieee80211_supported_band *band,
     struct ieee80211_vif *vif)
 {
-	TODO();
-	return (NULL);
+	enum nl80211_iftype iftype;
+
+	iftype = ieee80211_vif_type_p2p(vif);
+	return (ieee80211_get_he_iftype_cap(band, iftype));
 }
 
-static __inline const struct ieee80211_sta_eht_cap *
+static inline const struct ieee80211_sta_eht_cap *
 ieee80211_get_eht_iftype_cap_vif(const struct ieee80211_supported_band *band,
     struct ieee80211_vif *vif)
 {
-	TODO();
-	return (NULL);
+	enum nl80211_iftype iftype;
+
+	iftype = ieee80211_vif_type_p2p(vif);
+	return (ieee80211_get_eht_iftype_cap(band, iftype));
 }
 
 static inline uint32_t

@@ -135,6 +135,11 @@ SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_in_vain, CTLFLAG_VNET | CTLFLAG_RW,
     &VNET_NAME(tcp_log_in_vain), 0,
     "Log all incoming TCP segments to closed ports");
 
+VNET_DEFINE(int, tcp_bind_all_fibs) = 1;
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, bind_all_fibs, CTLFLAG_VNET | CTLFLAG_RDTUN,
+    &VNET_NAME(tcp_bind_all_fibs), 0,
+    "Bound sockets receive traffic from all FIBs");
+
 VNET_DEFINE(int, blackhole) = 0;
 #define	V_blackhole		VNET(blackhole)
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, blackhole, CTLFLAG_VNET | CTLFLAG_RW,
@@ -833,7 +838,8 @@ tcp_input_with_port(struct mbuf **mp, int *offp, int proto, uint16_t port)
 	 */
 	lookupflag = INPLOOKUP_WILDCARD |
 	    ((thflags & (TH_ACK|TH_SYN)) == TH_SYN ?
-	    INPLOOKUP_RLOCKPCB : INPLOOKUP_WLOCKPCB);
+	    INPLOOKUP_RLOCKPCB : INPLOOKUP_WLOCKPCB) |
+	    (V_tcp_bind_all_fibs ? 0 : INPLOOKUP_FIB);
 findpcb:
 	tp = NULL;
 #ifdef INET6
@@ -1354,15 +1360,6 @@ tfo_socket_result:
 		 * Only the listen socket is unlocked by syncache_add().
 		 */
 		return (IPPROTO_DONE);
-	} else if (tp->t_state == TCPS_LISTEN) {
-		/*
-		 * When a listen socket is torn down the SO_ACCEPTCONN
-		 * flag is removed first while connections are drained
-		 * from the accept queue in a unlock/lock cycle of the
-		 * ACCEPT_LOCK, opening a race condition allowing a SYN
-		 * attempt go through unhandled.
-		 */
-		goto dropunlock;
 	}
 #if defined(IPSEC_SUPPORT) || defined(TCP_SIGNATURE)
 	if (tp->t_flags & TF_SIGNATURE) {

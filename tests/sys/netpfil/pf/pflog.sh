@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # Copyright (c) 2023 Rubicon Communications, LLC (Netgate)
+# Copyright (c) 2024 Deciso B.V.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -132,8 +133,142 @@ matches_cleanup()
 	pft_cleanup
 }
 
+atf_test_case "state_max" "cleanup"
+state_max_head()
+{
+	atf_set descr 'Ensure that drops due to state limits are logged'
+	atf_set require.user root
+}
+
+state_max_body()
+{
+	pflog_init
+
+	epair=$(vnet_mkepair)
+
+	vnet_mkjail alcatraz ${epair}a
+	jexec alcatraz ifconfig ${epair}a 192.0.2.1/24 up
+
+	ifconfig ${epair}b 192.0.2.2/24 up
+
+	# Sanity check
+	atf_check -s exit:0 -o ignore \
+	    ping -c 1 192.0.2.1
+
+	jexec alcatraz pfctl -e
+	jexec alcatraz ifconfig pflog0 up
+	pft_set_rules alcatraz "pass log inet keep state (max 1)"
+
+	jexec alcatraz tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> ${PWD}/pflog.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	atf_check -s exit:0 -o ignore \
+	    ping -c 1 192.0.2.1
+
+	atf_check -s exit:2 -o ignore \
+	    ping -c 1 192.0.2.1
+
+	echo "Rules"
+	jexec alcatraz pfctl -sr -vv
+	echo "States"
+	jexec alcatraz pfctl -ss -vv
+	echo "Log"
+	cat ${PWD}/pflog.txt
+
+	# First ping passes.
+	atf_check -o match:".*rule 0/0\(match\): pass in on ${epair}a: 192.0.2.2 > 192.0.2.1: ICMP echo request.*" \
+	    cat pflog.txt
+
+	# Second ping is blocked due to the state limit.
+	atf_check -o match:".*rule 0/0\(match\): block in on ${epair}a: 192.0.2.2 > 192.0.2.1: ICMP echo request.*" \
+	    cat pflog.txt
+
+	# At most three lines should be written: one for the first ping, and
+	# two for the second: one for the initial pass through the ruleset, and
+	# then a drop because of the state limit.  Ideally only the drop would
+	# be logged; if this is fixed, the count will be 2 instead of 3.
+	atf_check -o match:3 grep -c . pflog.txt
+}
+
+state_max_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "unspecified_v4" "cleanup"
+unspecified_v4_head()
+{
+	atf_set descr 'Ensure that packets to the unspecified address are visible to pfil hooks'
+	atf_set require.user root
+}
+
+unspecified_v4_body()
+{
+	pflog_init
+
+	vnet_mkjail alcatraz
+	jexec alcatraz ifconfig lo0 inet 127.0.0.1
+	jexec alcatraz route add default 127.0.0.1
+
+	jexec alcatraz pfctl -e
+	jexec alcatraz ifconfig pflog0 up
+	pft_set_rules alcatraz "block log on lo0 to 0.0.0.0"
+
+	jexec alcatraz tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> pflog.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    jexec alcatraz ping -S 127.0.0.1 -c 1 0.0.0.0
+
+	atf_check -o match:".*: block out on lo0: 127.0.0.1 > 0.0.0.0: ICMP echo request,.*" \
+	    cat pflog.txt
+}
+
+unspecified_v4_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "unspecified_v6" "cleanup"
+unspecified_v6_head()
+{
+	atf_set descr 'Ensure that packets to the unspecified address are visible to pfil hooks'
+	atf_set require.user root
+}
+
+unspecified_v6_body()
+{
+	pflog_init
+
+	vnet_mkjail alcatraz
+	jexec alcatraz ifconfig lo0 up
+	jexec alcatraz route -6 add ::0 ::1
+
+	jexec alcatraz pfctl -e
+	jexec alcatraz ifconfig pflog0 up
+	pft_set_rules alcatraz "block log on lo0 to ::0"
+
+	jexec alcatraz tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> pflog.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    jexec alcatraz ping -6 -S ::1 -c 1 ::0
+
+	cat pflog.txt
+	atf_check -o match:".*: block out on lo0: ::1 > ::: ICMP6, echo request,.*" \
+	    cat pflog.txt
+}
+
+unspecified_v6_cleanup()
+{
+	pft_cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case "malformed"
 	atf_add_test_case "matches"
+	atf_add_test_case "state_max"
+	atf_add_test_case "unspecified_v4"
+	atf_add_test_case "unspecified_v6"
 }

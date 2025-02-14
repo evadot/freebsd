@@ -5,7 +5,8 @@ BINDIR=		${TESTSDIR}
 
 TESTS_SUBDIRS+=	libalias
 
-ATF_TESTS_C=	ip_reass_test \
+ATF_TESTS_C=	fibs_multibind_test \
+		ip_reass_test \
 		ip6_v4mapped_test \
 		so_reuseport_lb_test \
 		socket_afinet \
@@ -26,6 +27,8 @@ ATF_TESTS_SH=	arp \
 
 ATF_TESTS_PYTEST+=	carp.py
 ATF_TESTS_PYTEST+=	igmp.py
+
+LIBADD.so_reuseport_lb_test=	pthread
 
 # Some of the arp tests look for log messages in the dmesg buffer, so run them
 # serially to avoid problems with interleaved output.

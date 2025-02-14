@@ -30,6 +30,8 @@
  */
 
 #include <sys/types.h>
+#include <sys/event.h>
+#include <sys/nv.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -64,6 +66,7 @@ static volatile bool sighup_received = false;
 static volatile bool sigterm_received = false;
 static volatile bool sigalrm_received = false;
 
+static int kqfd;
 static int nchildren = 0;
 static uint16_t last_portal_group_tag = 0xff;
 
@@ -337,16 +340,16 @@ auth_name_find(const struct auth_group *ag, const char *name)
 	return (NULL);
 }
 
-int
+bool
 auth_name_check(const struct auth_group *ag, const char *initiator_name)
 {
 	if (!auth_name_defined(ag))
-		return (0);
+		return (true);
 
 	if (auth_name_find(ag, initiator_name) == NULL)
-		return (1);
+		return (false);
 
-	return (0);
+	return (true);
 }
 
 const struct auth_portal *
@@ -463,17 +466,17 @@ next:
 	return (NULL);
 }
 
-int
+bool
 auth_portal_check(const struct auth_group *ag, const struct sockaddr_storage *sa)
 {
 
 	if (!auth_portal_defined(ag))
-		return (0);
+		return (true);
 
 	if (auth_portal_find(ag, sa) == NULL)
-		return (1);
+		return (false);
 
-	return (0);
+	return (true);
 }
 
 struct auth_group *
@@ -537,7 +540,7 @@ auth_group_find(const struct conf *conf, const char *name)
 	return (NULL);
 }
 
-int
+bool
 auth_group_set_type(struct auth_group *ag, const char *str)
 {
 	int type;
@@ -557,7 +560,7 @@ auth_group_set_type(struct auth_group *ag, const char *str)
 		else
 			log_warnx("invalid auth-type \"%s\" for target "
 			    "\"%s\"", str, ag->ag_target->t_name);
-		return (1);
+		return (false);
 	}
 
 	if (ag->ag_type != AG_TYPE_UNKNOWN && ag->ag_type != type) {
@@ -570,12 +573,12 @@ auth_group_set_type(struct auth_group *ag, const char *str)
 			    "\"%s\"; already has a different type",
 			    str, ag->ag_target->t_name);
 		}
-		return (1);
+		return (false);
 	}
 
 	ag->ag_type = type;
 
-	return (0);
+	return (true);
 }
 
 static struct portal *
@@ -618,7 +621,7 @@ portal_group_new(struct conf *conf, const char *name)
 	if (pg == NULL)
 		log_err(1, "calloc");
 	pg->pg_name = checked_strdup(name);
-	TAILQ_INIT(&pg->pg_options);
+	pg->pg_options = nvlist_create(0);
 	TAILQ_INIT(&pg->pg_portals);
 	TAILQ_INIT(&pg->pg_ports);
 	pg->pg_conf = conf;
@@ -635,7 +638,6 @@ portal_group_delete(struct portal_group *pg)
 {
 	struct portal *portal, *tmp;
 	struct port *port, *tport;
-	struct option *o, *otmp;
 
 	TAILQ_FOREACH_SAFE(port, &pg->pg_ports, p_pgs, tport)
 		port_delete(port);
@@ -643,8 +645,7 @@ portal_group_delete(struct portal_group *pg)
 
 	TAILQ_FOREACH_SAFE(portal, &pg->pg_portals, p_next, tmp)
 		portal_delete(portal);
-	TAILQ_FOREACH_SAFE(o, &pg->pg_options, o_next, otmp)
-		option_delete(&pg->pg_options, o);
+	nvlist_destroy(pg->pg_options);
 	free(pg->pg_name);
 	free(pg->pg_offload);
 	free(pg->pg_redirection);
@@ -721,7 +722,7 @@ parse_addr_port(char *arg, const char *def_port, struct addrinfo **ai)
 	return ((error != 0) ? 1 : 0);
 }
 
-int
+bool
 portal_group_add_listen(struct portal_group *pg, const char *value, bool iser)
 {
 	struct portal *portal;
@@ -733,7 +734,7 @@ portal_group_add_listen(struct portal_group *pg, const char *value, bool iser)
 	if (parse_addr_port(portal->p_listen, "3260", &portal->p_ai)) {
 		log_warnx("invalid listen address %s", portal->p_listen);
 		portal_delete(portal);
-		return (1);
+		return (false);
 	}
 
 	/*
@@ -741,10 +742,10 @@ portal_group_add_listen(struct portal_group *pg, const char *value, bool iser)
 	 *	those into multiple portals.
 	 */
 
-	return (0);
+	return (true);
 }
 
-int
+bool
 isns_new(struct conf *conf, const char *addr)
 {
 	struct isns *isns;
@@ -759,7 +760,7 @@ isns_new(struct conf *conf, const char *addr)
 	if (parse_addr_port(isns->i_addr, "3205", &isns->i_ai)) {
 		log_warnx("invalid iSNS address %s", isns->i_addr);
 		isns_delete(isns);
-		return (1);
+		return (false);
 	}
 
 	/*
@@ -767,7 +768,7 @@ isns_new(struct conf *conf, const char *addr)
 	 *	those into multiple servers.
 	 */
 
-	return (0);
+	return (true);
 }
 
 void
@@ -945,7 +946,7 @@ isns_register(struct isns *isns, struct isns *oldisns)
 	error = gethostname(hostname, sizeof(hostname));
 	if (error != 0)
 		log_err(1, "gethostname");
- 
+
 	if (oldisns == NULL || TAILQ_EMPTY(&oldisns->i_conf->conf_targets))
 		oldisns = isns;
 	isns_do_deregister(oldisns, s, hostname);
@@ -973,7 +974,7 @@ isns_check(struct isns *isns)
 	error = gethostname(hostname, sizeof(hostname));
 	if (error != 0)
 		log_err(1, "gethostname");
- 
+
 	res = isns_do_check(isns, s, hostname);
 	if (res < 0) {
 		isns_do_deregister(isns, s, hostname);
@@ -1000,13 +1001,13 @@ isns_deregister(struct isns *isns)
 	error = gethostname(hostname, sizeof(hostname));
 	if (error != 0)
 		log_err(1, "gethostname");
- 
+
 	isns_do_deregister(isns, s, hostname);
 	close(s);
 	set_timeout(0, false);
 }
 
-int
+bool
 portal_group_set_filter(struct portal_group *pg, const char *str)
 {
 	int filter;
@@ -1024,7 +1025,7 @@ portal_group_set_filter(struct portal_group *pg, const char *str)
 		    "\"%s\"; valid values are \"none\", \"portal\", "
 		    "\"portal-name\", and \"portal-name-auth\"",
 		    str, pg->pg_name);
-		return (1);
+		return (false);
 	}
 
 	if (pg->pg_discovery_filter != PG_FILTER_UNKNOWN &&
@@ -1032,15 +1033,15 @@ portal_group_set_filter(struct portal_group *pg, const char *str)
 		log_warnx("cannot set discovery-filter to \"%s\" for "
 		    "portal-group \"%s\"; already has a different "
 		    "value", str, pg->pg_name);
-		return (1);
+		return (false);
 	}
 
 	pg->pg_discovery_filter = filter;
 
-	return (0);
+	return (true);
 }
 
-int
+bool
 portal_group_set_offload(struct portal_group *pg, const char *offload)
 {
 
@@ -1048,15 +1049,15 @@ portal_group_set_offload(struct portal_group *pg, const char *offload)
 		log_warnx("cannot set offload to \"%s\" for "
 		    "portal-group \"%s\"; already defined",
 		    offload, pg->pg_name);
-		return (1);
+		return (false);
 	}
 
 	pg->pg_offload = checked_strdup(offload);
 
-	return (0);
+	return (true);
 }
 
-int
+bool
 portal_group_set_redirection(struct portal_group *pg, const char *addr)
 {
 
@@ -1064,111 +1065,11 @@ portal_group_set_redirection(struct portal_group *pg, const char *addr)
 		log_warnx("cannot set redirection to \"%s\" for "
 		    "portal-group \"%s\"; already defined",
 		    addr, pg->pg_name);
-		return (1);
+		return (false);
 	}
 
 	pg->pg_redirection = checked_strdup(addr);
 
-	return (0);
-}
-
-static bool
-valid_hex(const char ch)
-{
-	switch (ch) {
-	case '0':
-	case '1':
-	case '2':
-	case '3':
-	case '4':
-	case '5':
-	case '6':
-	case '7':
-	case '8':
-	case '9':
-	case 'a':
-	case 'A':
-	case 'b':
-	case 'B':
-	case 'c':
-	case 'C':
-	case 'd':
-	case 'D':
-	case 'e':
-	case 'E':
-	case 'f':
-	case 'F':
-		return (true);
-	default:
-		return (false);
-	}
-}
-
-bool
-valid_iscsi_name(const char *name)
-{
-	int i;
-
-	if (strlen(name) >= MAX_NAME_LEN) {
-		log_warnx("overlong name for target \"%s\"; max length allowed "
-		    "by iSCSI specification is %d characters",
-		    name, MAX_NAME_LEN);
-		return (false);
-	}
-
-	/*
-	 * In the cases below, we don't return an error, just in case the admin
-	 * was right, and we're wrong.
-	 */
-	if (strncasecmp(name, "iqn.", strlen("iqn.")) == 0) {
-		for (i = strlen("iqn."); name[i] != '\0'; i++) {
-			/*
-			 * XXX: We should verify UTF-8 normalisation, as defined
-			 *      by 3.2.6.2: iSCSI Name Encoding.
-			 */
-			if (isalnum(name[i]))
-				continue;
-			if (name[i] == '-' || name[i] == '.' || name[i] == ':')
-				continue;
-			log_warnx("invalid character \"%c\" in target name "
-			    "\"%s\"; allowed characters are letters, digits, "
-			    "'-', '.', and ':'", name[i], name);
-			break;
-		}
-		/*
-		 * XXX: Check more stuff: valid date and a valid reversed domain.
-		 */
-	} else if (strncasecmp(name, "eui.", strlen("eui.")) == 0) {
-		if (strlen(name) != strlen("eui.") + 16)
-			log_warnx("invalid target name \"%s\"; the \"eui.\" "
-			    "should be followed by exactly 16 hexadecimal "
-			    "digits", name);
-		for (i = strlen("eui."); name[i] != '\0'; i++) {
-			if (!valid_hex(name[i])) {
-				log_warnx("invalid character \"%c\" in target "
-				    "name \"%s\"; allowed characters are 1-9 "
-				    "and A-F", name[i], name);
-				break;
-			}
-		}
-	} else if (strncasecmp(name, "naa.", strlen("naa.")) == 0) {
-		if (strlen(name) > strlen("naa.") + 32)
-			log_warnx("invalid target name \"%s\"; the \"naa.\" "
-			    "should be followed by at most 32 hexadecimal "
-			    "digits", name);
-		for (i = strlen("naa."); name[i] != '\0'; i++) {
-			if (!valid_hex(name[i])) {
-				log_warnx("invalid character \"%c\" in target "
-				    "name \"%s\"; allowed characters are 1-9 "
-				    "and A-F", name[i], name);
-				break;
-			}
-		}
-	} else {
-		log_warnx("invalid target name \"%s\"; should start with "
-		    "either \"iqn.\", \"eui.\", or \"naa.\"",
-		    name);
-	}
 	return (true);
 }
 
@@ -1241,7 +1142,6 @@ port_new(struct conf *conf, struct target *target, struct portal_group *pg)
 		log_err(1, "calloc");
 	port->p_conf = conf;
 	port->p_name = name;
-	port->p_ioctl_port = 0;
 	TAILQ_INSERT_TAIL(&conf->conf_ports, port, p_next);
 	TAILQ_INSERT_TAIL(&target->t_ports, port, p_ts);
 	port->p_target = target;
@@ -1287,7 +1187,7 @@ port_new_ioctl(struct conf *conf, struct kports *kports, struct target *target,
 		log_err(1, "calloc");
 	port->p_conf = conf;
 	port->p_name = name;
-	port->p_ioctl_port = 1;
+	port->p_ioctl_port = true;
 	port->p_ioctl_pp = pp;
 	port->p_ioctl_vp = vp;
 	TAILQ_INSERT_TAIL(&conf->conf_ports, port, p_next);
@@ -1365,17 +1265,17 @@ port_delete(struct port *port)
 	free(port);
 }
 
-int
+bool
 port_is_dummy(struct port *port)
 {
 
 	if (port->p_portal_group) {
 		if (port->p_portal_group->pg_foreign)
-			return (1);
+			return (true);
 		if (TAILQ_EMPTY(&port->p_portal_group->pg_portals))
-			return (1);
+			return (true);
 	}
-	return (0);
+	return (false);
 }
 
 struct target *
@@ -1389,8 +1289,7 @@ target_new(struct conf *conf, const char *name)
 		log_warnx("duplicated target \"%s\"", name);
 		return (NULL);
 	}
-	if (valid_iscsi_name(name) == false) {
-		log_warnx("target name \"%s\" is invalid", name);
+	if (valid_iscsi_name(name, log_warnx) == false) {
 		return (NULL);
 	}
 	targ = calloc(1, sizeof(*targ));
@@ -1440,7 +1339,7 @@ target_find(struct conf *conf, const char *name)
 	return (NULL);
 }
 
-int
+bool
 target_set_redirection(struct target *target, const char *addr)
 {
 
@@ -1448,12 +1347,12 @@ target_set_redirection(struct target *target, const char *addr)
 		log_warnx("cannot set redirection to \"%s\" for "
 		    "target \"%s\"; already defined",
 		    addr, target->t_name);
-		return (1);
+		return (false);
 	}
 
 	target->t_redirection = checked_strdup(addr);
 
-	return (0);
+	return (true);
 }
 
 struct lun *
@@ -1472,7 +1371,7 @@ lun_new(struct conf *conf, const char *name)
 		log_err(1, "calloc");
 	lun->l_conf = conf;
 	lun->l_name = checked_strdup(name);
-	TAILQ_INIT(&lun->l_options);
+	lun->l_options = nvlist_create(0);
 	TAILQ_INSERT_TAIL(&conf->conf_luns, lun, l_next);
 	lun->l_ctl_lun = -1;
 
@@ -1483,7 +1382,6 @@ void
 lun_delete(struct lun *lun)
 {
 	struct target *targ;
-	struct option *o, *tmp;
 	int i;
 
 	TAILQ_FOREACH(targ, &lun->l_conf->conf_targets, t_next) {
@@ -1494,8 +1392,7 @@ lun_delete(struct lun *lun)
 	}
 	TAILQ_REMOVE(&lun->l_conf->conf_luns, lun, l_next);
 
-	TAILQ_FOREACH_SAFE(o, &lun->l_options, o_next, tmp)
-		option_delete(&lun->l_options, o);
+	nvlist_destroy(lun->l_options);
 	free(lun->l_name);
 	free(lun->l_backend);
 	free(lun->l_device_id);
@@ -1568,7 +1465,7 @@ lun_set_serial(struct lun *lun, const char *value)
 }
 
 void
-lun_set_size(struct lun *lun, size_t value)
+lun_set_size(struct lun *lun, int64_t value)
 {
 
 	lun->l_size = value;
@@ -1581,56 +1478,23 @@ lun_set_ctl_lun(struct lun *lun, uint32_t value)
 	lun->l_ctl_lun = value;
 }
 
-struct option *
-option_new(struct options *options, const char *name, const char *value)
+bool
+option_new(nvlist_t *nvl, const char *name, const char *value)
 {
-	struct option *o;
+	int error;
 
-	o = option_find(options, name);
-	if (o != NULL) {
+	if (nvlist_exists_string(nvl, name)) {
 		log_warnx("duplicated option \"%s\"", name);
-		return (NULL);
+		return (false);
 	}
 
-	o = calloc(1, sizeof(*o));
-	if (o == NULL)
-		log_err(1, "calloc");
-	o->o_name = checked_strdup(name);
-	o->o_value = checked_strdup(value);
-	TAILQ_INSERT_TAIL(options, o, o_next);
-
-	return (o);
-}
-
-void
-option_delete(struct options *options, struct option *o)
-{
-
-	TAILQ_REMOVE(options, o, o_next);
-	free(o->o_name);
-	free(o->o_value);
-	free(o);
-}
-
-struct option *
-option_find(const struct options *options, const char *name)
-{
-	struct option *o;
-
-	TAILQ_FOREACH(o, options, o_next) {
-		if (strcmp(o->o_name, name) == 0)
-			return (o);
+	nvlist_add_string(nvl, name, value);
+	error = nvlist_error(nvl);
+	if (error != 0) {
+		log_warnc(error, "failed to add option \"%s\"", name);
+		return (false);
 	}
-
-	return (NULL);
-}
-
-void
-option_set(struct option *o, const char *value)
-{
-
-	free(o->o_value);
-	o->o_value = checked_strdup(value);
+	return (true);
 }
 
 #ifdef ICL_KERNEL_PROXY
@@ -1692,6 +1556,19 @@ connection_new(struct portal *portal, int fd, const char *host,
 
 #if 0
 static void
+options_print(const char *prefix, nvlist_t *nvl)
+{
+	const char *name;
+	void *cookie;
+
+	cookie = NULL;
+	while ((name = nvlist_next(nvl, NULL, &cookie)) != NULL) {
+		fprintf(stderr, "%soption %s %s\n", prefix, name,
+		    nvlist_get_string(nvl, name));
+	}
+}
+
+static void
 conf_print(struct conf *conf)
 {
 	struct auth_group *ag;
@@ -1702,7 +1579,6 @@ conf_print(struct conf *conf)
 	struct portal *portal;
 	struct target *targ;
 	struct lun *lun;
-	struct option *o;
 
 	TAILQ_FOREACH(ag, &conf->conf_auth_groups, ag_next) {
 		fprintf(stderr, "auth-group %s {\n", ag->ag_name);
@@ -1722,14 +1598,13 @@ conf_print(struct conf *conf)
 		fprintf(stderr, "portal-group %s {\n", pg->pg_name);
 		TAILQ_FOREACH(portal, &pg->pg_portals, p_next)
 			fprintf(stderr, "\t listen %s\n", portal->p_listen);
+		options_print("\t", pg->pg_options);
 		fprintf(stderr, "}\n");
 	}
 	TAILQ_FOREACH(lun, &conf->conf_luns, l_next) {
 		fprintf(stderr, "\tlun %s {\n", lun->l_name);
 		fprintf(stderr, "\t\tpath %s\n", lun->l_path);
-		TAILQ_FOREACH(o, &lun->l_options, o_next)
-			fprintf(stderr, "\t\toption %s %s\n",
-			    o->o_name, o->o_value);
+		options_print("\t\t", lun->l_options);
 		fprintf(stderr, "\t}\n");
 	}
 	TAILQ_FOREACH(targ, &conf->conf_targets, t_next) {
@@ -1741,7 +1616,7 @@ conf_print(struct conf *conf)
 }
 #endif
 
-static int
+static bool
 conf_verify_lun(struct lun *lun)
 {
 	const struct lun *lun2;
@@ -1752,19 +1627,19 @@ conf_verify_lun(struct lun *lun)
 		if (lun->l_path == NULL) {
 			log_warnx("missing path for lun \"%s\"",
 			    lun->l_name);
-			return (1);
+			return (false);
 		}
 	} else if (strcmp(lun->l_backend, "ramdisk") == 0) {
 		if (lun->l_size == 0) {
 			log_warnx("missing size for ramdisk-backed lun \"%s\"",
 			    lun->l_name);
-			return (1);
+			return (false);
 		}
 		if (lun->l_path != NULL) {
 			log_warnx("path must not be specified "
 			    "for ramdisk-backed lun \"%s\"",
 			    lun->l_name);
-			return (1);
+			return (false);
 		}
 	}
 	if (lun->l_blocksize == 0) {
@@ -1775,12 +1650,12 @@ conf_verify_lun(struct lun *lun)
 	} else if (lun->l_blocksize < 0) {
 		log_warnx("invalid blocksize for lun \"%s\"; "
 		    "must be larger than 0", lun->l_name);
-		return (1);
+		return (false);
 	}
 	if (lun->l_size != 0 && lun->l_size % lun->l_blocksize != 0) {
 		log_warnx("invalid size for lun \"%s\"; "
 		    "must be multiple of blocksize", lun->l_name);
-		return (1);
+		return (false);
 	}
 	TAILQ_FOREACH(lun2, &lun->l_conf->conf_luns, l_next) {
 		if (lun == lun2)
@@ -1794,10 +1669,10 @@ conf_verify_lun(struct lun *lun)
 		}
 	}
 
-	return (0);
+	return (true);
 }
 
-int
+bool
 conf_verify(struct conf *conf)
 {
 	struct auth_group *ag;
@@ -1806,15 +1681,14 @@ conf_verify(struct conf *conf)
 	struct target *targ;
 	struct lun *lun;
 	bool found;
-	int error, i;
+	int i;
 
 	if (conf->conf_pidfile_path == NULL)
 		conf->conf_pidfile_path = checked_strdup(DEFAULT_PIDFILE);
 
 	TAILQ_FOREACH(lun, &conf->conf_luns, l_next) {
-		error = conf_verify_lun(lun);
-		if (error != 0)
-			return (error);
+		if (!conf_verify_lun(lun))
+			return (false);
 	}
 	TAILQ_FOREACH(targ, &conf->conf_targets, t_next) {
 		if (targ->t_auth_group == NULL) {
@@ -1904,7 +1778,128 @@ conf_verify(struct conf *conf)
 		}
 	}
 
-	return (0);
+	return (true);
+}
+
+static bool
+portal_reuse_socket(struct portal *oldp, struct portal *newp)
+{
+	struct kevent kev;
+
+	if (strcmp(newp->p_listen, oldp->p_listen) != 0)
+		return (false);
+
+	if (oldp->p_socket <= 0)
+		return (false);
+
+	EV_SET(&kev, oldp->p_socket, EVFILT_READ, EV_ADD, 0, 0, newp);
+	if (kevent(kqfd, &kev, 1, NULL, 0, NULL) == -1)
+		return (false);
+
+	newp->p_socket = oldp->p_socket;
+	oldp->p_socket = 0;
+	return (true);
+}
+
+static bool
+portal_init_socket(struct portal *p)
+{
+	struct portal_group *pg = p->p_portal_group;
+	struct kevent kev;
+	int error, sockbuf;
+	int one = 1;
+
+	log_debugx("listening on %s, portal-group \"%s\"",
+	    p->p_listen, pg->pg_name);
+	p->p_socket = socket(p->p_ai->ai_family, p->p_ai->ai_socktype,
+	    p->p_ai->ai_protocol);
+	if (p->p_socket < 0) {
+		log_warn("socket(2) failed for %s",
+		    p->p_listen);
+		return (false);
+	}
+
+	sockbuf = SOCKBUF_SIZE;
+	if (setsockopt(p->p_socket, SOL_SOCKET, SO_RCVBUF, &sockbuf,
+	    sizeof(sockbuf)) == -1)
+		log_warn("setsockopt(SO_RCVBUF) failed for %s",
+		    p->p_listen);
+	sockbuf = SOCKBUF_SIZE;
+	if (setsockopt(p->p_socket, SOL_SOCKET, SO_SNDBUF, &sockbuf,
+	    sizeof(sockbuf)) == -1)
+		log_warn("setsockopt(SO_SNDBUF) failed for %s", p->p_listen);
+	if (setsockopt(p->p_socket, SOL_SOCKET, SO_NO_DDP, &one,
+	    sizeof(one)) == -1)
+		log_warn("setsockopt(SO_NO_DDP) failed for %s", p->p_listen);
+	error = setsockopt(p->p_socket, SOL_SOCKET, SO_REUSEADDR, &one,
+	    sizeof(one));
+	if (error != 0) {
+		log_warn("setsockopt(SO_REUSEADDR) failed for %s", p->p_listen);
+		close(p->p_socket);
+		p->p_socket = 0;
+		return (false);
+	}
+
+	if (pg->pg_dscp != -1) {
+		/* Only allow the 6-bit DSCP field to be modified */
+		int tos = pg->pg_dscp << 2;
+		switch (p->p_ai->ai_family) {
+		case AF_INET:
+			if (setsockopt(p->p_socket, IPPROTO_IP, IP_TOS,
+			    &tos, sizeof(tos)) == -1)
+				log_warn("setsockopt(IP_TOS) failed for %s",
+				    p->p_listen);
+			break;
+		case AF_INET6:
+			if (setsockopt(p->p_socket, IPPROTO_IPV6, IPV6_TCLASS,
+			    &tos, sizeof(tos)) == -1)
+				log_warn("setsockopt(IPV6_TCLASS) failed for %s",
+				    p->p_listen);
+			break;
+		}
+	}
+	if (pg->pg_pcp != -1) {
+		int pcp = pg->pg_pcp;
+		switch (p->p_ai->ai_family) {
+		case AF_INET:
+			if (setsockopt(p->p_socket, IPPROTO_IP, IP_VLAN_PCP,
+			    &pcp, sizeof(pcp)) == -1)
+				log_warn("setsockopt(IP_VLAN_PCP) failed for %s",
+				    p->p_listen);
+			break;
+		case AF_INET6:
+			if (setsockopt(p->p_socket, IPPROTO_IPV6, IPV6_VLAN_PCP,
+			    &pcp, sizeof(pcp)) == -1)
+				log_warn("setsockopt(IPV6_VLAN_PCP) failed for %s",
+				    p->p_listen);
+			break;
+		}
+	}
+
+	error = bind(p->p_socket, p->p_ai->ai_addr,
+	    p->p_ai->ai_addrlen);
+	if (error != 0) {
+		log_warn("bind(2) failed for %s", p->p_listen);
+		close(p->p_socket);
+		p->p_socket = 0;
+		return (false);
+	}
+	error = listen(p->p_socket, -1);
+	if (error != 0) {
+		log_warn("listen(2) failed for %s", p->p_listen);
+		close(p->p_socket);
+		p->p_socket = 0;
+		return (false);
+	}
+	EV_SET(&kev, p->p_socket, EVFILT_READ, EV_ADD, 0, 0, p);
+	error = kevent(kqfd, &kev, 1, NULL, 0, NULL);
+	if (error == -1) {
+		log_warn("kevent(2) failed to register for %s", p->p_listen);
+		close(p->p_socket);
+		p->p_socket = 0;
+		return (false);
+	}
+	return (true);
 }
 
 static int
@@ -1915,8 +1910,7 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 	struct portal *oldp, *newp;
 	struct port *oldport, *newport, *tmpport;
 	struct isns *oldns, *newns;
-	int changed, cumulated_error = 0, error, sockbuf;
-	int one = 1;
+	int changed, cumulated_error = 0, error;
 
 	if (oldconf->conf_debug != newconf->conf_debug) {
 		log_debugx("changing debug level to %d", newconf->conf_debug);
@@ -2151,16 +2145,11 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 			    pg_next) {
 				TAILQ_FOREACH(oldp, &oldpg->pg_portals,
 				    p_next) {
-					if (strcmp(newp->p_listen,
-					    oldp->p_listen) == 0 &&
-					    oldp->p_socket > 0) {
-						newp->p_socket =
-						    oldp->p_socket;
-						oldp->p_socket = 0;
-						break;
-					}
+					if (portal_reuse_socket(oldp, newp))
+						goto reused;
 				}
 			}
+		reused:
 			if (newp->p_socket > 0) {
 				/*
 				 * We're done with this portal.
@@ -2183,109 +2172,7 @@ conf_apply(struct conf *oldconf, struct conf *newconf)
 			assert(proxy_mode == false);
 			assert(newp->p_iser == false);
 
-			log_debugx("listening on %s, portal-group \"%s\"",
-			    newp->p_listen, newpg->pg_name);
-			newp->p_socket = socket(newp->p_ai->ai_family,
-			    newp->p_ai->ai_socktype,
-			    newp->p_ai->ai_protocol);
-			if (newp->p_socket < 0) {
-				log_warn("socket(2) failed for %s",
-				    newp->p_listen);
-				cumulated_error++;
-				continue;
-			}
-			sockbuf = SOCKBUF_SIZE;
-			if (setsockopt(newp->p_socket, SOL_SOCKET, SO_RCVBUF,
-			    &sockbuf, sizeof(sockbuf)) == -1)
-				log_warn("setsockopt(SO_RCVBUF) failed "
-				    "for %s", newp->p_listen);
-			sockbuf = SOCKBUF_SIZE;
-			if (setsockopt(newp->p_socket, SOL_SOCKET, SO_SNDBUF,
-			    &sockbuf, sizeof(sockbuf)) == -1)
-				log_warn("setsockopt(SO_SNDBUF) failed "
-				    "for %s", newp->p_listen);
-			if (setsockopt(newp->p_socket, SOL_SOCKET, SO_NO_DDP,
-			    &one, sizeof(one)) == -1)
-				log_warn("setsockopt(SO_NO_DDP) failed "
-				    "for %s", newp->p_listen);
-			error = setsockopt(newp->p_socket, SOL_SOCKET,
-			    SO_REUSEADDR, &one, sizeof(one));
-			if (error != 0) {
-				log_warn("setsockopt(SO_REUSEADDR) failed "
-				    "for %s", newp->p_listen);
-				close(newp->p_socket);
-				newp->p_socket = 0;
-				cumulated_error++;
-				continue;
-			}
-			if (newpg->pg_dscp != -1) {
-				struct sockaddr sa;
-				int len = sizeof(sa);
-				getsockname(newp->p_socket, &sa, &len);
-				/*
-				 * Only allow the 6-bit DSCP
-				 * field to be modified
-				 */
-				int tos = newpg->pg_dscp << 2;
-				if (sa.sa_family == AF_INET) {
-					if (setsockopt(newp->p_socket,
-					    IPPROTO_IP, IP_TOS,
-					    &tos, sizeof(tos)) == -1)
-						log_warn("setsockopt(IP_TOS) "
-						    "failed for %s",
-						    newp->p_listen);
-				} else
-				if (sa.sa_family == AF_INET6) {
-					if (setsockopt(newp->p_socket,
-					    IPPROTO_IPV6, IPV6_TCLASS,
-					    &tos, sizeof(tos)) == -1)
-						log_warn("setsockopt(IPV6_TCLASS) "
-						    "failed for %s",
-						    newp->p_listen);
-				}
-			}
-			if (newpg->pg_pcp != -1) {
-				struct sockaddr sa;
-				int len = sizeof(sa);
-				getsockname(newp->p_socket, &sa, &len);
-				/*
-				 * Only allow the 6-bit DSCP
-				 * field to be modified
-				 */
-				int pcp = newpg->pg_pcp;
-				if (sa.sa_family == AF_INET) {
-					if (setsockopt(newp->p_socket,
-					    IPPROTO_IP, IP_VLAN_PCP,
-					    &pcp, sizeof(pcp)) == -1)
-						log_warn("setsockopt(IP_VLAN_PCP) "
-						    "failed for %s",
-						    newp->p_listen);
-				} else
-				if (sa.sa_family == AF_INET6) {
-					if (setsockopt(newp->p_socket,
-					    IPPROTO_IPV6, IPV6_VLAN_PCP,
-					    &pcp, sizeof(pcp)) == -1)
-						log_warn("setsockopt(IPV6_VLAN_PCP) "
-						    "failed for %s",
-						    newp->p_listen);
-				}
-			}
-			error = bind(newp->p_socket, newp->p_ai->ai_addr,
-			    newp->p_ai->ai_addrlen);
-			if (error != 0) {
-				log_warn("bind(2) failed for %s",
-				    newp->p_listen);
-				close(newp->p_socket);
-				newp->p_socket = 0;
-				cumulated_error++;
-				continue;
-			}
-			error = listen(newp->p_socket, -1);
-			if (error != 0) {
-				log_warn("listen(2) failed for %s",
-				    newp->p_listen);
-				close(newp->p_socket);
-				newp->p_socket = 0;
+			if (!portal_init_socket(newp)) {
 				cumulated_error++;
 				continue;
 			}
@@ -2491,26 +2378,10 @@ handle_connection(struct portal *portal, int fd,
 	exit(0);
 }
 
-static int
-fd_add(int fd, fd_set *fdset, int nfds)
-{
-
-	/*
-	 * Skip sockets which we failed to bind.
-	 */
-	if (fd <= 0)
-		return (nfds);
-
-	FD_SET(fd, fdset);
-	if (fd > nfds)
-		nfds = fd;
-	return (nfds);
-}
-
 static void
-main_loop(struct conf *conf, bool dont_fork)
+main_loop(bool dont_fork)
 {
-	struct portal_group *pg;
+	struct kevent kev;
 	struct portal *portal;
 	struct sockaddr_storage client_sa;
 	socklen_t client_salen;
@@ -2518,10 +2389,7 @@ main_loop(struct conf *conf, bool dont_fork)
 	int connection_id;
 	int portal_id;
 #endif
-	fd_set fdset;
-	int error, nfds, client_fd;
-
-	pidfile_write(conf->conf_pidfh);
+	int error, client_fd;
 
 	for (;;) {
 		if (sighup_received || sigterm_received || timed_out())
@@ -2554,38 +2422,34 @@ found:
 #endif
 			assert(proxy_mode == false);
 
-			FD_ZERO(&fdset);
-			nfds = 0;
-			TAILQ_FOREACH(pg, &conf->conf_portal_groups, pg_next) {
-				TAILQ_FOREACH(portal, &pg->pg_portals, p_next)
-					nfds = fd_add(portal->p_socket, &fdset, nfds);
-			}
-			error = select(nfds + 1, &fdset, NULL, NULL, NULL);
-			if (error <= 0) {
+			error = kevent(kqfd, NULL, 0, &kev, 1, NULL);
+			if (error == -1) {
 				if (errno == EINTR)
-					return;
-				log_err(1, "select");
+					continue;
+				log_err(1, "kevent");
 			}
-			TAILQ_FOREACH(pg, &conf->conf_portal_groups, pg_next) {
-				TAILQ_FOREACH(portal, &pg->pg_portals, p_next) {
-					if (!FD_ISSET(portal->p_socket, &fdset))
-						continue;
-					client_salen = sizeof(client_sa);
-					client_fd = accept(portal->p_socket,
-					    (struct sockaddr *)&client_sa,
-					    &client_salen);
-					if (client_fd < 0) {
-						if (errno == ECONNABORTED)
-							continue;
-						log_err(1, "accept");
-					}
-					assert(client_salen >= client_sa.ss_len);
 
-					handle_connection(portal, client_fd,
-					    (struct sockaddr *)&client_sa,
-					    dont_fork);
-					break;
+			switch (kev.filter) {
+			case EVFILT_READ:
+				portal = kev.udata;
+				assert(portal->p_socket == (int)kev.ident);
+
+				client_salen = sizeof(client_sa);
+				client_fd = accept(portal->p_socket,
+				    (struct sockaddr *)&client_sa,
+				    &client_salen);
+				if (client_fd < 0) {
+					if (errno == ECONNABORTED)
+						continue;
+					log_err(1, "accept");
 				}
+				assert(client_salen >= client_sa.ss_len);
+
+				handle_connection(portal, client_fd,
+				    (struct sockaddr *)&client_sa, dont_fork);
+				break;
+			default:
+				__assert_unreachable();
 			}
 #ifdef ICL_KERNEL_PROXY
 		}
@@ -2681,7 +2545,7 @@ conf_new_from_file(const char *path, bool ucl)
 	struct conf *conf;
 	struct auth_group *ag;
 	struct portal_group *pg;
-	int error;
+	bool valid;
 
 	log_debugx("obtaining configuration from %s", path);
 
@@ -2702,11 +2566,11 @@ conf_new_from_file(const char *path, bool ucl)
 	assert(pg != NULL);
 
 	if (ucl)
-		error = uclparse_conf(conf, path);
+		valid = uclparse_conf(conf, path);
 	else
-		error = parse_conf(conf, path);
+		valid = parse_conf(conf, path);
 
-	if (error != 0) {
+	if (!valid) {
 		conf_delete(conf);
 		return (NULL);
 	}
@@ -2726,14 +2590,13 @@ conf_new_from_file(const char *path, bool ucl)
 		    "going with defaults");
 		pg = portal_group_find(conf, "default");
 		assert(pg != NULL);
-		portal_group_add_listen(pg, "0.0.0.0:3260", false);
-		portal_group_add_listen(pg, "[::]:3260", false);
+		portal_group_add_listen(pg, "0.0.0.0", false);
+		portal_group_add_listen(pg, "[::]", false);
 	}
 
 	conf->conf_kernel_port_on = true;
 
-	error = conf_verify(conf);
-	if (error != 0) {
+	if (!conf_verify(conf)) {
 		conf_delete(conf);
 		return (NULL);
 	}
@@ -2745,7 +2608,7 @@ conf_new_from_file(const char *path, bool ucl)
  * If the config file specifies physical ports for any target, associate them
  * with the config file.  If necessary, create them.
  */
-static int
+static bool
 new_pports_from_conf(struct conf *conf, struct kports *kports)
 {
 	struct target *targ;
@@ -2763,7 +2626,7 @@ new_pports_from_conf(struct conf *conf, struct kports *kports)
 			if (tp == NULL) {
 				log_warnx("can't create new ioctl port "
 				    "for target \"%s\"", targ->t_name);
-				return (1);
+				return (false);
 			}
 
 			continue;
@@ -2773,22 +2636,22 @@ new_pports_from_conf(struct conf *conf, struct kports *kports)
 		if (pp == NULL) {
 			log_warnx("unknown port \"%s\" for target \"%s\"",
 			    targ->t_pport, targ->t_name);
-			return (1);
+			return (false);
 		}
 		if (!TAILQ_EMPTY(&pp->pp_ports)) {
 			log_warnx("can't link port \"%s\" to target \"%s\", "
 			    "port already linked to some target",
 			    targ->t_pport, targ->t_name);
-			return (1);
+			return (false);
 		}
 		tp = port_new_pp(conf, targ, pp);
 		if (tp == NULL) {
 			log_warnx("can't link port \"%s\" to target \"%s\"",
 			    targ->t_pport, targ->t_name);
-			return (1);
+			return (false);
 		}
 	}
-	return (0);
+	return (true);
 }
 
 int
@@ -2800,14 +2663,14 @@ main(int argc, char **argv)
 	const char *config_path = DEFAULT_CONFIG_PATH;
 	int debug = 0, ch, error;
 	pid_t otherpid;
-	bool dont_daemonize = false;
+	bool daemonize = true;
 	bool test_config = false;
 	bool use_ucl = false;
 
 	while ((ch = getopt(argc, argv, "dtuf:R")) != -1) {
 		switch (ch) {
 		case 'd':
-			dont_daemonize = true;
+			daemonize = false;
 			debug++;
 			break;
 		case 't':
@@ -2868,17 +2731,10 @@ main(int argc, char **argv)
 		newconf->conf_debug = debug;
 	}
 
-	if (new_pports_from_conf(newconf, &kports))
+	if (!new_pports_from_conf(newconf, &kports))
 		log_errx(1, "Error associating physical ports; exiting");
 
-	error = conf_apply(oldconf, newconf);
-	if (error != 0)
-		log_errx(1, "failed to apply configuration; exiting");
-
-	conf_delete(oldconf);
-	oldconf = NULL;
-
-	if (dont_daemonize == false) {
+	if (daemonize) {
 		log_debugx("daemonizing");
 		if (daemon(0, 0) == -1) {
 			log_warn("cannot daemonize");
@@ -2887,12 +2743,28 @@ main(int argc, char **argv)
 		}
 	}
 
+	kqfd = kqueue();
+	if (kqfd == -1) {
+		log_warn("Cannot create kqueue");
+		pidfile_remove(newconf->conf_pidfh);
+		exit(1);
+	}
+
+	error = conf_apply(oldconf, newconf);
+	if (error != 0)
+		log_errx(1, "failed to apply configuration; exiting");
+
+	conf_delete(oldconf);
+	oldconf = NULL;
+
+	pidfile_write(newconf->conf_pidfh);
+
 	/* Schedule iSNS update */
 	if (!TAILQ_EMPTY(&newconf->conf_isns))
 		set_timeout((newconf->conf_isns_period + 2) / 3, false);
 
 	for (;;) {
-		main_loop(newconf, dont_daemonize);
+		main_loop(!daemonize);
 		if (sighup_received) {
 			sighup_received = false;
 			log_debugx("received SIGHUP, reloading configuration");

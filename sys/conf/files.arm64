@@ -32,6 +32,7 @@ arm64/arm64/busdma_machdep.c			standard
 arm64/arm64/clock.c				standard
 arm64/arm64/copyinout.S				standard
 arm64/arm64/cpu_errata.c			standard
+arm64/arm64/cpu_feat.c				standard
 arm64/arm64/cpufunc_asm.S			standard
 arm64/arm64/db_disasm.c				optional ddb
 arm64/arm64/db_interface.c			optional ddb
@@ -420,6 +421,7 @@ dev/pci/pci_dw_if.m				optional pci fdt
 
 dev/psci/psci.c					standard
 dev/psci/smccc_arm64.S				standard
+dev/psci/smccc_errata.c				standard
 dev/psci/smccc_trng.c				standard
 dev/psci/smccc.c				standard
 
@@ -433,6 +435,9 @@ dev/safexcel/safexcel.c				optional safexcel fdt
 dev/sdhci/sdhci_xenon.c				optional sdhci_xenon sdhci
 dev/sdhci/sdhci_xenon_acpi.c			optional sdhci_xenon sdhci acpi
 dev/sdhci/sdhci_xenon_fdt.c			optional sdhci_xenon sdhci fdt
+
+dev/sdhci/sdhci_fdt_xilinx.c			optional sdhci_xilinx sdhci fdt
+dev/sdhci/sdhci_fdt_rockchip.c			optional sdhci fdt soc_rockchip
 
 dev/sram/mmio_sram.c				optional fdt mmio_sram
 dev/sram/mmio_sram_if.m				optional fdt mmio_sram
@@ -476,7 +481,6 @@ dev/vnic/lmac_if.m				optional inet | inet6 | vnic
 ##
 
 # Allwinner common files
-arm/allwinner/a10_timer.c			optional a10_timer fdt
 arm/allwinner/a10_codec.c			optional sound a10_codec fdt
 arm/allwinner/a31_dmac.c			optional a31_dmac fdt
 arm/allwinner/a33_codec.c			optional fdt sound a33_codec
@@ -493,6 +497,7 @@ arm/allwinner/aw_rsb.c				optional aw_rsb fdt
 arm/allwinner/aw_rtc.c				optional aw_rtc fdt
 arm/allwinner/aw_sid.c				optional aw_sid nvmem fdt
 arm/allwinner/aw_syscon.c			optional aw_syscon syscon fdt
+arm/allwinner/aw_timer.c			optional aw_timer fdt
 arm/allwinner/aw_thermal.c			optional aw_thermal nvmem fdt
 arm/allwinner/aw_usbphy.c			optional ehci aw_usbphy fdt
 arm/allwinner/aw_usb3phy.c			optional xhci aw_usbphy fdt

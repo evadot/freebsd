@@ -112,13 +112,19 @@ ip_output_pfil(struct mbuf **mp, struct ifnet *ifp, int flags,
 	struct mbuf *m;
 	struct in_addr odst;
 	struct ip *ip;
+	int ret;
 
 	m = *mp;
 	ip = mtod(m, struct ip *);
 
 	/* Run through list of hooks for output packets. */
 	odst.s_addr = ip->ip_dst.s_addr;
-	switch (pfil_mbuf_out(V_inet_pfil_head, mp, ifp, inp)) {
+	if (flags & IP_FORWARDING)
+		ret = pfil_mbuf_fwd(V_inet_pfil_head, mp, ifp, inp);
+	else
+		ret = pfil_mbuf_out(V_inet_pfil_head, mp, ifp, inp);
+
+	switch (ret) {
 	case PFIL_DROPPED:
 		*error = EACCES;
 		/* FALLTHROUGH */
@@ -1088,10 +1094,22 @@ ip_ctloutput(struct socket *so, struct sockopt *sopt)
 		    sopt->sopt_dir == SOPT_SET) {
 			switch (sopt->sopt_name) {
 			case SO_SETFIB:
+				error = sooptcopyin(sopt, &optval,
+				    sizeof(optval), sizeof(optval));
+				if (error != 0)
+					break;
+
 				INP_WLOCK(inp);
-				inp->inp_inc.inc_fibnum = so->so_fibnum;
+				if ((inp->inp_flags & INP_BOUNDFIB) != 0 &&
+				    optval != so->so_fibnum) {
+					INP_WUNLOCK(inp);
+					error = EISCONN;
+					break;
+				}
+				error = sosetfib(inp->inp_socket, optval);
+				if (error == 0)
+					inp->inp_inc.inc_fibnum = optval;
 				INP_WUNLOCK(inp);
-				error = 0;
 				break;
 			case SO_MAX_PACING_RATE:
 #ifdef RATELIMIT
