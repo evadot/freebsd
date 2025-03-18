@@ -21,9 +21,9 @@ SRCS+=	authfd.c authfile.c \
 	poly1305.c chacha.c cipher-chachapoly.c cipher-chachapoly-libcrypto.c \
 	ssh-ed25519.c digest-openssl.c digest-libc.c \
 	hmac.c ed25519.c hash.c \
-	kex.c kexdh.c kexgex.c kexecdh.c kexc25519.c \
+	kex.c kex-names.c kexdh.c kexgex.c kexecdh.c kexc25519.c \
 	kexgexc.c kexgexs.c \
-	kexsntrup761x25519.c sntrup761.c kexgen.c \
+	kexsntrup761x25519.c kexmlkem768x25519.c sntrup761.c kexgen.c \
 	sftp-realpath.c platform-pledge.c platform-tracing.c platform-misc.c \
 	sshbuf-io.c
 SRCS+=	ssh-sk-client.c
@@ -45,14 +45,9 @@ SRCS+=	bcrypt_pbkdf.c blowfish.c bsd-misc.c bsd-signal.c explicit_bzero.c \
 SRCS+=	getrrsetbyname.c
 .else
 LDNSDIR=	${SRCTOP}/contrib/ldns
-CFLAGS+=	-DHAVE_LDNS=1 -I${LDNSDIR}
+CFLAGS+=	-I${LDNSDIR}
 SRCS+=	getrrsetbyname-ldns.c
 LIBADD+=	ldns
-.endif
-
-.if ${MK_GSSAPI} != "no" && ${MK_KERBEROS_SUPPORT} != "no"
-CFLAGS+= -include krb5_config.h
-SRCS+=	 krb5_config.h
 .endif
 
 .if defined(LOCALBASE)

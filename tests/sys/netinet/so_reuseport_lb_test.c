@@ -433,6 +433,114 @@ ATF_TC_BODY(double_listen_ipv6, tc)
 	ATF_REQUIRE_MSG(error == 0, "close() failed: %s", strerror(errno));
 }
 
+/*
+ * Try binding many sockets to the same lbgroup without calling listen(2) on
+ * them.
+ */
+ATF_TC_WITHOUT_HEAD(bind_without_listen);
+ATF_TC_BODY(bind_without_listen, tc)
+{
+	const int nsockets = 100;
+	struct sockaddr_in sin;
+	socklen_t socklen;
+	int error, s, s2[nsockets];
+
+	s = lb_listen_socket(PF_INET, 0);
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_len = sizeof(sin);
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(0);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	error = bind(s, (struct sockaddr *)&sin, sizeof(sin));
+	ATF_REQUIRE_MSG(error == 0, "bind() failed: %s", strerror(errno));
+
+	socklen = sizeof(sin);
+	error = getsockname(s, (struct sockaddr *)&sin, &socklen);
+	ATF_REQUIRE_MSG(error == 0, "getsockname() failed: %s",
+	    strerror(errno));
+
+	for (int i = 0; i < nsockets; i++) {
+		s2[i] = lb_listen_socket(PF_INET, 0);
+		error = bind(s2[i], (struct sockaddr *)&sin, sizeof(sin));
+		ATF_REQUIRE_MSG(error == 0, "bind() failed: %s", strerror(errno));
+	}
+	for (int i = 0; i < nsockets; i++) {
+		error = listen(s2[i], 1);
+		ATF_REQUIRE_MSG(error == 0, "listen() failed: %s", strerror(errno));
+	}
+	for (int i = 0; i < nsockets; i++) {
+		error = close(s2[i]);
+		ATF_REQUIRE_MSG(error == 0, "close() failed: %s", strerror(errno));
+	}
+
+	error = close(s);
+	ATF_REQUIRE_MSG(error == 0, "close() failed: %s", strerror(errno));
+}
+
+/*
+ * Check that SO_REUSEPORT_LB doesn't mess with connect(2).
+ * Two sockets:
+ * 1) auxiliary peer socket 'p', where we connect to
+ * 2) test socket 's', that sets SO_REUSEPORT_LB and then connect(2)s to 'p'
+ */
+ATF_TC_WITHOUT_HEAD(connect_not_bound);
+ATF_TC_BODY(connect_not_bound, tc)
+{
+	struct sockaddr_in sin = {
+		.sin_family = AF_INET,
+		.sin_len = sizeof(sin),
+		.sin_addr = { htonl(INADDR_LOOPBACK) },
+	};
+	socklen_t slen = sizeof(struct sockaddr_in);
+	int p, s, rv;
+
+	ATF_REQUIRE((p = socket(PF_INET, SOCK_STREAM, 0)) > 0);
+	ATF_REQUIRE(bind(p, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(p, 1) == 0);
+	ATF_REQUIRE(getsockname(p, (struct sockaddr *)&sin, &slen) == 0);
+
+	s = lb_listen_socket(PF_INET, 0);
+	rv = connect(s, (struct sockaddr *)&sin, sizeof(sin));
+	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
+	    "Expected EOPNOTSUPP on connect(2) not met. Got %d, errno %d",
+	    rv, errno);
+
+	close(p);
+	close(s);
+}
+
+/*
+ * Same as above, but we also bind(2) between setsockopt(2) of SO_REUSEPORT_LB
+ * and the connect(2).
+ */
+ATF_TC_WITHOUT_HEAD(connect_bound);
+ATF_TC_BODY(connect_bound, tc)
+{
+	struct sockaddr_in sin = {
+		.sin_family = AF_INET,
+		.sin_len = sizeof(sin),
+		.sin_addr = { htonl(INADDR_LOOPBACK) },
+	};
+	socklen_t slen = sizeof(struct sockaddr_in);
+	int p, s, rv;
+
+	ATF_REQUIRE((p = socket(PF_INET, SOCK_STREAM, 0)) > 0);
+	ATF_REQUIRE(bind(p, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(p, 1) == 0);
+
+	s = lb_listen_socket(PF_INET, 0);
+	ATF_REQUIRE(bind(s, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(getsockname(p, (struct sockaddr *)&sin, &slen) == 0);
+	rv = connect(s, (struct sockaddr *)&sin, sizeof(sin));
+	ATF_REQUIRE_MSG(rv == -1 && errno == EOPNOTSUPP,
+	    "Expected EOPNOTSUPP on connect(2) not met. Got %d, errno %d",
+	    rv, errno);
+
+	close(p);
+	close(s);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, basic_ipv4);
@@ -440,6 +548,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, concurrent_add);
 	ATF_TP_ADD_TC(tp, double_listen_ipv4);
 	ATF_TP_ADD_TC(tp, double_listen_ipv6);
+	ATF_TP_ADD_TC(tp, bind_without_listen);
+	ATF_TP_ADD_TC(tp, connect_not_bound);
+	ATF_TP_ADD_TC(tp, connect_bound);
 
 	return (atf_no_error());
 }

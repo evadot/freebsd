@@ -594,14 +594,20 @@ EXTRA_REVISION=	p${_BRANCH:C/.*-p([0-9]+$)/\1/}
 .if !defined(PKG_VERSION)
 PKG_VERSION:=	${_PKG_REVISION}${EXTRA_REVISION:C/[[:space:]]//g}
 .endif
-.endif	# !defined(PKG_VERSION)
+.endif	# !defined(_MKSHOWCONFIG)
 
+.if make(*package*)
 .if !defined(PKG_TIMESTAMP)
+.if !empty(GIT_CMD) && exists(${GIT_CMD}) && exists(${SRCDIR}/.git)
+SOURCE_DATE_EPOCH!=	${GIT_CMD} -C ${SRCDIR} show -s --format=%ct HEAD
+.else
 TIMEEPOCHNOW=		%s
 SOURCE_DATE_EPOCH=	${TIMEEPOCHNOW:gmtime}
+.endif
 .else
 SOURCE_DATE_EPOCH=	${PKG_TIMESTAMP}
 .endif
+PKG_WORKERS_COUNT?=	1
 
 PKG_NAME_PREFIX?=	FreeBSD
 PKG_MAINTAINER?=	re@FreeBSD.org
@@ -609,6 +615,7 @@ PKG_WWW?=		https://www.FreeBSD.org
 .export PKG_NAME_PREFIX
 .export PKG_MAINTAINER
 .export PKG_WWW
+.endif
 
 .if !defined(_MKSHOWCONFIG)
 _CPUTYPE!=	MAKEFLAGS= CPUTYPE=${_TARGET_CPUTYPE} ${MAKE} -f /dev/null \
@@ -1561,28 +1568,16 @@ distributeworld installworld stageworld: _installcheck_world .PHONY
 
 packageworld: .PHONY
 .for dist in base ${EXTRA_DISTRIBUTIONS}
-.if defined(NO_ROOT)
 	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
 	    ${TAR_CMD} cvf - --exclude usr/lib/debug \
 	    @${DESTDIR}/${DISTDIR}/${dist}.meta | \
 	    ${XZ_CMD} > ${PACKAGEDIR}/${dist}.txz
-.else
-	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
-	    ${TAR_CMD} cvf - --exclude usr/lib/debug . | \
-	    ${XZ_CMD} > ${PACKAGEDIR}/${dist}.txz
-.endif
 .endfor
 
 .for dist in ${DEBUG_DISTRIBUTIONS}
-. if defined(NO_ROOT)
 	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
 	    ${TAR_CMD} cvf - @${DESTDIR}/${DISTDIR}/${dist}.debug.meta | \
 	    ${XZ_CMD} > ${PACKAGEDIR}/${dist}-dbg.txz
-. else
-	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
-	    ${TAR_CMD} cvLf - usr/lib/debug | \
-	    ${XZ_CMD} > ${PACKAGEDIR}/${dist}-dbg.txz
-. endif
 .endfor
 
 makeman: .PHONY
@@ -1604,7 +1599,8 @@ _sysent_dirs+=	sys/compat/freebsd32
 _sysent_dirs+=	sys/amd64/linux		\
 		sys/amd64/linux32	\
 		sys/arm64/linux		\
-		sys/i386/linux
+		sys/i386/linux		\
+		sys/tools/syscalls/examples/cpp
 
 sysent: .PHONY
 .for _dir in ${_sysent_dirs}
@@ -2362,7 +2358,8 @@ real-sign-packages:	_pkgbootstrap .PHONY
 .if ${PKG_BIN_VERSION} < 11700
 	printf "packing_format = \"${PKG_FORMAT}\";\n" >> ${WSTAGEDIR}/meta
 .endif
-	@${PKG_CMD} -o ABI=${PKG_ABI} -o OSVERSION="${SRCRELDATE}" repo \
+	@${PKG_CMD} -o ABI=${PKG_ABI} -o OSVERSION="${SRCRELDATE}" \
+		-o WORKERS_COUNT=${PKG_WORKERS_COUNT} repo \
 		-m ${WSTAGEDIR}/meta \
 		-o ${REPODIR}/${PKG_ABI}/${PKG_VERSION} \
 		${REPODIR}/${PKG_ABI}/${PKG_VERSION} \

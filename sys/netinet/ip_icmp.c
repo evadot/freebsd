@@ -635,15 +635,10 @@ icmp_input(struct mbuf **mp, int *offp, int proto)
 		 */
 		if (icmplen < ICMP_MASKLEN)
 			break;
-		switch (ip->ip_dst.s_addr) {
-		case INADDR_BROADCAST:
-		case INADDR_ANY:
+		if (in_broadcast(ip->ip_dst))
 			icmpdst.sin_addr = ip->ip_src;
-			break;
-
-		default:
+		else
 			icmpdst.sin_addr = ip->ip_dst;
-		}
 		ia = (struct in_ifaddr *)ifaof_ifpforaddr(
 			    (struct sockaddr *)&icmpdst, m->m_pkthdr.rcvif);
 		if (ia == NULL)
@@ -788,10 +783,11 @@ icmp_reflect(struct mbuf *m)
 
 	if (IN_MULTICAST(ntohl(ip->ip_src.s_addr)) ||
 	    (IN_EXPERIMENTAL(ntohl(ip->ip_src.s_addr)) && !V_ip_allow_net240) ||
-	    (IN_ZERONET(ntohl(ip->ip_src.s_addr)) && !V_ip_allow_net0) ) {
+	    (IN_ZERONET(ntohl(ip->ip_src.s_addr)) && !V_ip_allow_net0) ||
+	    in_nullhost(ip->ip_src) ) {
 		m_freem(m);	/* Bad return address */
 		ICMPSTAT_INC(icps_badaddr);
-		goto done;	/* Ip_output() will check for broadcast */
+		goto done;	/* ip_output() will check for broadcast */
 	}
 
 	t = ip->ip_dst;

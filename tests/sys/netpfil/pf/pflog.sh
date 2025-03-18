@@ -34,7 +34,7 @@ malformed_head()
 {
 	atf_set descr 'Test that we do not log malformed packets as passing'
 	atf_set require.user root
-	atf_set require.progs scapy
+	atf_set require.progs python3 scapy
 }
 
 malformed_body()
@@ -129,6 +129,64 @@ matches_body()
 }
 
 matches_cleanup()
+{
+	pft_cleanup
+}
+
+atf_test_case "matches_logif" "cleanup"
+matches_logif_head()
+{
+	atf_set descr 'Test log(matches, to pflogX)'
+	atf_set require.user root
+}
+
+matches_logif_body()
+{
+	pflog_init
+
+	epair=$(vnet_mkepair)
+
+	vnet_mkjail alcatraz ${epair}a
+	jexec alcatraz ifconfig ${epair}a 192.0.2.1/24 up
+
+	ifconfig ${epair}b 192.0.2.2/24 up
+
+	# Sanity check
+	atf_check -s exit:0 -o ignore \
+	    ping -c 1 192.0.2.1
+
+	jexec alcatraz pfctl -e
+	jexec alcatraz ifconfig pflog0 up
+	jexec alcatraz ifconfig pflog1 create
+	jexec alcatraz ifconfig pflog1 up
+	pft_set_rules alcatraz \
+		"match log(matches, to pflog1) inet proto icmp" \
+		"match log inet from 192.0.2.2" \
+		"pass log(to pflog0)"
+
+	jexec alcatraz tcpdump -n -e -ttt --immediate-mode -l -U -i pflog1 >> ${PWD}/pflog1.txt &
+	jexec alcatraz tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> ${PWD}/pflog0.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	atf_check -s exit:0 -o ignore \
+	    ping -c 1 192.0.2.1
+
+	echo "Rules"
+	jexec alcatraz pfctl -sr -vv
+	echo "States"
+	jexec alcatraz pfctl -ss -vv
+	echo "Log 0"
+	cat ${PWD}/pflog0.txt
+	echo "Log 1"
+	cat ${PWD}/pflog1.txt
+
+	atf_check -o match:".*rule 0/0\(match\): match in on ${epair}a: 192.0.2.2 > 192.0.2.1: ICMP echo request.*" \
+	    cat pflog1.txt
+	atf_check -o match:".*rule 1/0\(match\): match in on ${epair}a: 192.0.2.2 > 192.0.2.1: ICMP echo request.*" \
+	    cat pflog1.txt
+}
+
+matches_logif_cleanup()
 {
 	pft_cleanup
 }
@@ -264,11 +322,73 @@ unspecified_v6_cleanup()
 	pft_cleanup
 }
 
+atf_test_case "rdr_action" "cleanup"
+rdr_head()
+{
+	atf_set descr 'Ensure that NAT rule actions are logged correctly'
+	atf_set require.user root
+}
+
+rdr_action_body()
+{
+	pflog_init
+
+	j="pflog:rdr_action"
+	epair_c=$(vnet_mkepair)
+	epair_srv=$(vnet_mkepair)
+
+	vnet_mkjail ${j}srv ${epair_srv}a
+	vnet_mkjail ${j}gw ${epair_srv}b ${epair_c}a
+	vnet_mkjail ${j}c ${epair_c}b
+
+	jexec ${j}srv ifconfig ${epair_srv}a 198.51.100.1/24 up
+	# No default route in srv jail, to ensure we're NAT-ing
+	jexec ${j}gw ifconfig ${epair_srv}b 198.51.100.2/24 up
+	jexec ${j}gw ifconfig ${epair_c}a 192.0.2.1/24 up
+	jexec ${j}gw sysctl net.inet.ip.forwarding=1
+	jexec ${j}c ifconfig ${epair_c}b 192.0.2.2/24 up
+	jexec ${j}c route add default 192.0.2.1
+
+	jexec ${j}gw pfctl -e
+	jexec ${j}gw ifconfig pflog0 up
+	pft_set_rules ${j}gw \
+		"rdr log on ${epair_srv}b proto tcp from 198.51.100.0/24 to any port 1234 -> 192.0.2.2 port 1234" \
+		"block quick inet6" \
+		"pass in log"
+
+	jexec ${j}gw tcpdump -n -e -ttt --immediate-mode -l -U -i pflog0 >> ${PWD}/pflog.txt &
+	sleep 1 # Wait for tcpdump to start
+
+	# send a SYN to catch in the log
+	jexec ${j}srv nc -N -w 0 198.51.100.2 1234
+
+	echo "Log"
+	cat ${PWD}/pflog.txt
+
+	# log line generated for rdr hit (pre-NAT)
+	atf_check -o match:".*.*rule 0/0\(match\): rdr in on ${epair_srv}b: 198.51.100.1.[0-9]* > 198.51.100.2.1234: Flags \[S\].*" \
+	    cat pflog.txt
+
+	# log line generated for pass hit (post-NAT)
+	atf_check -o match:".*.*rule 1/0\(match\): pass in on ${epair_srv}b: 198.51.100.1.[0-9]* > 192.0.2.2.1234: Flags \[S\].*" \
+	    cat pflog.txt
+
+	# only two log lines shall be written
+	atf_check -o match:2 grep -c . pflog.txt
+}
+
+rdr_action_cleanup()
+{
+	pft_cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case "malformed"
 	atf_add_test_case "matches"
+	atf_add_test_case "matches_logif"
 	atf_add_test_case "state_max"
 	atf_add_test_case "unspecified_v4"
 	atf_add_test_case "unspecified_v6"
+	atf_add_test_case "rdr_action"
 }

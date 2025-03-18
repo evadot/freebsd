@@ -1005,9 +1005,10 @@ struct pf_state_key {
 	TAILQ_HEAD(, pf_kstate)	 states[2];
 };
 
-#define PF_REVERSED_KEY(key, family)				\
-	((key[PF_SK_WIRE]->af != key[PF_SK_STACK]->af) &&	\
-	    (key[PF_SK_WIRE]->af != (family)))
+#define PF_REVERSED_KEY(state, family)					\
+	(((state)->key[PF_SK_WIRE]->af != (state)->key[PF_SK_STACK]->af) &&	\
+	    ((state)->key[PF_SK_WIRE]->af != (family)) &&			\
+	    ((state)->direction == PF_IN))
 
 /* Keep synced with struct pf_kstate. */
 struct pf_state_cmp {
@@ -1277,7 +1278,7 @@ struct pf_kruleset;
 struct pf_pdesc;
 typedef int pflog_packet_t(uint8_t, u_int8_t,
     struct pf_krule *, struct pf_krule *, struct pf_kruleset *,
-    struct pf_pdesc *, int);
+    struct pf_pdesc *, int, struct pf_krule *);
 extern pflog_packet_t		*pflog_packet_ptr;
 
 #endif /* _KERNEL */
@@ -1434,7 +1435,7 @@ struct pfr_astats {
 	struct pfr_addr	 pfras_a;
 	u_int64_t	 pfras_packets[PFR_DIR_MAX][PFR_OP_ADDR_MAX];
 	u_int64_t	 pfras_bytes[PFR_DIR_MAX][PFR_OP_ADDR_MAX];
-	long		 pfras_tzero;
+	time_t		 pfras_tzero;
 };
 
 enum { PFR_REFCNT_RULE, PFR_REFCNT_ANCHOR, PFR_REFCNT_MAX };
@@ -1445,7 +1446,7 @@ struct pfr_tstats {
 	u_int64_t	 pfrts_bytes[PFR_DIR_MAX][PFR_OP_TABLE_MAX];
 	u_int64_t	 pfrts_match;
 	u_int64_t	 pfrts_nomatch;
-	long		 pfrts_tzero;
+	time_t		 pfrts_tzero;
 	int		 pfrts_cnt;
 	int		 pfrts_refcnt[PFR_REFCNT_MAX];
 };
@@ -1507,7 +1508,7 @@ struct pfr_ktstats {
 	struct pfr_kstate_counter	 pfrkts_bytes[PFR_DIR_MAX][PFR_OP_TABLE_MAX];
 	struct pfr_kstate_counter	 pfrkts_match;
 	struct pfr_kstate_counter	 pfrkts_nomatch;
-	long		 pfrkts_tzero;
+	time_t		 pfrkts_tzero;
 	int		 pfrkts_cnt;
 	int		 pfrkts_refcnt[PFR_REFCNT_MAX];
 };
@@ -1528,7 +1529,7 @@ union sockaddr_union {
 
 struct pfr_kcounters {
 	counter_u64_t		 pfrkc_counters;
-	long			 pfrkc_tzero;
+	time_t			 pfrkc_tzero;
 };
 #define	pfr_kentry_counter(kc, dir, op, t)		\
 	((kc)->pfrkc_counters +				\
@@ -1586,7 +1587,7 @@ struct pfi_kkif {
 #define	pfik_list	_pfik_glue._pfik_list
 	struct pf_counter_u64		 pfik_packets[2][2][2];
 	struct pf_counter_u64		 pfik_bytes[2][2][2];
-	u_int32_t			 pfik_tzero;
+	time_t				 pfik_tzero;
 	u_int				 pfik_flags;
 	struct ifnet			*pfik_ifp;
 	struct ifg_group		*pfik_group;
@@ -1600,6 +1601,7 @@ struct pfi_kkif {
 
 #define	PFI_IFLAG_REFS		0x0001	/* has state references */
 #define PFI_IFLAG_SKIP		0x0100	/* skip filtering on interface */
+#define	PFI_IFLAG_ANY 		0x0200	/* match any non-loopback interface */
 
 #ifdef _KERNEL
 struct pf_sctp_multihome_job;
@@ -2278,6 +2280,7 @@ VNET_DECLARE(struct pf_krule *, pf_rulemarker);
 #define V_pf_rulemarker     VNET(pf_rulemarker)
 #endif
 
+void				 unhandled_af(int) __dead2;
 int				 pf_start(void);
 int				 pf_stop(void);
 void				 pf_initialize(void);
@@ -2489,7 +2492,7 @@ int	pfr_get_tstats(struct pfr_table *, struct pfr_tstats *, int *, int);
 int	pfr_clr_tstats(struct pfr_table *, int, int *, int);
 int	pfr_set_tflags(struct pfr_table *, int, int, int, int *, int *, int);
 int	pfr_clr_addrs(struct pfr_table *, int *, int);
-int	pfr_insert_kentry(struct pfr_ktable *, struct pfr_addr *, long);
+int	pfr_insert_kentry(struct pfr_ktable *, struct pfr_addr *, time_t);
 int	pfr_add_addrs(struct pfr_table *, struct pfr_addr *, int, int *,
 	    int);
 int	pfr_del_addrs(struct pfr_table *, struct pfr_addr *, int, int *,

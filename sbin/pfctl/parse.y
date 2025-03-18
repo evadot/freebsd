@@ -2747,16 +2747,16 @@ pfrule		: action dir logquick interface route af proto fromto
 				    $5.host->addr.type == PF_ADDR_TABLE ||
 				    DYNIF_MULTIADDR($5.host->addr)))
 					r.route.opts |= PF_POOL_ROUNDROBIN;
-				if ((r.route.opts & PF_POOL_TYPEMASK) !=
-				    PF_POOL_ROUNDROBIN &&
-				    disallow_table($5.host, "tables are only "
-				    "supported in round-robin routing pools"))
-					YYERROR;
-				if ((r.route.opts & PF_POOL_TYPEMASK) !=
-				    PF_POOL_ROUNDROBIN &&
-				    disallow_alias($5.host, "interface (%s) "
-				    "is only supported in round-robin "
-				    "routing pools"))
+				if ($5.host->next != NULL &&
+				    !PF_POOL_DYNTYPE(r.route.opts)) {
+					yyerror("address pool option "
+					    "not supported by type");
+				}
+				if (!PF_POOL_DYNTYPE(r.route.opts) &&
+				    (disallow_table($5.host,
+				    "tables are not supported by pool type") ||
+				    disallow_alias($5.host,
+				    "interface (%s) is not supported by pool type")))
 					YYERROR;
 				if ($5.host->next != NULL) {
 					if ((r.route.opts & PF_POOL_TYPEMASK) !=
@@ -2829,10 +2829,9 @@ pfrule		: action dir logquick interface route af proto fromto
 				r.nat.opts = $9.nat.pool_opts.type;
 				r.nat.opts |= $9.nat.pool_opts.opts;
 
-				if ((r.nat.opts & PF_POOL_TYPEMASK) !=
-				    PF_POOL_ROUNDROBIN &&
-				    disallow_table($9.nat.rdr->host, "tables are only "
-				    "supported in round-robin pools"))
+				if (!PF_POOL_DYNTYPE(r.nat.opts) &&
+				    disallow_table($9.nat.rdr->host, "tables are not "
+				    "supported by pool type"))
 					YYERROR;
 			}
 
@@ -3375,6 +3374,15 @@ if_item		: STRING			{
 				$$->ifa_flags = n->ifa_flags;
 
 			free($1);
+			$$->not = 0;
+			$$->next = NULL;
+			$$->tail = $$;
+		}
+		| ANY				{
+			$$ = calloc(1, sizeof(struct node_if));
+			if ($$ == NULL)
+				err(1, "if_item: calloc");
+			strlcpy($$->ifname, "any", sizeof($$->ifname));
 			$$->not = 0;
 			$$->next = NULL;
 			$$->tail = $$;
@@ -4907,17 +4915,11 @@ natrule		: nataction interface af proto fromto tag tagged rtable
 				    $9->host->addr.type == PF_ADDR_TABLE ||
 				    DYNIF_MULTIADDR($9->host->addr)))
 					r.rdr.opts = PF_POOL_ROUNDROBIN;
-				if ((r.rdr.opts & PF_POOL_TYPEMASK) !=
-				    PF_POOL_ROUNDROBIN &&
-				    disallow_table($9->host, "tables are only "
-				    "supported in round-robin redirection "
-				    "pools"))
-					YYERROR;
-				if ((r.rdr.opts & PF_POOL_TYPEMASK) !=
-				    PF_POOL_ROUNDROBIN &&
-				    disallow_alias($9->host, "interface (%s) "
-				    "is only supported in round-robin "
-				    "redirection pools"))
+				if (!PF_POOL_DYNTYPE(r.rdr.opts) &&
+				    (disallow_table($9->host,
+				    "tables are not supported by pool type") ||
+				    disallow_alias($9->host,
+				    "interface (%s) is not supported by pool type")))
 					YYERROR;
 				if ($9->host->next != NULL) {
 					if ((r.rdr.opts & PF_POOL_TYPEMASK) !=
@@ -6786,6 +6788,9 @@ top:
 			} else if (c == quotec) {
 				*p = '\0';
 				break;
+			} else if (c == '\0') {
+				yyerror("syntax error");
+				return (findeol());
 			}
 			if (p + 1 >= buf + sizeof(buf) - 1) {
 				yyerror("string too long");
@@ -6908,8 +6913,8 @@ check_file_secrecy(int fd, const char *fname)
 		warnx("%s: owner not root or current user", fname);
 		return (-1);
 	}
-	if (st.st_mode & (S_IRWXG | S_IRWXO)) {
-		warnx("%s: group/world readable/writeable", fname);
+	if (st.st_mode & (S_IWGRP | S_IXGRP | S_IRWXO)) {
+		warnx("%s: group writable or world read/writable", fname);
 		return (-1);
 	}
 	return (0);

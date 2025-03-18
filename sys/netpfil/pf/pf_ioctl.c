@@ -2406,6 +2406,12 @@ relock_DIOCKILLSTATES:
 	return (killed);
 }
 
+void
+unhandled_af(int af)
+{
+	panic("unhandled af %d", af);
+}
+
 int
 pf_start(void)
 {
@@ -5733,7 +5739,7 @@ pf_state_export(struct pf_state_export *sp, struct pf_kstate *st)
 	strlcpy(sp->ifname, st->kif->pfik_name, sizeof(sp->ifname));
 	strlcpy(sp->orig_ifname, st->orig_kif->pfik_name,
 	    sizeof(sp->orig_ifname));
-	bcopy(&st->act.rt_addr, &sp->rt_addr, sizeof(sp->rt_addr));
+	memcpy(&sp->rt_addr, &st->act.rt_addr, sizeof(sp->rt_addr));
 	sp->creation = htonl(time_uptime - (st->creation / 1000));
 	sp->expire = pf_state_expires(st);
 	if (sp->expire <= time_uptime)
@@ -6933,4 +6939,5 @@ static moduledata_t pf_mod = {
 
 DECLARE_MODULE(pf, pf_mod, SI_SUB_PROTO_FIREWALL, SI_ORDER_SECOND);
 MODULE_DEPEND(pf, netlink, 1, 1, 1);
+MODULE_DEPEND(pf, crypto, 1, 1, 1);
 MODULE_VERSION(pf, PF_MODVER);

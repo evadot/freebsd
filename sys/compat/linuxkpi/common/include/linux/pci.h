@@ -60,6 +60,8 @@
 #include <linux/pci_ids.h>
 #include <linux/pm.h>
 
+#include <linux/kernel.h>	/* pr_debug */
+
 struct pci_device_id {
 	uint32_t	vendor;
 	uint32_t	device;
@@ -238,7 +240,7 @@ extern const char *pci_power_names[6];
 #define	PCI_IRQ_MSIX			0x04
 #define	PCI_IRQ_ALL_TYPES		(PCI_IRQ_MSIX|PCI_IRQ_MSI|PCI_IRQ_INTX)
 
-#if defined(LINUXKPI_VERSION) && (LINUXKPI_VERSION >= 60700)
+#if defined(LINUXKPI_VERSION) && (LINUXKPI_VERSION <= 61000)
 #define	PCI_IRQ_LEGACY			PCI_IRQ_INTX
 #endif
 
@@ -1504,6 +1506,7 @@ static inline int
 pci_wake_from_d3(struct pci_dev *pdev, bool enable)
 {
 
+	pr_debug("%s: TODO\n", __func__);
 	return (0);
 }
 

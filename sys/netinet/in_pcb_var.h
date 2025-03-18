@@ -50,17 +50,14 @@ int	inp_trylock(struct inpcb *inp, const inp_lookup_t lock);
 bool	inp_smr_lock(struct inpcb *, const inp_lookup_t);
 int	in_pcb_lport(struct inpcb *, struct in_addr *, u_short *,
 	    struct ucred *, int);
-int	in_pcb_lport_dest(struct inpcb *inp, struct sockaddr *lsa,
+int	in_pcb_lport_dest(const struct inpcb *inp, struct sockaddr *lsa,
             u_short *lportp, struct sockaddr *fsa, u_short fport,
             struct ucred *cred, int lookupflags);
 struct inpcb *in_pcblookup_local(struct inpcbinfo *, struct in_addr, u_short,
 	    int, int, struct ucred *);
-
-struct inpcbport {
-	struct inpcbhead phd_pcblist;
-	CK_LIST_ENTRY(inpcbport) phd_hash;
-	u_short phd_port;
-};
+int     in_pcbinshash(struct inpcb *);
+void    in_pcbrehash(struct inpcb *);
+void    in_pcbremhash_locked(struct inpcb *);
 
 /*
  * Load balance groups used for the SO_REUSEPORT_LB socket option. Each group
@@ -82,6 +79,7 @@ struct inpcblbgroup {
 #define	il6_laddr	il_dependladdr.id6_addr
 	uint32_t	il_inpsiz; /* max count in il_inp[] (h) */
 	uint32_t	il_inpcnt; /* cur count in il_inp[] (h) */
+	uint32_t	il_pendcnt; /* cur count in il_pending (h) */
 	struct inpcb	*il_inp[];			/* (h) */
 };
 

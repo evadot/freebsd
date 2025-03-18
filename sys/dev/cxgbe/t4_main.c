@@ -633,6 +633,10 @@ static int t4_reset_on_fatal_err = 0;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, reset_on_fatal_err, CTLFLAG_RWTUN,
     &t4_reset_on_fatal_err, 0, "reset adapter on fatal errors");
 
+static int t4_reset_method = 1;
+SYSCTL_INT(_hw_cxgbe, OID_AUTO, reset_method, CTLFLAG_RWTUN, &t4_reset_method,
+    0, "reset method: 0 = PL_RST, 1 = PCIe secondary bus reset, 2 = PCIe link bounce");
+
 static int t4_clock_gate_on_suspend = 0;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, clock_gate_on_suspend, CTLFLAG_RWTUN,
     &t4_clock_gate_on_suspend, 0, "gate the clock on suspend");
@@ -1133,7 +1137,7 @@ t4_calibration(void *arg)
 
 	sc = (struct adapter *)arg;
 
-	KASSERT((hw_off_limits(sc) == 0), ("hw_off_limits at t4_calibration"));
+	KASSERT(hw_all_ok(sc), ("!hw_all_ok at t4_calibration"));
 	hw = t4_read_reg64(sc, A_SGE_TIMESTAMP_LO);
 	sbt = sbinuptime();
 
@@ -2536,39 +2540,134 @@ t4_reset_post(device_t dev, device_t child)
 }
 
 static int
-reset_adapter_with_pci_bus_reset(struct adapter *sc)
-{
-	int rc;
-
-	mtx_lock(&Giant);
-	rc = BUS_RESET_CHILD(device_get_parent(sc->dev), sc->dev, 0);
-	mtx_unlock(&Giant);
-	return (rc);
-}
-
-static int
 reset_adapter_with_pl_rst(struct adapter *sc)
 {
-	suspend_adapter(sc);
-
 	/* This is a t4_write_reg without the hw_off_limits check. */
 	MPASS(sc->error_flags & HW_OFF_LIMITS);
 	bus_space_write_4(sc->bt, sc->bh, A_PL_RST,
 			  F_PIORSTMODE | F_PIORST | F_AUTOPCIEPAUSE);
 	pause("pl_rst", 1 * hz);		/* Wait 1s for reset */
-
-	resume_adapter(sc);
-
 	return (0);
+}
+
+static int
+reset_adapter_with_pcie_sbr(struct adapter *sc)
+{
+	device_t pdev = device_get_parent(sc->dev);
+	device_t gpdev = device_get_parent(pdev);
+	device_t *children;
+	int rc, i, lcap, lsta, nchildren;
+	uint32_t v;
+
+	rc = pci_find_cap(gpdev, PCIY_EXPRESS, &v);
+	if (rc != 0) {
+		CH_ERR(sc, "%s: pci_find_cap(%s, pcie) failed: %d\n", __func__,
+		    device_get_nameunit(gpdev), rc);
+		return (ENOTSUP);
+	}
+	lcap = v + PCIER_LINK_CAP;
+	lsta = v + PCIER_LINK_STA;
+
+	nchildren = 0;
+	device_get_children(pdev, &children, &nchildren);
+	for (i = 0; i < nchildren; i++)
+		pci_save_state(children[i]);
+	v = pci_read_config(gpdev, PCIR_BRIDGECTL_1, 2);
+	pci_write_config(gpdev, PCIR_BRIDGECTL_1, v | PCIB_BCR_SECBUS_RESET, 2);
+	pause("pcie_sbr1", hz / 10);	/* 100ms */
+	pci_write_config(gpdev, PCIR_BRIDGECTL_1, v, 2);
+	pause("pcie_sbr2", hz);		/* Wait 1s before restore_state. */
+	v = pci_read_config(gpdev, lsta, 2);
+	if (pci_read_config(gpdev, lcap, 2) & PCIEM_LINK_CAP_DL_ACTIVE)
+		rc = v & PCIEM_LINK_STA_DL_ACTIVE ? 0 : ETIMEDOUT;
+	else if (v & (PCIEM_LINK_STA_TRAINING_ERROR | PCIEM_LINK_STA_TRAINING))
+		rc = ETIMEDOUT;
+	else
+		rc = 0;
+	if (rc != 0)
+		CH_ERR(sc, "%s: PCIe link is down after reset, LINK_STA 0x%x\n",
+		    __func__, v);
+	else {
+		for (i = 0; i < nchildren; i++)
+			pci_restore_state(children[i]);
+	}
+	free(children, M_TEMP);
+
+	return (rc);
+}
+
+static int
+reset_adapter_with_pcie_link_bounce(struct adapter *sc)
+{
+	device_t pdev = device_get_parent(sc->dev);
+	device_t gpdev = device_get_parent(pdev);
+	device_t *children;
+	int rc, i, lcap, lctl, lsta, nchildren;
+	uint32_t v;
+
+	rc = pci_find_cap(gpdev, PCIY_EXPRESS, &v);
+	if (rc != 0) {
+		CH_ERR(sc, "%s: pci_find_cap(%s, pcie) failed: %d\n", __func__,
+		    device_get_nameunit(gpdev), rc);
+		return (ENOTSUP);
+	}
+	lcap = v + PCIER_LINK_CAP;
+	lctl = v + PCIER_LINK_CTL;
+	lsta = v + PCIER_LINK_STA;
+
+	nchildren = 0;
+	device_get_children(pdev, &children, &nchildren);
+	for (i = 0; i < nchildren; i++)
+		pci_save_state(children[i]);
+	v = pci_read_config(gpdev, lctl, 2);
+	pci_write_config(gpdev, lctl, v | PCIEM_LINK_CTL_LINK_DIS, 2);
+	pause("pcie_lnk1", 100 * hz / 1000);	/* 100ms */
+	pci_write_config(gpdev, lctl, v | PCIEM_LINK_CTL_RETRAIN_LINK, 2);
+	pause("pcie_lnk2", hz);		/* Wait 1s before restore_state. */
+	v = pci_read_config(gpdev, lsta, 2);
+	if (pci_read_config(gpdev, lcap, 2) & PCIEM_LINK_CAP_DL_ACTIVE)
+		rc = v & PCIEM_LINK_STA_DL_ACTIVE ? 0 : ETIMEDOUT;
+	else if (v & (PCIEM_LINK_STA_TRAINING_ERROR | PCIEM_LINK_STA_TRAINING))
+		rc = ETIMEDOUT;
+	else
+		rc = 0;
+	if (rc != 0)
+		CH_ERR(sc, "%s: PCIe link is down after reset, LINK_STA 0x%x\n",
+		    __func__, v);
+	else {
+		for (i = 0; i < nchildren; i++)
+			pci_restore_state(children[i]);
+	}
+	free(children, M_TEMP);
+
+	return (rc);
 }
 
 static inline int
 reset_adapter(struct adapter *sc)
 {
-	if (vm_guest == 0)
-		return (reset_adapter_with_pci_bus_reset(sc));
-	else
-		return (reset_adapter_with_pl_rst(sc));
+	int rc;
+	const int reset_method = vm_guest == VM_GUEST_NO ? t4_reset_method : 0;
+
+	rc = suspend_adapter(sc);
+	if (rc != 0)
+		return (rc);
+
+	switch (reset_method) {
+	case 1:
+		rc = reset_adapter_with_pcie_sbr(sc);
+		break;
+	case 2:
+		rc = reset_adapter_with_pcie_link_bounce(sc);
+		break;
+	case 0:
+	default:
+		rc = reset_adapter_with_pl_rst(sc);
+		break;
+	}
+	if (rc == 0)
+		rc = resume_adapter(sc);
+	return (rc);
 }
 
 static void
@@ -2864,7 +2963,7 @@ cxgbe_ioctl(if_t ifp, unsigned long cmd, caddr_t data)
 		if_setmtu(ifp, mtu);
 		if (vi->flags & VI_INIT_DONE) {
 			t4_update_fl_bufsize(ifp);
-			if (!hw_off_limits(sc) &&
+			if (hw_all_ok(sc) &&
 			    if_getdrvflags(ifp) & IFF_DRV_RUNNING)
 				rc = update_mac_settings(ifp, XGMAC_MTU);
 		}
@@ -2876,7 +2975,7 @@ cxgbe_ioctl(if_t ifp, unsigned long cmd, caddr_t data)
 		if (rc)
 			return (rc);
 
-		if (hw_off_limits(sc)) {
+		if (!hw_all_ok(sc)) {
 			rc = ENXIO;
 			goto fail;
 		}
@@ -2904,7 +3003,7 @@ cxgbe_ioctl(if_t ifp, unsigned long cmd, caddr_t data)
 		rc = begin_synchronized_op(sc, vi, SLEEP_OK | INTR_OK, "t4multi");
 		if (rc)
 			return (rc);
-		if (!hw_off_limits(sc) && if_getdrvflags(ifp) & IFF_DRV_RUNNING)
+		if (hw_all_ok(sc) && if_getdrvflags(ifp) & IFF_DRV_RUNNING)
 			rc = update_mac_settings(ifp, XGMAC_MCADDRS);
 		end_synchronized_op(sc, 0);
 		break;
@@ -3079,7 +3178,7 @@ fail:
 		rc = begin_synchronized_op(sc, vi, SLEEP_OK | INTR_OK, "t4i2c");
 		if (rc)
 			return (rc);
-		if (hw_off_limits(sc))
+		if (!hw_all_ok(sc))
 			rc = ENXIO;
 		else
 			rc = -t4_i2c_rd(sc, sc->mbox, pi->port_id, i2c.dev_addr,
@@ -3356,7 +3455,7 @@ cxgbe_media_change(if_t ifp)
 		if (IFM_OPTIONS(ifm->ifm_media) & IFM_ETH_TXPAUSE)
 			lc->requested_fc |= PAUSE_TX;
 	}
-	if (pi->up_vis > 0 && !hw_off_limits(sc)) {
+	if (pi->up_vis > 0 && hw_all_ok(sc)) {
 		fixup_link_config(pi);
 		rc = apply_link_config(pi);
 	}
@@ -3524,7 +3623,7 @@ cxgbe_media_status(if_t ifp, struct ifmediareq *ifmr)
 		return;
 	PORT_LOCK(pi);
 
-	if (pi->up_vis == 0 && !hw_off_limits(sc)) {
+	if (pi->up_vis == 0 && hw_all_ok(sc)) {
 		/*
 		 * If all the interfaces are administratively down the firmware
 		 * does not report transceiver changes.  Refresh port info here
@@ -8272,7 +8371,7 @@ sysctl_btphy(SYSCTL_HANDLER_ARGS)
 	rc = begin_synchronized_op(sc, &pi->vi[0], SLEEP_OK | INTR_OK, "t4btt");
 	if (rc)
 		return (rc);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		rc = ENXIO;
 	else {
 		/* XXX: magic numbers */
@@ -8329,7 +8428,7 @@ sysctl_tx_vm_wr(SYSCTL_HANDLER_ARGS)
 	    "t4txvm");
 	if (rc)
 		return (rc);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		rc = ENXIO;
 	else if (if_getdrvflags(vi->ifp) & IFF_DRV_RUNNING) {
 		/*
@@ -8543,7 +8642,7 @@ sysctl_pause_settings(SYSCTL_HANDLER_ARGS)
 		    "t4PAUSE");
 		if (rc)
 			return (rc);
-		if (!hw_off_limits(sc)) {
+		if (hw_all_ok(sc)) {
 			PORT_LOCK(pi);
 			lc->requested_fc = n;
 			fixup_link_config(pi);
@@ -8639,7 +8738,7 @@ sysctl_requested_fec(SYSCTL_HANDLER_ARGS)
 			lc->requested_fec = n & (M_FW_PORT_CAP32_FEC |
 			    FEC_MODULE);
 		}
-		if (!hw_off_limits(sc)) {
+		if (hw_all_ok(sc)) {
 			fixup_link_config(pi);
 			if (pi->up_vis > 0) {
 				rc = apply_link_config(pi);
@@ -8677,7 +8776,7 @@ sysctl_module_fec(SYSCTL_HANDLER_ARGS)
 		rc = EBUSY;
 		goto done;
 	}
-	if (hw_off_limits(sc)) {
+	if (!hw_all_ok(sc)) {
 		rc = ENXIO;
 		goto done;
 	}
@@ -8743,7 +8842,7 @@ sysctl_autoneg(SYSCTL_HANDLER_ARGS)
 		goto done;
 	}
 	lc->requested_aneg = val;
-	if (!hw_off_limits(sc)) {
+	if (hw_all_ok(sc)) {
 		fixup_link_config(pi);
 		if (pi->up_vis > 0)
 			rc = apply_link_config(pi);
@@ -8778,7 +8877,7 @@ sysctl_force_fec(SYSCTL_HANDLER_ARGS)
 		return (rc);
 	PORT_LOCK(pi);
 	lc->force_fec = val;
-	if (!hw_off_limits(sc)) {
+	if (hw_all_ok(sc)) {
 		fixup_link_config(pi);
 		if (pi->up_vis > 0)
 			rc = apply_link_config(pi);
@@ -8818,7 +8917,7 @@ sysctl_temperature(SYSCTL_HANDLER_ARGS)
 	rc = begin_synchronized_op(sc, NULL, SLEEP_OK | INTR_OK, "t4temp");
 	if (rc)
 		return (rc);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		rc = ENXIO;
 	else {
 		param = V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
@@ -8849,7 +8948,7 @@ sysctl_vdd(SYSCTL_HANDLER_ARGS)
 		    "t4vdd");
 		if (rc)
 			return (rc);
-		if (hw_off_limits(sc))
+		if (!hw_all_ok(sc))
 			rc = ENXIO;
 		else {
 			param = V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
@@ -8886,7 +8985,7 @@ sysctl_reset_sensor(SYSCTL_HANDLER_ARGS)
 	rc = begin_synchronized_op(sc, NULL, SLEEP_OK | INTR_OK, "t4srst");
 	if (rc)
 		return (rc);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		rc = ENXIO;
 	else {
 		param = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
@@ -8912,7 +9011,7 @@ sysctl_loadavg(SYSCTL_HANDLER_ARGS)
 	rc = begin_synchronized_op(sc, NULL, SLEEP_OK | INTR_OK, "t4lavg");
 	if (rc)
 		return (rc);
-	if (hw_off_limits(sc))
+	if (hw_all_ok(sc))
 		rc = ENXIO;
 	else {
 		param = V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DEV) |
@@ -12366,7 +12465,7 @@ toe_capability(struct vi_info *vi, bool enable)
 
 	if (!is_offload(sc))
 		return (ENODEV);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		return (ENXIO);
 
 	if (enable) {
@@ -12629,7 +12728,7 @@ ktls_capability(struct adapter *sc, bool enable)
 		return (ENODEV);
 	if (!is_t6(sc))
 		return (0);
-	if (hw_off_limits(sc))
+	if (!hw_all_ok(sc))
 		return (ENXIO);
 
 	if (enable) {
