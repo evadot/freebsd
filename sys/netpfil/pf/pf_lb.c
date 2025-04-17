@@ -57,11 +57,11 @@
 
 #ifdef INET
 #include <netinet/in_var.h>
-#endif
+#endif /* INET */
 
 #ifdef INET6
 #include <netinet6/in6_var.h>
-#endif
+#endif /* INET6 */
 
 
 /*
@@ -94,7 +94,7 @@ pf_hash(struct pf_addr *inaddr, struct pf_addr *hash,
 		uint64_t hash64;
 		uint32_t hash32[2];
 	} h;
-#endif
+#endif /* INET6 */
 	uint64_t	 res = 0;
 
 	_Static_assert(sizeof(*key) >= SIPHASH_KEY_LENGTH, "");
@@ -122,6 +122,8 @@ pf_hash(struct pf_addr *inaddr, struct pf_addr *hash,
 		hash->addr32[3] = ~h.hash32[0];
 		break;
 #endif /* INET6 */
+	default:
+		unhandled_af(af);
 	}
 	return (res);
 }
@@ -224,6 +226,9 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 {
 	struct pf_state_key_cmp	key;
 	struct pf_addr		init_addr;
+	int			dir = (pd->dir == PF_IN) ? PF_OUT : PF_IN;
+	int			sidx = pd->sidx;
+	int			didx = pd->didx;
 
 	bzero(&init_addr, sizeof(init_addr));
 
@@ -289,11 +294,12 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 	bzero(&key, sizeof(key));
 	key.af = pd->naf;
 	key.proto = pd->proto;
-	key.port[0] = pd->ndport;
-	PF_ACPY(&key.addr[0], &pd->ndaddr, key.af);
 
 	do {
-		PF_ACPY(&key.addr[1], naddr, key.af);
+		PF_ACPY(&key.addr[didx], &pd->ndaddr, key.af);
+		PF_ACPY(&key.addr[sidx], naddr, key.af);
+		key.port[didx] = pd->ndport;
+
 		if (udp_mapping && *udp_mapping)
 			PF_ACPY(&(*udp_mapping)->endpoints[1].addr, naddr, pd->af);
 
@@ -302,8 +308,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 		 * similar 2 portloop in in_pcbbind
 		 */
 		if (pd->proto == IPPROTO_SCTP) {
-			key.port[1] = pd->nsport;
-			if (!pf_find_state_all_exists(&key, PF_IN)) {
+			key.port[sidx] = pd->nsport;
+			if (!pf_find_state_all_exists(&key, dir)) {
 				*nport = pd->nsport;
 				return (0);
 			} else {
@@ -315,14 +321,14 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 			 * XXX bug: icmp states don't use the id on both sides.
 			 * (traceroute -I through nat)
 			 */
-			key.port[1] = pd->nsport;
-			if (!pf_find_state_all_exists(&key, PF_IN)) {
+			key.port[sidx] = pd->nsport;
+			if (!pf_find_state_all_exists(&key, dir)) {
 				*nport = pd->nsport;
 				return (0);
 			}
 		} else if (low == high) {
-			key.port[1] = htons(low);
-			if (!pf_find_state_all_exists(&key, PF_IN)) {
+			key.port[sidx] = htons(low);
+			if (!pf_find_state_all_exists(&key, dir)) {
 				if (udp_mapping && *udp_mapping != NULL) {
 					(*udp_mapping)->endpoints[1].port = htons(low);
 					if (pf_udp_mapping_insert(*udp_mapping) == 0) {
@@ -348,14 +354,14 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 			/* low <= cut <= high */
 			for (tmp = cut; tmp <= high && tmp <= 0xffff; ++tmp) {
 				if (udp_mapping && *udp_mapping != NULL) {
-					(*udp_mapping)->endpoints[1].port = htons(tmp);
+					(*udp_mapping)->endpoints[sidx].port = htons(tmp);
 					if (pf_udp_mapping_insert(*udp_mapping) == 0) {
 						*nport = htons(tmp);
 						return (0);
 					}
 				} else {
-					key.port[1] = htons(tmp);
-					if (!pf_find_state_all_exists(&key, PF_IN)) {
+					key.port[sidx] = htons(tmp);
+					if (!pf_find_state_all_exists(&key, dir)) {
 						*nport = htons(tmp);
 						return (0);
 					}
@@ -372,8 +378,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r,
 						return (0);
 					}
 				} else {
-					key.port[1] = htons(tmp);
-					if (!pf_find_state_all_exists(&key, PF_IN)) {
+					key.port[sidx] = htons(tmp);
+					if (!pf_find_state_all_exists(&key, dir)) {
 						*nport = htons(tmp);
 						return (0);
 					}
@@ -497,6 +503,8 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 			rmask = &rpool->cur->addr.p.dyn->pfid_mask6;
 			break;
 #endif /* INET6 */
+		default:
+			unhandled_af(af);
 		}
 	} else if (rpool->cur->addr.type == PF_ADDR_TABLE) {
 		if (!PF_POOL_DYNTYPE(rpool->opts)) {
@@ -547,29 +555,29 @@ pf_map_addr(sa_family_t af, struct pf_krule *r, struct pf_addr *saddr,
 			switch (af) {
 #ifdef INET
 			case AF_INET:
-				rpool->counter.addr32[0] = htonl(arc4random());
+				rpool->counter.addr32[0] = arc4random();
 				break;
 #endif /* INET */
 #ifdef INET6
 			case AF_INET6:
 				if (rmask->addr32[3] != 0xffffffff)
 					rpool->counter.addr32[3] =
-					    htonl(arc4random());
+					    arc4random();
 				else
 					break;
 				if (rmask->addr32[2] != 0xffffffff)
 					rpool->counter.addr32[2] =
-					    htonl(arc4random());
+					    arc4random();
 				else
 					break;
 				if (rmask->addr32[1] != 0xffffffff)
 					rpool->counter.addr32[1] =
-					    htonl(arc4random());
+					    arc4random();
 				else
 					break;
 				if (rmask->addr32[0] != 0xffffffff)
 					rpool->counter.addr32[0] =
-					    htonl(arc4random());
+					    arc4random();
 				break;
 #endif /* INET6 */
 			}
@@ -1065,19 +1073,19 @@ pf_get_transaddr_af(struct pf_krule *r, struct pf_pdesc *pd)
 	}
 
 	if (pd->proto == IPPROTO_ICMPV6 && pd->naf == AF_INET) {
-		NTOHS(pd->ndport);
+		pd->ndport = ntohs(pd->ndport);
 		if (pd->ndport == ICMP6_ECHO_REQUEST)
 			pd->ndport = ICMP_ECHO;
 		else if (pd->ndport == ICMP6_ECHO_REPLY)
 			pd->ndport = ICMP_ECHOREPLY;
-		HTONS(pd->ndport);
+		pd->ndport = htons(pd->ndport);
 	} else if (pd->proto == IPPROTO_ICMP && pd->naf == AF_INET6) {
-		NTOHS(pd->ndport);
+		pd->nsport = ntohs(pd->nsport);
 		if (pd->ndport == ICMP_ECHO)
 			pd->ndport = ICMP6_ECHO_REQUEST;
 		else if (pd->ndport == ICMP_ECHOREPLY)
 			pd->ndport = ICMP6_ECHO_REPLY;
-		HTONS(pd->ndport);
+		pd->nsport = htons(pd->nsport);
 	}
 
 	/* get the destination address and port */

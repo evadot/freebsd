@@ -45,6 +45,7 @@ ATF_TESTS_SH+=	altq \
 		sctp \
 		set_skip \
 		set_tos \
+		snmp \
 		src_track \
 		status \
 		syncookie \
@@ -57,13 +58,16 @@ ATF_TESTS_PYTEST+=	frag6.py
 ATF_TESTS_PYTEST+=	icmp.py
 ATF_TESTS_PYTEST+=	nat64.py
 ATF_TESTS_PYTEST+=	nat66.py
+ATF_TESTS_PYTEST+=	return.py
 ATF_TESTS_PYTEST+=	sctp.py
 
 # Allow tests to run in parallel in their own jails
 TEST_METADATA+= execenv="jail"
 TEST_METADATA+= execenv_jail_params="vnet allow.raw_sockets"
 
-${PACKAGE}FILES+=	CVE-2019-5597.py \
+${PACKAGE}FILES+=	\
+			bsnmpd.conf \
+			CVE-2019-5597.py \
 			CVE-2019-5598.py \
 			daytime_inetd.conf \
 			echo_inetd.conf \
@@ -79,6 +83,7 @@ ${PACKAGE}FILES+=	CVE-2019-5597.py \
 			rdr-srcport.py \
 			utils.subr
 
+${PACKAGE}FILESMODE_bsnmpd.conf=		0555
 ${PACKAGE}FILESMODE_CVE-2019-5597.py=	0555
 ${PACKAGE}FILESMODE_CVE-2019-5598.py=	0555
 ${PACKAGE}FILESMODE_fragcommon.py=	0555

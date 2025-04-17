@@ -1597,16 +1597,21 @@ retry:
 		}
 
 		/*
-		 * The page was left invalid.  Likely placed there by
+		 * If the page was left invalid, it was likely placed there by
 		 * an incomplete fault.  Just remove and ignore.
+		 *
+		 * One other possibility is that the map entry is wired, in
+		 * which case we must hang on to the page to avoid leaking it,
+		 * as the map entry owns the wiring.  This case can arise if the
+		 * backing object is truncated by the pager.
 		 */
-		if (vm_page_none_valid(m)) {
+		if (vm_page_none_valid(m) && entry->wired_count == 0) {
 			if (vm_page_iter_remove(&pages, m))
 				vm_page_free(m);
 			continue;
 		}
 
-		/* vm_page_iter_rename() will dirty the page. */
+		/* vm_page_iter_rename() will dirty the page if it is valid. */
 		if (!vm_page_iter_rename(&pages, m, new_object, m->pindex -
 		    offidxstart)) {
 			vm_page_xunbusy(m);
@@ -2270,19 +2275,21 @@ void
 vm_object_prepare_buf_pages(vm_object_t object, vm_page_t *ma_dst, int count,
     int *rbehind, int *rahead, vm_page_t *ma_src)
 {
+	struct pctrie_iter pages;
 	vm_pindex_t pindex;
 	vm_page_t m, mpred, msucc;
 
+	vm_page_iter_init(&pages, object);
 	VM_OBJECT_ASSERT_LOCKED(object);
 	if (*rbehind != 0) {
 		m = ma_src[0];
 		pindex = m->pindex;
-		mpred = TAILQ_PREV(m, pglist, listq);
+		mpred = vm_radix_iter_lookup_lt(&pages, pindex);
 		*rbehind = MIN(*rbehind,
 		    pindex - (mpred != NULL ? mpred->pindex + 1 : 0));
 		/* Stepping backward from pindex, mpred doesn't change. */
 		for (int i = 0; i < *rbehind; i++) {
-			m = vm_page_alloc_after(object, pindex - i - 1,
+			m = vm_page_alloc_after(object, &pages, pindex - i - 1,
 			    VM_ALLOC_NORMAL, mpred);
 			if (m == NULL) {
 				/* Shift the array. */
@@ -2300,12 +2307,12 @@ vm_object_prepare_buf_pages(vm_object_t object, vm_page_t *ma_dst, int count,
 	if (*rahead != 0) {
 		m = ma_src[count - 1];
 		pindex = m->pindex + 1;
-		msucc = TAILQ_NEXT(m, listq);
+		msucc = vm_radix_iter_lookup_ge(&pages, pindex);
 		*rahead = MIN(*rahead,
 		    (msucc != NULL ? msucc->pindex : object->size) - pindex);
 		mpred = m;
 		for (int i = 0; i < *rahead; i++) {
-			m = vm_page_alloc_after(object, pindex + i,
+			m = vm_page_alloc_after(object, &pages, pindex + i,
 			    VM_ALLOC_NORMAL, mpred);
 			if (m == NULL) {
 				*rahead = i;
@@ -2485,10 +2492,8 @@ vm_object_list_handler(struct sysctl_req *req, bool swap_only)
 	struct vattr va;
 	vm_object_t obj;
 	vm_page_t m;
-	struct cdev *cdev;
-	struct cdevsw *csw;
 	u_long sp;
-	int count, error, ref;
+	int count, error;
 	key_t key;
 	unsigned short seq;
 	bool want_path;
@@ -2577,17 +2582,9 @@ vm_object_list_handler(struct sysctl_req *req, bool swap_only)
 			sp = swap_pager_swapped_pages(obj);
 			kvo->kvo_swapped = sp > UINT32_MAX ? UINT32_MAX : sp;
 		}
-		if ((obj->type == OBJT_DEVICE || obj->type == OBJT_MGTDEVICE) &&
-		    (obj->flags & OBJ_CDEVH) != 0) {
-			cdev = obj->un_pager.devp.handle;
-			if (cdev != NULL) {
-				csw = dev_refthread(cdev, &ref);
-				if (csw != NULL) {
-					strlcpy(kvo->kvo_path, cdev->si_name,
-					    sizeof(kvo->kvo_path));
-					dev_relthread(cdev, ref);
-				}
-			}
+		if (obj->type == OBJT_DEVICE || obj->type == OBJT_MGTDEVICE) {
+			cdev_pager_get_path(obj, kvo->kvo_path,
+			    sizeof(kvo->kvo_path));
 		}
 		VM_OBJECT_RUNLOCK(obj);
 		if ((obj->flags & OBJ_SYSVSHM) != 0) {
@@ -2730,8 +2727,9 @@ DB_SHOW_COMMAND_FLAGS(vmochk, vm_object_check, DB_CMD_MEMSAFE)
 	TAILQ_FOREACH(object, &vm_object_list, object_list) {
 		if ((object->flags & OBJ_ANON) != 0) {
 			if (object->ref_count == 0) {
-				db_printf("vmochk: internal obj has zero ref count: %ld\n",
-					(long)object->size);
+				db_printf(
+			"vmochk: internal obj has zero ref count: %lu\n",
+				    (u_long)object->size);
 			}
 			if (!vm_object_in_map(object)) {
 				db_printf(
@@ -2766,11 +2764,12 @@ DB_SHOW_COMMAND(object, vm_object_print_static)
 	if (object == NULL)
 		return;
 
-	db_iprintf(
-	    "Object %p: type=%d, size=0x%jx, res=%d, ref=%d, flags=0x%x ruid %d charge %jx\n",
+	db_iprintf("Object %p: type=%d, size=0x%jx, res=%d, ref=%d, flags=0x%x",
 	    object, (int)object->type, (uintmax_t)object->size,
-	    object->resident_page_count, object->ref_count, object->flags,
-	    object->cred ? object->cred->cr_ruid : -1, (uintmax_t)object->charge);
+	    object->resident_page_count, object->ref_count, object->flags);
+	db_iprintf(" ruid %d charge %jx\n",
+	    object->cred ? object->cred->cr_ruid : -1,
+	    (uintmax_t)object->charge);
 	db_iprintf(" sref=%d, backing_object(%d)=(%p)+0x%jx\n",
 	    atomic_load_int(&object->shadow_count),
 	    object->backing_object ? object->backing_object->ref_count : 0,

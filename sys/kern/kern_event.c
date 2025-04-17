@@ -58,6 +58,7 @@
 #include <sys/poll.h>
 #include <sys/protosw.h>
 #include <sys/resourcevar.h>
+#include <sys/sbuf.h>
 #include <sys/sigio.h>
 #include <sys/signalvar.h>
 #include <sys/socket.h>
@@ -74,6 +75,10 @@
 #include <sys/ktrace.h>
 #endif
 #include <machine/atomic.h>
+#ifdef COMPAT_FREEBSD32
+#include <compat/freebsd32/freebsd32.h>
+#include <compat/freebsd32/freebsd32_util.h>
+#endif
 
 #include <vm/uma.h>
 
@@ -2871,26 +2876,142 @@ knote_status_export(int kn_status)
 }
 
 static int
-sysctl_kern_proc_kqueue_report_one(struct proc *p, struct sysctl_req *req,
-    struct kqueue *kq, struct knote *kn)
+kern_proc_kqueue_report_one(struct sbuf *s, struct proc *p,
+    int kq_fd, struct kqueue *kq, struct knote *kn, bool compat32 __unused)
 {
 	struct kinfo_knote kin;
+#ifdef COMPAT_FREEBSD32
+	struct kinfo_knote32 kin32;
+#endif
 	int error;
 
 	if (kn->kn_status == KN_MARKER)
 		return (0);
 
 	memset(&kin, 0, sizeof(kin));
+	kin.knt_kq_fd = kq_fd;
 	memcpy(&kin.knt_event, &kn->kn_kevent, sizeof(struct kevent));
 	kin.knt_status = knote_status_export(kn->kn_status);
 	kn_enter_flux(kn);
 	KQ_UNLOCK_FLUX(kq);
 	if (kn->kn_fop->f_userdump != NULL)
 		(void)kn->kn_fop->f_userdump(p, kn, &kin);
-	error = SYSCTL_OUT(req, &kin, sizeof(kin));
-	maybe_yield();
+#ifdef COMPAT_FREEBSD32
+	if (compat32) {
+		freebsd32_kinfo_knote_to_32(&kin, &kin32);
+		error = sbuf_bcat(s, &kin32, sizeof(kin32));
+	} else
+#endif
+		error = sbuf_bcat(s, &kin, sizeof(kin));
 	KQ_LOCK(kq);
 	kn_leave_flux(kn);
+	return (error);
+}
+
+static int
+kern_proc_kqueue_report(struct sbuf *s, struct proc *p, int kq_fd,
+    struct kqueue *kq, bool compat32)
+{
+	struct knote *kn;
+	int error, i;
+
+	error = 0;
+	KQ_LOCK(kq);
+	for (i = 0; i < kq->kq_knlistsize; i++) {
+		SLIST_FOREACH(kn, &kq->kq_knlist[i], kn_link) {
+			error = kern_proc_kqueue_report_one(s, p, kq_fd,
+			    kq, kn, compat32);
+			if (error != 0)
+				goto out;
+		}
+	}
+	if (kq->kq_knhashmask == 0)
+		goto out;
+	for (i = 0; i <= kq->kq_knhashmask; i++) {
+		SLIST_FOREACH(kn, &kq->kq_knhash[i], kn_link) {
+			error = kern_proc_kqueue_report_one(s, p, kq_fd,
+			    kq, kn, compat32);
+			if (error != 0)
+				goto out;
+		}
+	}
+out:
+	KQ_UNLOCK_FLUX(kq);
+	return (error);
+}
+
+struct kern_proc_kqueues_out1_cb_args {
+	struct sbuf *s;
+	bool compat32;
+};
+
+static int
+kern_proc_kqueues_out1_cb(struct proc *p, int fd, struct file *fp, void *arg)
+{
+	struct kqueue *kq;
+	struct kern_proc_kqueues_out1_cb_args *a;
+
+	if (fp->f_type != DTYPE_KQUEUE)
+		return (0);
+	a = arg;
+	kq = fp->f_data;
+	return (kern_proc_kqueue_report(a->s, p, fd, kq, a->compat32));
+}
+
+static int
+kern_proc_kqueues_out1(struct thread *td, struct proc *p, struct sbuf *s,
+    bool compat32)
+{
+	struct kern_proc_kqueues_out1_cb_args a;
+
+	a.s = s;
+	a.compat32 = compat32;
+	return (fget_remote_foreach(td, p, kern_proc_kqueues_out1_cb, &a));
+}
+
+int
+kern_proc_kqueues_out(struct proc *p, struct sbuf *sb, size_t maxlen,
+    bool compat32)
+{
+	struct sbuf *s, sm;
+	size_t sb_len;
+	int error;
+
+	if (maxlen == -1 || maxlen == 0)
+		sb_len = 128;
+	else
+		sb_len = maxlen;
+	s = sbuf_new(&sm, NULL, sb_len, maxlen == -1 ? SBUF_AUTOEXTEND :
+	    SBUF_FIXEDLEN);
+	error = kern_proc_kqueues_out1(curthread, p, s, compat32);
+	sbuf_finish(s);
+	if (error == 0) {
+		sbuf_bcat(sb, sbuf_data(s), MIN(sbuf_len(s), maxlen == -1 ?
+		    SIZE_T_MAX : maxlen));
+	}
+	sbuf_delete(s);
+	return (error);
+}
+
+static int
+sysctl_kern_proc_kqueue_one(struct thread *td, struct sbuf *s, struct proc *p,
+    int kq_fd, bool compat32)
+{
+	struct file *fp;
+	struct kqueue *kq;
+	int error;
+
+	error = fget_remote(td, p, kq_fd, &fp);
+	if (error == 0) {
+		if (fp->f_type != DTYPE_KQUEUE) {
+			error = EINVAL;
+		} else {
+			kq = fp->f_data;
+			error = kern_proc_kqueue_report(s, p, kq_fd, kq,
+			    compat32);
+		}
+		fdrop(fp, td);
+	}
 	return (error);
 }
 
@@ -2899,66 +3020,45 @@ sysctl_kern_proc_kqueue(SYSCTL_HANDLER_ARGS)
 {
 	struct thread *td;
 	struct proc *p;
-	struct file *fp;
-	struct kqueue *kq;
-	struct knote *kn;
-	int error, i, *name;
+	struct sbuf *s, sm;
+	int error, error1, *name;
+	bool compat32;
 
 	name = (int *)arg1;
-	if ((u_int)arg2 != 2)
+	if ((u_int)arg2 > 2 || (u_int)arg2 == 0)
 		return (EINVAL);
 
 	error = pget((pid_t)name[0], PGET_HOLD | PGET_CANDEBUG, &p);
 	if (error != 0)
 		return (error);
-#ifdef COMPAT_FREEBSD32
-	if (SV_CURPROC_FLAG(SV_ILP32)) {
-		/* XXXKIB */
-		error = EOPNOTSUPP;
-		goto out1;
-	}
-#endif
 
 	td = curthread;
-	error = fget_remote(td, p, name[1] /* kqfd */, &fp);
-	if (error != 0)
-		goto out1;
-	if (fp->f_type != DTYPE_KQUEUE) {
-		error = EINVAL;
-		goto out2;
+#ifdef FREEBSD_COMPAT32
+	compat32 = SV_CURPROC_FLAG(SV_ILP32);
+#else
+	compat32 = false;
+#endif
+
+	s = sbuf_new_for_sysctl(&sm, NULL, 0, req);
+	if (s == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
+	sbuf_clear_flags(s, SBUF_INCLUDENUL);
+
+	if ((u_int)arg2 == 1) {
+		error = kern_proc_kqueues_out1(td, p, s, compat32);
+	} else {
+		error = sysctl_kern_proc_kqueue_one(td, s, p,
+		    name[1] /* kq_fd */, compat32);
 	}
 
-	kq = fp->f_data;
-	if (req->oldptr == NULL) {
-		error = SYSCTL_OUT(req, NULL, sizeof(struct kinfo_knote) *
-		    kq->kq_knlistsize * 11 / 10);
-		goto out2;
-	}
+	error1 = sbuf_finish(s);
+	if (error == 0)
+		error = error1;
+	sbuf_delete(s);
 
-	KQ_LOCK(kq);
-	for (i = 0; i < kq->kq_knlistsize; i++) {
-		SLIST_FOREACH(kn, &kq->kq_knlist[i], kn_link) {
-			error = sysctl_kern_proc_kqueue_report_one(p, req,
-			    kq, kn);
-			if (error != 0)
-				goto out3;
-		}
-	}
-	if (kq->kq_knhashmask == 0)
-		goto out3;
-	for (i = 0; i <= kq->kq_knhashmask; i++) {
-		SLIST_FOREACH(kn, &kq->kq_knhash[i], kn_link) {
-			error = sysctl_kern_proc_kqueue_report_one(p, req,
-			    kq, kn);
-			if (error != 0)
-				goto out3;
-		}
-	}
-out3:
-	KQ_UNLOCK_FLUX(kq);
-out2:
-	fdrop(fp, td);
-out1:
+out:
 	PRELE(p);
 	return (error);
 }

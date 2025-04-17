@@ -105,6 +105,7 @@
 #include <vm/vm_pageout.h>
 #include <vm/vm_kern.h>
 #include <vm/vm_pager.h>
+#include <vm/vm_radix.h>
 #include <vm/vm_extern.h>
 #include <vm/vm_reserv.h>
 
@@ -1063,14 +1064,14 @@ vm_fault_cow(struct faultstate *fs)
 		 * Oh, well, lets copy it.
 		 */
 		pmap_copy_page(fs->m, fs->first_m);
-		vm_page_valid(fs->first_m);
 		if (fs->wired && (fs->fault_flags & VM_FAULT_WIRE) == 0) {
 			vm_page_wire(fs->first_m);
 			vm_page_unwire(fs->m, PQ_INACTIVE);
 		}
 		/*
-		 * Save the cow page to be released after
-		 * pmap_enter is complete.
+		 * Save the COW page to be released after pmap_enter is
+		 * complete.  The new copy will be marked valid when we're ready
+		 * to map it.
 		 */
 		fs->m_cow = fs->m;
 		fs->m = NULL;
@@ -1230,7 +1231,7 @@ vm_fault_allocate_oom(struct faultstate *fs)
  * Allocate a page directly or via the object populate method.
  */
 static enum fault_status
-vm_fault_allocate(struct faultstate *fs)
+vm_fault_allocate(struct faultstate *fs, struct pctrie_iter *pages)
 {
 	struct domainset *dset;
 	enum fault_status res;
@@ -1291,8 +1292,9 @@ vm_fault_allocate(struct faultstate *fs)
 			vm_fault_unlock_and_deallocate(fs);
 			return (FAULT_FAILURE);
 		}
-		fs->m = vm_page_alloc(fs->object, fs->pindex,
-		    P_KILLED(curproc) ? VM_ALLOC_SYSTEM : 0);
+		fs->m = vm_page_alloc_after(fs->object, pages, fs->pindex,
+		    P_KILLED(curproc) ? VM_ALLOC_SYSTEM : 0,
+		    vm_radix_iter_lookup_lt(pages, fs->pindex));
 	}
 	if (fs->m == NULL) {
 		if (vm_fault_allocate_oom(fs))
@@ -1459,6 +1461,7 @@ vm_fault_busy_sleep(struct faultstate *fs)
 static enum fault_status
 vm_fault_object(struct faultstate *fs, int *behindp, int *aheadp)
 {
+	struct pctrie_iter pages;
 	enum fault_status res;
 	bool dead;
 
@@ -1484,7 +1487,8 @@ vm_fault_object(struct faultstate *fs, int *behindp, int *aheadp)
 	/*
 	 * See if the page is resident.
 	 */
-	fs->m = vm_page_lookup(fs->object, fs->pindex);
+	vm_page_iter_init(&pages, fs->object);
+	fs->m = vm_radix_iter_lookup(&pages, fs->pindex);
 	if (fs->m != NULL) {
 		if (!vm_page_tryxbusy(fs->m)) {
 			vm_fault_busy_sleep(fs);
@@ -1514,7 +1518,7 @@ vm_fault_object(struct faultstate *fs, int *behindp, int *aheadp)
 			vm_fault_unlock_and_deallocate(fs);
 			return (FAULT_RESTART);
 		}
-		res = vm_fault_allocate(fs);
+		res = vm_fault_allocate(fs, &pages);
 		if (res != FAULT_CONTINUE)
 			return (res);
 	}
@@ -1549,6 +1553,7 @@ int
 vm_fault(vm_map_t map, vm_offset_t vaddr, vm_prot_t fault_type,
     int fault_flags, vm_page_t *m_hold)
 {
+	struct pctrie_iter pages;
 	struct faultstate fs;
 	int ahead, behind, faultcount, rv;
 	enum fault_status res;
@@ -1603,6 +1608,7 @@ RetryFault:
 		}
 		VM_OBJECT_ASSERT_WLOCKED(fs.first_object);
 	} else {
+		vm_page_iter_init(&pages, fs.first_object);
 		VM_OBJECT_WLOCK(fs.first_object);
 	}
 
@@ -1627,7 +1633,7 @@ RetryFault:
 	fs.pindex = fs.first_pindex;
 
 	if ((fs.entry->eflags & MAP_ENTRY_SPLIT_BOUNDARY_MASK) != 0) {
-		res = vm_fault_allocate(&fs);
+		res = vm_fault_allocate(&fs, &pages);
 		switch (res) {
 		case FAULT_RESTART:
 			goto RetryFault;
@@ -1752,6 +1758,19 @@ found:
 	 */
 	if (hardfault)
 		fs.entry->next_read = vaddr + ptoa(ahead) + PAGE_SIZE;
+
+	/*
+	 * If the page to be mapped was copied from a backing object, we defer
+	 * marking it valid until here, where the fault handler is guaranteed to
+	 * succeed.  Otherwise we can end up with a shadowed, mapped page in the
+	 * backing object, which violates an invariant of vm_object_collapse()
+	 * that shadowed pages are not mapped.
+	 */
+	if (fs.m_cow != NULL) {
+		KASSERT(vm_page_none_valid(fs.m),
+		    ("vm_fault: page %p is already valid", fs.m_cow));
+		vm_page_valid(fs.m);
+	}
 
 	/*
 	 * Page must be completely valid or it is not fit to
@@ -2081,6 +2100,7 @@ vm_fault_copy_entry(vm_map_t dst_map, vm_map_t src_map __unused,
     vm_map_entry_t dst_entry, vm_map_entry_t src_entry,
     vm_ooffset_t *fork_charge)
 {
+	struct pctrie_iter pages;
 	vm_object_t backing_object, dst_object, object, src_object;
 	vm_pindex_t dst_pindex, pindex, src_pindex;
 	vm_prot_t access, prot;
@@ -2157,6 +2177,7 @@ vm_fault_copy_entry(vm_map_t dst_map, vm_map_t src_map __unused,
 	 * with the source object, all of its pages must be dirtied,
 	 * regardless of whether they can be written.
 	 */
+	vm_page_iter_init(&pages, dst_object);
 	mpred = (src_object == dst_object) ?
 	   vm_page_mpred(src_object, src_pindex) : NULL;
 	for (vaddr = dst_entry->start, dst_pindex = 0;
@@ -2199,14 +2220,17 @@ again:
 			/*
 			 * Allocate a page in the destination object.
 			 */
-			dst_m = vm_page_alloc_after(dst_object, (src_object ==
-			    dst_object ? src_pindex : 0) + dst_pindex,
+			pindex = (src_object == dst_object ? src_pindex : 0) +
+			    dst_pindex;
+			dst_m = vm_page_alloc_after(dst_object, &pages, pindex,
 			    VM_ALLOC_NORMAL, mpred);
 			if (dst_m == NULL) {
 				VM_OBJECT_WUNLOCK(dst_object);
 				VM_OBJECT_RUNLOCK(object);
 				vm_wait(dst_object);
 				VM_OBJECT_WLOCK(dst_object);
+				pctrie_iter_reset(&pages);
+				mpred = vm_radix_iter_lookup_lt(&pages, pindex);
 				goto again;
 			}
 
@@ -2228,8 +2252,11 @@ again:
 			VM_OBJECT_RUNLOCK(object);
 		} else {
 			dst_m = src_m;
-			if (vm_page_busy_acquire(dst_m, VM_ALLOC_WAITFAIL) == 0)
+			if (vm_page_busy_acquire(
+			    dst_m, VM_ALLOC_WAITFAIL) == 0) {
+				pctrie_iter_reset(&pages);
 				goto again;
+			}
 			if (dst_m->pindex >= dst_object->size) {
 				/*
 				 * We are upgrading.  Index can occur

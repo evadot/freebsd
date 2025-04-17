@@ -1,6 +1,7 @@
 .include <src.opts.mk>
 
 ATF_TESTS_C+=		clearenv_test
+ATF_TESTS_C+=		cxa_atexit_test
 ATF_TESTS_C+=		dynthr_test
 ATF_TESTS_C+=		heapsort_test
 ATF_TESTS_C+=		libc_exit_test
@@ -58,8 +59,6 @@ PROGS+=		h_getopt h_getopt_long
 
 CFLAGS+=	-I${.CURDIR}
 
-CXXSTD.cxa_thread_atexit_test=	c++11
-CXXSTD.cxa_thread_atexit_nothr_test=	c++11
 LIBADD.cxa_thread_atexit_test+=		pthread
 
 # Tests that requires Blocks feature
@@ -79,5 +78,6 @@ LIBADD.libc_exit_test+=		pthread
 LIBADD.strtod_test+=		m
 
 SUBDIR+=	dynthr_mod
+SUBDIR+=	libatexit
 
 .include <bsd.test.mk>

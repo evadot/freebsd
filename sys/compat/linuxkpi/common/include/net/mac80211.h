@@ -343,6 +343,7 @@ struct ieee80211_bss_conf {
 	bool					eht_support;
 	bool					csa_active;
 	bool					mu_mimo_owner;
+	bool					color_change_active;
 	uint32_t				sync_device_ts;
 	uint64_t				sync_tsf;
 	uint16_t				beacon_int;
@@ -363,7 +364,6 @@ struct ieee80211_bss_conf {
 	int		twt_requester, uora_exists, uora_ocw_range;
 	int		assoc_capability, enable_beacon, hidden_ssid, ibss_joined, twt_protected;
 	int		twt_responder, unsol_bcast_probe_resp_interval;
-	int		color_change_active;
 };
 
 struct ieee80211_channel_switch {
@@ -371,18 +371,6 @@ struct ieee80211_channel_switch {
 	int		block_tx, count, delay, device_timestamp, timestamp;
 	uint8_t					link_id;
 	struct cfg80211_chan_def		chandef;
-};
-
-struct ieee80211_cipher_scheme {
-	uint32_t	cipher;
-	uint8_t		iftype;		/* We do not know the size of this. */
-	uint8_t		hdr_len;
-	uint8_t		pn_len;
-	uint8_t		pn_off;
-	uint8_t		key_idx_off;
-	uint8_t		key_idx_mask;
-	uint8_t		key_idx_shift;
-	uint8_t		mic_len;
 };
 
 enum ieee80211_event_type {
@@ -508,8 +496,6 @@ struct ieee80211_hw {
 	/* TODO FIXME */
 	int		extra_tx_headroom, weight_multiplier;
 	int		max_rate_tries, max_rates, max_report_rates;
-	struct ieee80211_cipher_scheme	*cipher_schemes;
-	int				n_cipher_schemes;
 	const char			*rate_control_algorithm;
 	struct {
 		uint16_t units_pos;	/* radiotap "spec" is .. inconsistent. */
@@ -845,15 +831,13 @@ struct ieee80211_vif_cfg {
 struct ieee80211_vif {
 	/* TODO FIXME */
 	enum nl80211_iftype		type;
-	int		csa_active, mu_mimo_owner;
 	int		cab_queue;
-	int     color_change_active, offload_flags;
+	int		offload_flags;
 	enum ieee80211_vif_driver_flags	driver_flags;
 	bool				p2p;
 	bool				probe_req_reg;
 	uint8_t				addr[ETH_ALEN];
 	struct ieee80211_vif_cfg	cfg;
-	struct ieee80211_chanctx_conf	*chanctx_conf;
 	struct ieee80211_txq		*txq;
 	struct ieee80211_bss_conf	bss_conf;
 	struct ieee80211_bss_conf	*link_conf[IEEE80211_MLD_MAX_NUM_LINKS];	/* rcu? */
