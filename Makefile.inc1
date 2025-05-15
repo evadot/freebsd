@@ -817,6 +817,7 @@ TMAKE=		\
 # TOOLS_PREFIX set in BMAKE
 XMAKE=		${BMAKE} \
 		TARGET=${TARGET} TARGET_ARCH=${TARGET_ARCH} \
+		MK_CLANG=${MK_CLANG_BOOTSTRAP} \
 		MK_LLDB=no \
 		MK_LLVM_BINUTILS=no \
 		MK_TESTS=no
@@ -1673,8 +1674,8 @@ buildetc: .MAKE .PHONY
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 _legacy
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 _bootstrap-tools \
 	    MK_CROSS_COMPILER=no MK_TOOLCHAIN=no
-	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 _obj \
-	    SUBDIR_OVERRIDE=etc
+	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 _obj
+	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 buildconfig
 	${_+_}cd ${.CURDIR}; ${MAKE} -f Makefile.inc1 everything \
 	    SUBDIR_OVERRIDE=etc
 
@@ -2930,7 +2931,7 @@ _elftctools+=	usr.bin/addr2line
 .endif
 
 .if ${MK_CLANG_BOOTSTRAP} != "no"
-_clang=		usr.bin/clang
+_clang=		usr.bin/clang/clang
 .endif
 .if ${MK_LLD_BOOTSTRAP} != "no"
 _lld=		usr.bin/clang/lld

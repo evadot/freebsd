@@ -59,6 +59,7 @@
 #include <vm/vm_object.h>
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
+#include <vm/vm_radix.h>
 
 #include <machine/stdarg.h>
 
@@ -647,6 +648,7 @@ int
 zap_vma_ptes(struct vm_area_struct *vma, unsigned long address,
     unsigned long size)
 {
+	struct pctrie_iter pages;
 	vm_object_t obj;
 	vm_page_t m;
 
@@ -654,9 +656,8 @@ zap_vma_ptes(struct vm_area_struct *vma, unsigned long address,
 	if (obj == NULL || (obj->flags & OBJ_UNMANAGED) != 0)
 		return (-ENOTSUP);
 	VM_OBJECT_RLOCK(obj);
-	for (m = vm_page_find_least(obj, OFF_TO_IDX(address));
-	    m != NULL && m->pindex < OFF_TO_IDX(address + size);
-	    m = TAILQ_NEXT(m, listq))
+	vm_page_iter_limit_init(&pages, obj, OFF_TO_IDX(address + size));
+	VM_RADIX_FOREACH_FROM(m, &pages, OFF_TO_IDX(address))
 		pmap_remove_all(m);
 	VM_OBJECT_RUNLOCK(obj);
 	return (0);
@@ -2070,8 +2071,24 @@ linux_timer_callback_wrapper(void *context)
 	timer->function(timer->data);
 }
 
+static int
+linux_timer_jiffies_until(unsigned long expires)
+{
+	unsigned long delta = expires - jiffies;
+
+	/*
+	 * Guard against already expired values and make sure that the value can
+	 * be used as a tick count, rather than a jiffies count.
+	 */
+	if ((long)delta < 1)
+		delta = 1;
+	else if (delta > INT_MAX)
+		delta = INT_MAX;
+	return ((int)delta);
+}
+
 int
-mod_timer(struct timer_list *timer, int expires)
+mod_timer(struct timer_list *timer, unsigned long expires)
 {
 	int ret;
 
@@ -2267,12 +2284,12 @@ intr:
 /*
  * Time limited wait for done != 0 with or without signals.
  */
-int
-linux_wait_for_timeout_common(struct completion *c, int timeout, int flags)
+unsigned long
+linux_wait_for_timeout_common(struct completion *c, unsigned long timeout,
+    int flags)
 {
 	struct task_struct *task;
-	int end = jiffies + timeout;
-	int error;
+	unsigned long end = jiffies + timeout, error;
 
 	if (SCHEDULER_STOPPED())
 		return (0);
