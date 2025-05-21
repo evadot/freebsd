@@ -1996,10 +1996,8 @@ vm_page_alloc(vm_object_t object, vm_pindex_t pindex, int req)
 }
 
 /*
- * Allocate a page in the specified object with the given page index.  To
- * optimize insertion of the page into the object, the caller must also specify
- * the resident page in the object with largest index smaller than the given
- * page index, or NULL if no such page exists.
+ * Allocate a page in the specified object with the given page index.  If the
+ * object lock is dropped and regained, the pages iter is reset.
  */
 vm_page_t
 vm_page_alloc_iter(vm_object_t object, vm_pindex_t pindex, int req,
@@ -2009,13 +2007,14 @@ vm_page_alloc_iter(vm_object_t object, vm_pindex_t pindex, int req,
 	vm_page_t m;
 	int domain;
 
-	vm_domainset_iter_page_init(&di, object, pindex, &domain, &req);
+	vm_domainset_iter_page_init(&di, object, pindex, &domain, &req,
+	    pages);
 	do {
 		m = vm_page_alloc_domain_iter(object, pindex, domain, req,
 		    pages);
 		if (m != NULL)
 			break;
-	} while (vm_domainset_iter_page(&di, object, &domain) == 0);
+	} while (vm_domainset_iter_page(&di, object, &domain, pages) == 0);
 
 	return (m);
 }
@@ -2097,7 +2096,9 @@ vm_page_alloc_domain_iter(vm_object_t object, vm_pindex_t pindex, int domain,
 	m = NULL;
 	if (!vm_pager_can_alloc_page(object, pindex))
 		return (NULL);
+#if VM_NRESERVLEVEL > 0
 again:
+#endif
 	if (__predict_false((req & VM_ALLOC_NOFREE) != 0)) {
 		m = vm_page_alloc_nofree_domain(domain, req);
 		if (m != NULL)
@@ -2141,9 +2142,9 @@ again:
 		/*
 		 * Not allocatable, give up.
 		 */
-		pctrie_iter_reset(pages);
-		if (vm_domain_alloc_fail(vmd, object, req))
-			goto again;
+		(void)vm_domain_alloc_fail(vmd, object, req);
+		if ((req & VM_ALLOC_WAITFAIL) != 0)
+			pctrie_iter_reset(pages);
 		return (NULL);
 	}
 
@@ -2255,7 +2256,7 @@ vm_page_alloc_contig(vm_object_t object, vm_pindex_t pindex, int req,
 
 	start_segind = -1;
 
-	vm_domainset_iter_page_init(&di, object, pindex, &domain, &req);
+	vm_domainset_iter_page_init(&di, object, pindex, &domain, &req, NULL);
 	do {
 		m = vm_page_alloc_contig_domain(object, pindex, domain, req,
 		    npages, low, high, alignment, boundary, memattr);
@@ -2267,7 +2268,7 @@ vm_page_alloc_contig(vm_object_t object, vm_pindex_t pindex, int req,
 		    npages, low, high) == -1) {
 			vm_domainset_iter_ignore(&di, domain);
 		}
-	} while (vm_domainset_iter_page(&di, object, &domain) == 0);
+	} while (vm_domainset_iter_page(&di, object, &domain, NULL) == 0);
 
 	return (m);
 }
@@ -2335,26 +2336,23 @@ vm_page_alloc_contig_domain(vm_object_t object, vm_pindex_t pindex, int domain,
 	KASSERT(npages > 0, ("vm_page_alloc_contig: npages is zero"));
 
 	vm_page_iter_init(&pages, object);
-	mpred = vm_radix_iter_lookup_lt(&pages, pindex);
-	KASSERT(mpred == NULL || mpred->pindex != pindex,
-	    ("vm_page_alloc_contig: pindex already allocated"));
-	for (;;) {
+	m_ret = NULL;
 #if VM_NRESERVLEVEL > 0
-		/*
-		 * Can we allocate the pages from a reservation?
-		 */
-		if (vm_object_reserv(object) &&
-		    (m_ret = vm_reserv_alloc_contig(object, pindex, domain,
-		    req, npages, low, high, alignment, boundary, &pages)) !=
-		    NULL) {
-			break;
-		}
+	/*
+	 * Can we allocate the pages from a reservation?
+	 */
+	if (vm_object_reserv(object)) {
+		m_ret = vm_reserv_alloc_contig(object, pindex, domain,
+		    req, npages, low, high, alignment, boundary, &pages);
+	}
 #endif
-		if ((m_ret = vm_page_find_contig_domain(domain, req, npages,
-		    low, high, alignment, boundary)) != NULL)
-			break;
-		if (!vm_domain_alloc_fail(VM_DOMAIN(domain), object, req))
-			return (NULL);
+	if (m_ret == NULL) {
+		m_ret = vm_page_find_contig_domain(domain, req, npages,
+		    low, high, alignment, boundary);
+	}
+	if (m_ret == NULL) {
+		(void)vm_domain_alloc_fail(VM_DOMAIN(domain), object, req);
+		return (NULL);
 	}
 
 	/*
@@ -2408,7 +2406,6 @@ vm_page_alloc_contig_domain(vm_object_t object, vm_pindex_t pindex, int domain,
 			}
 			return (NULL);
 		}
-		mpred = m;
 		if (memattr != VM_MEMATTR_DEFAULT)
 			pmap_page_set_memattr(m, memattr);
 		pindex++;
@@ -2467,9 +2464,9 @@ again:
 		}
 	}
 	if (m == NULL) {
-		if (vm_domain_alloc_fail(vmd, NULL, req))
-			goto again;
-		return (NULL);
+		if (!vm_domain_alloc_fail(vmd, NULL, req))
+			return (NULL);
+		goto again;
 	}
 
 found:
@@ -2581,12 +2578,12 @@ vm_page_alloc_noobj(int req)
 	vm_page_t m;
 	int domain;
 
-	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req);
+	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req, NULL);
 	do {
 		m = vm_page_alloc_noobj_domain(domain, req);
 		if (m != NULL)
 			break;
-	} while (vm_domainset_iter_page(&di, NULL, &domain) == 0);
+	} while (vm_domainset_iter_page(&di, NULL, &domain, NULL) == 0);
 
 	return (m);
 }
@@ -2600,13 +2597,13 @@ vm_page_alloc_noobj_contig(int req, u_long npages, vm_paddr_t low,
 	vm_page_t m;
 	int domain;
 
-	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req);
+	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req, NULL);
 	do {
 		m = vm_page_alloc_noobj_contig_domain(domain, req, npages, low,
 		    high, alignment, boundary, memattr);
 		if (m != NULL)
 			break;
-	} while (vm_domainset_iter_page(&di, NULL, &domain) == 0);
+	} while (vm_domainset_iter_page(&di, NULL, &domain, NULL) == 0);
 
 	return (m);
 }
@@ -3321,7 +3318,7 @@ vm_page_reclaim_contig(int req, u_long npages, vm_paddr_t low, vm_paddr_t high,
 
 	ret = ERANGE;
 
-	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req);
+	vm_domainset_iter_page_init(&di, NULL, 0, &domain, &req, NULL);
 	do {
 		status = vm_page_reclaim_contig_domain(domain, req, npages, low,
 		    high, alignment, boundary);
@@ -3334,7 +3331,7 @@ vm_page_reclaim_contig(int req, u_long npages, vm_paddr_t low, vm_paddr_t high,
 			    "from vm_page_reclaim_contig_domain()", status));
 			ret = ENOMEM;
 		}
-	} while (vm_domainset_iter_page(&di, NULL, &domain) == 0);
+	} while (vm_domainset_iter_page(&di, NULL, &domain, NULL) == 0);
 
 	return (ret);
 }
@@ -5167,14 +5164,13 @@ vm_page_grab_pages(vm_object_t object, vm_pindex_t pindex, int allocflags,
 	i = 0;
 	vm_page_iter_init(&pages, object);
 retrylookup:
-	ahead = 0;
+	ahead = -1;
 	for (; i < count; i++) {
-		if (ahead == 0) {
+		if (ahead < 0) {
 			ahead = vm_radix_iter_lookup_range(
 			    &pages, pindex + i, &ma[i], count - i);
 		}
-		if (ahead > 0) {
-			--ahead;
+		if (ahead-- > 0) {
 			m = ma[i];
 			if (!vm_page_tryacquire(m, allocflags)) {
 				if (vm_page_grab_sleep(object, m, pindex + i,
@@ -5189,6 +5185,7 @@ retrylookup:
 				break;
 			m = vm_page_alloc_iter(object, pindex + i,
 			    pflags | VM_ALLOC_COUNT(count - i), &pages);
+			/* pages was reset if alloc_iter lost the lock. */
 			if (m == NULL) {
 				if ((allocflags & (VM_ALLOC_NOWAIT |
 				    VM_ALLOC_WAITFAIL)) != 0)
