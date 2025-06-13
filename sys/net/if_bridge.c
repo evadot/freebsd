@@ -1329,25 +1329,6 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		return (EINVAL);
 	}
 
-	/*
-	 * If member_ifaddrs is disabled, do not allow an interface with
-	 * assigned IP addresses to be added to a bridge.
-	 */
-	if (!V_member_ifaddrs) {
-		struct ifaddr *ifa;
-
-		CK_STAILQ_FOREACH(ifa, &ifs->if_addrhead, ifa_link) {
-#ifdef INET
-			if (ifa->ifa_addr->sa_family == AF_INET)
-				return (EINVAL);
-#endif
-#ifdef INET6
-			if (ifa->ifa_addr->sa_family == AF_INET6)
-				return (EINVAL);
-#endif
-		}
-	}
-
 #ifdef INET6
 	/*
 	 * Two valid inet6 addresses with link-local scope must not be
@@ -1386,6 +1367,26 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		}
 	}
 #endif
+
+	/*
+	 * If member_ifaddrs is disabled, do not allow an interface with
+	 * assigned IP addresses to be added to a bridge.
+	 */
+	if (!V_member_ifaddrs) {
+		struct ifaddr *ifa;
+
+		CK_STAILQ_FOREACH(ifa, &ifs->if_addrhead, ifa_link) {
+#ifdef INET
+			if (ifa->ifa_addr->sa_family == AF_INET)
+				return (EINVAL);
+#endif
+#ifdef INET6
+			if (ifa->ifa_addr->sa_family == AF_INET6)
+				return (EINVAL);
+#endif
+		}
+	}
+
 	/* Allow the first Ethernet member to define the MTU */
 	if (CK_LIST_EMPTY(&sc->sc_iflist))
 		sc->sc_ifp->if_mtu = ifs->if_mtu;
@@ -2777,22 +2778,19 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 	do { GRAB_OUR_PACKETS(bifp) } while (0);
 
 	/*
-	 * We only need to check members interfaces if member_ifaddrs is
-	 * enabled; otherwise we should have never traffic destined for a
-	 * member's lladdr.
+	 * Check the interface the packet arrived on.  For tagged frames,
+	 * we need to do this even if member_ifaddrs is disabled because
+	 * vlan(4) might need to handle the traffic.
 	 */
-
-	if (V_member_ifaddrs) {
-		/*
-		 * Give a chance for ifp at first priority. This will help when
-		 * the packet comes through the interface like VLAN's with the
-		 * same MACs on several interfaces from the same bridge. This
-		 * also will save some CPU cycles in case the destination
-		 * interface and the input interface (eq ifp) are the same.
-		 */
+	if (V_member_ifaddrs || (vlan && ifp->if_vlantrunk))
 		do { GRAB_OUR_PACKETS(ifp) } while (0);
 
-		/* Now check the all bridge members. */
+	/*
+	 * We only need to check other members interface if member_ifaddrs
+	 * is enabled; otherwise we should have never traffic destined for
+	 * a member's lladdr.
+	 */
+	if (V_member_ifaddrs) {
 		CK_LIST_FOREACH(bif2, &sc->sc_iflist, bif_next) {
 			GRAB_OUR_PACKETS(bif2->bif_ifp)
 		}

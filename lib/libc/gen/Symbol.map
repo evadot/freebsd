@@ -459,9 +459,13 @@ FBSD_1.8 {
 	aio_write2;
 	execvpe;
 	fts_open_b;
+	glob_b;
 	psiginfo;
 	rtld_get_var;
 	rtld_set_var;
+	uexterr_gettext;
+	sig2str;
+	str2sig;
 };
 
 FBSDprivate_1.0 {
@@ -592,4 +596,5 @@ FBSDprivate_1.0 {
 	__fillcontextx2;
 	__getcontextx_size;
 	__makecontext;
+	__uexterr_format;
 };

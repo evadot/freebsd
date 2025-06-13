@@ -24,12 +24,11 @@
 #include <sys/proc.h>
 #include <sys/refcount.h>
 #include <sys/socket.h>
+#include <sys/stdarg.h>
 #include <sys/sx.h>
 #include <sys/sysctl.h>
 #include <sys/ucred.h>
 #include <sys/vnode.h>
-
-#include <machine/stdarg.h>
 
 #include <security/mac/mac_policy.h>
 
@@ -258,7 +257,8 @@ check_type_and_type_flags(const id_type_t type, const flags_t flags)
 		    "groups specification are exclusive";
 		goto unexpected_flags;
 	}
-	if (((flags & MDF_PRIMARY) != 0 || (flags & MDF_ANY) != 0) &&
+	if (type == IT_GID &&
+	    ((flags & MDF_PRIMARY) != 0 || (flags & MDF_ANY) != 0) &&
 	    (flags & MDF_HAS_PRIMARY_CLAUSE) == 0) {
 		str = "Presence of folded primary clause not reflected "
 		    "by presence of MDF_HAS_PRIMARY_CLAUSE";

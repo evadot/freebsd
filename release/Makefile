@@ -53,7 +53,8 @@ TARGET_ARCH=	${MACHINE_ARCH}
 TARGET_ARCH=	${TARGET}
 .endif
 .endif
-IMAKE=		${MAKE} TARGET_ARCH=${TARGET_ARCH} TARGET=${TARGET}
+IMAKE=		${MAKE} TARGET_ARCH=${TARGET_ARCH} TARGET=${TARGET} \
+		    -DNO_ROOT -DDB_FROM_SRC
 DISTDIR=	dist
 
 # Define OSRELEASE by using newvers.sh
@@ -132,9 +133,12 @@ beforeclean:
 .include <bsd.obj.mk>
 clean: beforeclean
 
-base.txz:
+#
+# Legacy distribution tarballs
+#
+base.txz: # Also (if enabled) tests, compat libs, and -dbg variants for all.
 	mkdir -p ${DISTDIR}
-	( cd ${WORLDDIR} && ${IMAKE} -DNO_ROOT distributeworld DISTDIR=${.OBJDIR}/${DISTDIR} )
+	( cd ${WORLDDIR} && ${IMAKE} distributeworld DISTDIR=${.OBJDIR}/${DISTDIR} )
 	# Bootstrap etcupdate(8) database.
 	sh ${WORLDDIR}/usr.sbin/etcupdate/etcupdate.sh extract -B \
 	    -m "${MAKE}" -M "TARGET_ARCH=${TARGET_ARCH} TARGET=${TARGET}" \
@@ -146,31 +150,34 @@ base.txz:
 	    env -i LC_COLLATE=C sort >> ${.OBJDIR}/${DISTDIR}/base.meta
 	rm ${.OBJDIR}/${DISTDIR}/base/var/db/etcupdate/current/METALOG
 # Package all components
-	( cd ${WORLDDIR} && ${IMAKE} -DNO_ROOT packageworld DISTDIR=${.OBJDIR}/${DISTDIR} )
+	( cd ${WORLDDIR} && ${IMAKE} packageworld DISTDIR=${.OBJDIR}/${DISTDIR} )
 	mv ${DISTDIR}/*.txz .
 
-kernel.txz:
+kernel.txz: # Also (if enabled) kernel-dbg.txz.
 	mkdir -p ${DISTDIR}
-	( cd ${WORLDDIR} && ${IMAKE} -DNO_ROOT distributekernel DISTDIR=${.OBJDIR}/${DISTDIR} )
-	( cd ${WORLDDIR} && ${IMAKE} -DNO_ROOT packagekernel DISTDIR=${.OBJDIR}/${DISTDIR} )
+	( cd ${WORLDDIR} && ${IMAKE} distributekernel DISTDIR=${.OBJDIR}/${DISTDIR} )
+	( cd ${WORLDDIR} && ${IMAKE} packagekernel DISTDIR=${.OBJDIR}/${DISTDIR} )
 	mv ${DISTDIR}/kernel*.txz .
 
 src.txz:
 	mkdir -p ${DISTDIR}/usr
 	ln -fs ${WORLDDIR} ${DISTDIR}/usr/src
-	( cd ${DISTDIR} && ${TAR_CMD} cLvf - --exclude .svn --exclude .zfs \
+	( cd ${DISTDIR} && ${TAR_XZ_CMD} -cLvf ${.OBJDIR}/src.txz \
+	    --exclude .svn --exclude .zfs \
 	    --exclude .git --exclude @ --exclude usr/src/release/dist \
-	    --exclude usr/src/release/obj usr/src | \
-	    ${XZ_CMD} > ${.OBJDIR}/src.txz )
+	    --exclude usr/src/release/obj usr/src )
 
 ports.txz:
 	mkdir -p ${DISTDIR}/usr
 	ln -fs ${PORTSDIR} ${DISTDIR}/usr/ports
-	( cd ${DISTDIR} && ${TAR_CMD} cLvf - \
+	( cd ${DISTDIR} && ${TAR_XZ_CMD} -cLvf ${.OBJDIR}/ports.txz \
 	    --exclude .git --exclude .svn \
 	    --exclude usr/ports/distfiles --exclude usr/ports/packages \
-	    --exclude 'usr/ports/INDEX*' --exclude work usr/ports | \
-	    ${XZ_CMD} > ${.OBJDIR}/ports.txz )
+	    --exclude 'usr/ports/INDEX*' --exclude work usr/ports )
+
+packagesystem: ${DISTRIBUTIONS}
+	sh ${.CURDIR}/scripts/make-manifest.sh $$(ls *.txz | grep -v container) > MANIFEST
+	touch ${.TARGET}
 
 .if defined(PKGBASE)
 PKGBASE_REPO=	pkgbase-repo
@@ -190,8 +197,7 @@ disc1: packagesystem ${PKGBASE_REPO}
 	    ${_ALL_LIBCOMPATS:@v@MK_LIB$v=no@} \
 	    MK_TOOLCHAIN=no \
 	    MK_RESCUE=no MK_DICT=no \
-	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no \
-	    -DDB_FROM_SRC -DNO_ROOT)
+	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no)
 .if defined(PKGBASE)
 # Create offline pkgbase repo on release media
 	mkdir -p ${.TARGET}/usr/freebsd-packages/repos/
@@ -252,8 +258,7 @@ bootonly: packagesystem
 	    ${_ALL_LIBCOMPATS:@v@MK_LIB$v=no@} \
 	    MK_TOOLCHAIN=no \
 	    MK_RESCUE=no MK_DICT=no \
-	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no \
-	    -DDB_FROM_SRC -DNO_ROOT)
+	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no)
 # Copy manifest only (no distfiles) to get checksums
 	mkdir -p ${.TARGET}/usr/freebsd-dist
 	cp MANIFEST ${.TARGET}/usr/freebsd-dist
@@ -279,13 +284,12 @@ bootonly: packagesystem
 	echo "./boot/loader.conf type=file uname=root gname=wheel mode=0644" >> ${.TARGET}/METALOG
 	echo "./etc/rc.local type=file uname=root gname=wheel mode=0644" >> ${.TARGET}/METALOG
 
-dvd: packagesystem
+dvd: packagesystem ${PKGBASE_REPO}
 # Install system
 	mkdir -p ${.TARGET}
 	( cd ${WORLDDIR} && ${IMAKE} installworld installkernel distribution \
 		DESTDIR=${.OBJDIR}/${.TARGET} MK_RESCUE=no MK_KERNEL_SYMBOLS=no \
-		MK_TESTS=no MK_DEBUG_FILES=no \
-		-DDB_FROM_SRC -DNO_ROOT)
+		MK_TESTS=no MK_DEBUG_FILES=no)
 .if defined(PKGBASE)
 # Create offline pkgbase repo on release media
 	mkdir -p ${.TARGET}/usr/freebsd-packages/repos/
@@ -361,10 +365,6 @@ memstick.img: disc1-memstick
 mini-memstick: mini-memstick.img
 mini-memstick.img: bootonly-memstick
 	cd bootonly-memstick && sh ${.CURDIR}/${TARGET}/make-memstick.sh ./METALOG ../${.TARGET}
-
-packagesystem: ${DISTRIBUTIONS}
-	sh ${.CURDIR}/scripts/make-manifest.sh $$(ls *.txz | grep -v container) > MANIFEST
-	touch ${.TARGET}
 
 pkg-stage: dvd
 .if !defined(NOPKG) || empty(NOPKG)

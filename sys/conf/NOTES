@@ -1249,6 +1249,7 @@ options 	MAC
 options 	MAC_BIBA
 options 	MAC_BSDEXTENDED
 options 	MAC_DDB
+options		MAC_DO
 options 	MAC_IFOFF
 options 	MAC_IPACL
 options 	MAC_LOMAC
@@ -2868,3 +2869,6 @@ options 	STATS
 
 # File system monitoring
 device		filemon		# file monitoring for make(1) meta-mode
+
+# Options for the Intel QuickAssist (QAT) driver.
+options		QAT_DISABLE_SAFE_DC_MODE	# Disable QAT safe data compression mode (only for 4940 devices).
