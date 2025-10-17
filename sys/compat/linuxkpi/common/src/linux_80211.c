@@ -401,7 +401,7 @@ lkpi_80211_dump_stas(SYSCTL_HANDLER_ARGS)
 	return (0);
 }
 
-static enum ieee80211_sta_rx_bw
+static enum ieee80211_sta_rx_bandwidth
 lkpi_cw_to_rx_bw(enum nl80211_chan_width cw)
 {
 	switch (cw) {
@@ -425,7 +425,7 @@ lkpi_cw_to_rx_bw(enum nl80211_chan_width cw)
 }
 
 static enum nl80211_chan_width
-lkpi_rx_bw_to_cw(enum ieee80211_sta_rx_bw rx_bw)
+lkpi_rx_bw_to_cw(enum ieee80211_sta_rx_bandwidth rx_bw)
 {
 	switch (rx_bw) {
 	case IEEE80211_STA_RX_BW_20:
@@ -446,7 +446,7 @@ lkpi_sync_chanctx_cw_from_rx_bw(struct ieee80211_hw *hw,
     struct ieee80211_vif *vif, struct ieee80211_sta *sta)
 {
 	struct ieee80211_chanctx_conf *chanctx_conf;
-	enum ieee80211_sta_rx_bw old_bw;
+	enum ieee80211_sta_rx_bandwidth old_bw;
 	uint32_t changed;
 
 	chanctx_conf = rcu_dereference_protected(vif->bss_conf.chanctx_conf,
@@ -551,7 +551,7 @@ static void
 lkpi_sta_sync_vht_from_ni(struct ieee80211_vif *vif, struct ieee80211_sta *sta,
     struct ieee80211_node *ni)
 {
-	enum ieee80211_sta_rx_bw bw;
+	enum ieee80211_sta_rx_bandwidth bw;
 	uint32_t width;
 	int rx_nss;
 	uint16_t rx_mcs_map;
@@ -1890,7 +1890,25 @@ lkpi_update_dtim_tsf(struct ieee80211_vif *vif, struct ieee80211_node *ni,
 			vif->bss_conf.beacon_int = 16;
 		bss_changed |= BSS_CHANGED_BEACON_INT;
 	}
-	if (vif->bss_conf.dtim_period != ni->ni_dtim_period &&
+
+	/*
+	 * lkpi_iv_sta_recv_mgmt() will directly call into this function.
+	 * iwlwifi(4) in iwl_mvm_bss_info_changed_station_common() will
+	 * stop seesion protection the moment it sees
+	 * BSS_CHANGED_BEACON_INFO (with the expectations that it was
+	 * "a beacon from the associated AP"). It will also update
+	 * the beacon filter in that case.  This is the only place
+	 * we set the BSS_CHANGED_BEACON_INFO on the non-teardown
+	 * path so make sure we only do run this check once we are
+	 * assoc. (*iv_recv_mgmt)() will be called before we enter
+	 * here so the ni will be updates with information from the
+	 * beacon via net80211::sta_recv_mgmt().  We also need to
+	 * make sure we do not do it on every beacon we still may
+	 * get so only do if something changed.  vif->bss_conf.dtim_period
+	 * should be 0 as we start up (we also reset it on teardown).
+	 */
+	if (vif->cfg.assoc &&
+	    vif->bss_conf.dtim_period != ni->ni_dtim_period &&
 	    ni->ni_dtim_period > 0) {
 		vif->bss_conf.dtim_period = ni->ni_dtim_period;
 		bss_changed |= BSS_CHANGED_BEACON_INFO;
@@ -2550,12 +2568,6 @@ lkpi_sta_auth_to_scan(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	lvif->lvif_bss_synched = false;
 	LKPI_80211_LVIF_UNLOCK(lvif);
 	lkpi_lsta_remove(lsta, lvif);
-	/*
-	 * The very last release the reference on the ni for the ni/lsta on
-	 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
-	 * and potentially freed.
-	 */
-	ieee80211_free_node(ni);
 
 	/* conf_tx */
 
@@ -2564,6 +2576,18 @@ lkpi_sta_auth_to_scan(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 out:
 	wiphy_unlock(hw->wiphy);
 	IEEE80211_LOCK(vap->iv_ic);
+	if (error == 0) {
+		/*
+		 * We do this outside the wiphy lock as net80211::node_free() may call
+		 * into crypto code to delete keys and we have a recursed on
+		 * non-recursive sx panic.  Also only do this if we get here w/o error.
+		 *
+		 * The very last release the reference on the ni for the ni/lsta on
+		 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
+		 * and potentially freed.
+		 */
+		ieee80211_free_node(ni);
+	}
 	return (error);
 }
 
@@ -2888,12 +2912,6 @@ _lkpi_sta_assoc_to_down(struct ieee80211vap *vap, enum ieee80211_state nstate, i
 	lvif->lvif_bss_synched = false;
 	LKPI_80211_LVIF_UNLOCK(lvif);
 	lkpi_lsta_remove(lsta, lvif);
-	/*
-	 * The very last release the reference on the ni for the ni/lsta on
-	 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
-	 * and potentially freed.
-	 */
-	ieee80211_free_node(ni);
 
 	/* conf_tx */
 
@@ -2903,6 +2921,18 @@ _lkpi_sta_assoc_to_down(struct ieee80211vap *vap, enum ieee80211_state nstate, i
 out:
 	wiphy_unlock(hw->wiphy);
 	IEEE80211_LOCK(vap->iv_ic);
+	if (error == EALREADY) {
+		/*
+		 * We do this outside the wiphy lock as net80211::node_free() may call
+		 * into crypto code to delete keys and we have a recursed on
+		 * non-recursive sx panic.  Also only do this if we get here w/o error.
+		 *
+		 * The very last release the reference on the ni for the ni/lsta on
+		 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
+		 * and potentially freed.
+		 */
+		ieee80211_free_node(ni);
+	}
 outni:
 	return (error);
 }
@@ -3504,12 +3534,6 @@ lkpi_sta_run_to_init(struct ieee80211vap *vap, enum ieee80211_state nstate, int 
 	lvif->lvif_bss = NULL;
 	lvif->lvif_bss_synched = false;
 	LKPI_80211_LVIF_UNLOCK(lvif);
-	/*
-	 * The very last release the reference on the ni for the ni/lsta on
-	 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
-	 * and potentially freed.
-	 */
-	ieee80211_free_node(ni);
 
 	/* conf_tx */
 
@@ -3519,6 +3543,18 @@ lkpi_sta_run_to_init(struct ieee80211vap *vap, enum ieee80211_state nstate, int 
 out:
 	wiphy_unlock(hw->wiphy);
 	IEEE80211_LOCK(vap->iv_ic);
+	if (error == EALREADY) {
+		/*
+		 * We do this outside the wiphy lock as net80211::node_free() may call
+		 * into crypto code to delete keys and we have a recursed on
+		 * non-recursive sx panic.  Also only do this if we get here w/o error.
+		 *
+		 * The very last release the reference on the ni for the ni/lsta on
+		 * lvif->lvif_bss.  Upon return from this both ni and lsta are invalid
+		 * and potentially freed.
+		 */
+		ieee80211_free_node(ni);
+	}
 outni:
 	return (error);
 }
@@ -3810,6 +3846,7 @@ lkpi_iv_sta_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0,
 	enum ieee80211_bss_changed bss_changed;
 
 	lvif = VAP_TO_LVIF(ni->ni_vap);
+	vif = LVIF_TO_VIF(lvif);
 
 	lvif->iv_recv_mgmt(ni, m0, subtype, rxs, rssi, nf);
 
@@ -3817,13 +3854,18 @@ lkpi_iv_sta_recv_mgmt(struct ieee80211_node *ni, struct mbuf *m0,
 	case IEEE80211_FC0_SUBTYPE_PROBE_RESP:
 		break;
 	case IEEE80211_FC0_SUBTYPE_BEACON:
-		lvif->beacons++;
+		/*
+		 * Only count beacons when assoc. SCAN has its own logging.
+		 * This is for connection/beacon loss/session protection almost
+		 * over debugging when trying to get into a stable RUN state.
+		 */
+		if (vif->cfg.assoc)
+			lvif->beacons++;
 		break;
 	default:
 		return;
 	}
 
-	vif = LVIF_TO_VIF(lvif);
 	lhw = ni->ni_ic->ic_softc;
 	hw = LHW_TO_HW(lhw);
 
@@ -4059,12 +4101,8 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	 * Modern chipset/fw/drv will do A-MPDU in drv/fw and fail
 	 * to do so if they cannot do the crypto too.
 	 */
-	if (!lkpi_hwcrypto && ieee80211_hw_check(hw, AMPDU_AGGREGATION))
+	if (!lkpi_hwcrypto && IEEE80211_CONF_AMPDU_OFFLOAD(ic))
 		vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_RX;
-#endif
-#if defined(LKPI_80211_HT)
-	/* 20250125-BZ Keep A-MPDU TX cleared until we sorted out AddBA for all drivers. */
-	vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_TX;
 #endif
 
 	if (hw->max_listen_interval == 0)
@@ -6609,6 +6647,14 @@ linuxkpi_ieee80211_ifattach(struct ieee80211_hw *hw)
 	if (ieee80211_hw_check(hw, SUPPORTS_TX_FRAG))
 		ic->ic_flags_ext |= IEEE80211_FEXT_FRAG_OFFLOAD;
 
+	/* Does HW support full AMPDU[-TX] offload? */
+	if (ieee80211_hw_check(hw, AMPDU_AGGREGATION))
+		ic->ic_flags_ext |= IEEE80211_FEXT_AMPDU_OFFLOAD;
+#ifdef __notyet__
+	if (ieee80211_hw_check(hw, TX_AMSDU))
+	if (ieee80211_hw_check(hw, SUPPORTS_AMSDU_IN_AMPDU))
+#endif
+
 	/*
 	 * The wiphy variables report bitmasks of avail antennas.
 	 * (*get_antenna) get the current bitmask sets which can be
@@ -7786,7 +7832,7 @@ lkpi_wiphy_delayed_work_timer(struct timer_list *tl)
 {
 	struct wiphy_delayed_work *wdwk;
 
-	wdwk = from_timer(wdwk, tl, timer);
+	wdwk = timer_container_of(wdwk, tl, timer);
         wiphy_work_queue(wdwk->wiphy, &wdwk->work);
 }
 
