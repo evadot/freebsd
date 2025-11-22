@@ -216,6 +216,7 @@ pf_match_translation_rule(int rs_num, struct pf_test_ctx *ctx, struct pf_krulese
 				 */
 				ctx->arsm = ctx->aruleset;
 			}
+			break;
 		} else {
 			ctx->a = r;			/* remember anchor */
 			ctx->aruleset = ruleset;	/* and its ruleset */
@@ -300,9 +301,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 
 	bzero(&init_addr, sizeof(init_addr));
 
-	if (udp_mapping) {
-		MPASS(*udp_mapping == NULL);
-	}
+	MPASS(udp_mapping == NULL ||
+	    *udp_mapping == NULL);
 
 	/*
 	 * If we are UDP and have an existing mapping we can get source port
@@ -353,16 +353,22 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 		if (pd->ndport == htons(ICMP_ECHO)) {
 			low = 1;
 			high = 65535;
-		} else
+		} else {
+			MPASS(udp_mapping == NULL ||
+			    *udp_mapping == NULL);
 			return (0);	/* Don't try to modify non-echo ICMP */
+		}
 	}
 #ifdef INET6
 	if (pd->proto == IPPROTO_ICMPV6) {
 		if (pd->ndport == htons(ICMP6_ECHO_REQUEST)) {
 			low = 1;
 			high = 65535;
-		} else
+		} else {
+			MPASS(udp_mapping == NULL ||
+			    *udp_mapping == NULL);
 			return (0);	/* Don't try to modify non-echo ICMP */
+		}
 	}
 #endif /* INET6 */
 
@@ -385,6 +391,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 		 */
 		if (pd->proto == IPPROTO_SCTP) {
 			key.port[sidx] = pd->nsport;
+			MPASS(udp_mapping == NULL ||
+			    *udp_mapping == NULL);
 			if (!pf_find_state_all_exists(&key, dir)) {
 				*nport = pd->nsport;
 				return (0);
@@ -399,8 +407,18 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 			 */
 			key.port[sidx] = pd->nsport;
 			if (!pf_find_state_all_exists(&key, dir)) {
-				*nport = pd->nsport;
-				return (0);
+				if (udp_mapping && *udp_mapping != NULL) {
+					(*udp_mapping)->endpoints[1].port = pd->nsport;
+					if (pf_udp_mapping_insert(*udp_mapping) == 0) {
+						*nport = pd->nsport;
+						return (0);
+					}
+				} else {
+					MPASS(udp_mapping == NULL ||
+					    *udp_mapping == NULL);
+					*nport = pd->nsport;
+					return (0);
+				}
 			}
 		} else if (low == high) {
 			key.port[sidx] = htons(low);
@@ -412,6 +430,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 						return (0);
 					}
 				} else {
+					MPASS(udp_mapping == NULL ||
+					    *udp_mapping == NULL);
 					*nport = htons(low);
 					return (0);
 				}
@@ -439,6 +459,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 					key.port[sidx] = htons(tmp);
 					if (!pf_find_state_all_exists(&key, dir)) {
 						*nport = htons(tmp);
+						MPASS(udp_mapping == NULL ||
+						    *udp_mapping == NULL);
 						return (0);
 					}
 				}
@@ -456,6 +478,8 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 				} else {
 					key.port[sidx] = htons(tmp);
 					if (!pf_find_state_all_exists(&key, dir)) {
+						MPASS(udp_mapping == NULL ||
+						    *udp_mapping == NULL);
 						*nport = htons(tmp);
 						return (0);
 					}
@@ -472,13 +496,13 @@ pf_get_sport(struct pf_pdesc *pd, struct pf_krule *r, struct pf_addr *naddr,
 			 */
 			if (pf_map_addr_sn(pd->naf, r, &pd->nsaddr, naddr,
 			    &(pd->naf), NULL, &init_addr, rpool, sn_type))
-				return (1);
+				goto failed;
 			break;
 		case PF_POOL_NONE:
 		case PF_POOL_SRCHASH:
 		case PF_POOL_BITMASK:
 		default:
-			return (1);
+			goto failed;
 		}
 	} while (! PF_AEQ(&init_addr, naddr, pd->naf) );
 
@@ -532,6 +556,63 @@ pf_get_mape_sport(struct pf_pdesc *pd, struct pf_krule *r,
 			return (0);
 	}
 	return (1);
+}
+
+static __inline  u_short
+pf_check_src_node_valid(struct pf_ksrc_node *sn, struct pf_kpool *rpool)
+{
+	struct pf_addr		*raddr, *rmask;
+	struct pf_addr		*caddr; /* cached redirection address */
+	struct pf_kpooladdr	*pa;
+	sa_family_t		 raf;
+	sa_family_t		 caf; /* cached redirection AF */
+	u_short			 valid = 0;
+
+	KASSERT(sn != NULL, ("sn is NULL"));
+	KASSERT(rpool != NULL, ("rpool is NULL"));
+
+	/* check if the cached entry is still valid */
+
+	if (sn->type ==  PF_SN_LIMIT) {
+		/* Always valid as it does not store redirection address */
+		return (1);
+	}
+
+	mtx_lock(&rpool->mtx);
+	caddr = &(sn->raddr);
+	caf = sn->raf;
+
+	TAILQ_FOREACH(pa, &rpool->list, entries) {
+		if (PF_AZERO(caddr, caf)) {
+			valid = 1;
+			goto done;
+		} else if (pa->addr.type == PF_ADDR_DYNIFTL) {
+			if (pfr_kentry_byaddr(pa->addr.p.dyn->pfid_kt, caddr, caf, 0)) {
+				valid = 1;
+				goto done;
+			}
+		} else if (pa->addr.type == PF_ADDR_TABLE) {
+			if (pfr_kentry_byaddr(pa->addr.p.tbl, caddr, caf, 0)) {
+				valid = 1;
+				goto done;
+			}
+		} else if (pa->addr.type != PF_ADDR_NOROUTE) {
+			/* PF_ADDR_URPFFAILED, PF_ADDR_RANGE, PF_ADDR_ADDRMASK */
+			raddr = &(pa->addr.v.a.addr);
+			rmask = &(pa->addr.v.a.mask);
+			raf = pa->af;
+			if (raf == caf && pf_match_addr(0, raddr, rmask, caddr, caf)) {
+				valid = 1;
+				goto done;
+			}
+		}
+		/* else PF_ADDR_NOROUTE */
+	}
+
+done:
+	mtx_unlock(&rpool->mtx);
+
+	return (valid);
 }
 
 u_short
@@ -873,6 +954,45 @@ pf_map_addr_sn(sa_family_t saf, struct pf_krule *r, struct pf_addr *saddr,
 
 	if (sn != NULL) {
 		PF_SRC_NODE_LOCK_ASSERT(sn);
+		/*
+		 * Check if source node's redirection address still exists
+		 * in pool from which the SN was created. If not, delete it.
+		 * Similar to pf_kill_srcnodes(). Unlink the source node
+		 * from tree, unlink it from states, then free it. Do not
+		 * overlap source node and state locks to avoid LOR.
+		 */
+		if (!pf_check_src_node_valid(sn, rpool)) {
+			pf_unlink_src_node(sn);
+			PF_SRC_NODE_UNLOCK(sn);
+			if (V_pf_status.debug >= PF_DEBUG_NOISY) {
+				printf("%s: stale src tracking (%d) ",
+				    __func__, sn_type);
+				pf_print_host(saddr, 0, saf);
+				printf(" to ");
+				pf_print_host(&(sn->raddr), 0, sn->raf);
+				if (nkif)
+					printf("@%s", sn->rkif->pfik_name);
+				printf("\n");
+			}
+
+			for (int i = 0; i <= V_pf_hashmask; i++) {
+				struct pf_idhash *ih = &V_pf_idhash[i];
+				struct pf_kstate *st;
+
+				PF_HASHROW_LOCK(ih);
+				LIST_FOREACH(st, &ih->states, entry) {
+					if (st->sns[sn->type] == sn) {
+						st->sns[sn->type] = NULL;
+					}
+				}
+				PF_HASHROW_UNLOCK(ih);
+			}
+			pf_free_src_node(sn);
+			counter_u64_add(V_pf_status.scounters[SCNT_SRC_NODE_REMOVALS], 1);
+			sn = NULL;
+			goto map_addr;
+		}
+
 		(*naf) = sn->raf;
 
 		/* If the supplied address is the same as the current one we've
@@ -901,9 +1021,10 @@ pf_map_addr_sn(sa_family_t saf, struct pf_krule *r, struct pf_addr *saddr,
 		goto done;
 	}
 
+map_addr:
 	/*
-	 * Source node has not been found. Find a new address and store it
-	 * in variables given by the caller.
+	 * Source node has not been found or is invalid. Find a new address
+	 * and store it in variables given by the caller.
 	 */
 	if ((reason = pf_map_addr(saf, r, saddr, naddr, nkif, naf, init_addr,
 	    rpool)) != 0) {
@@ -973,6 +1094,7 @@ pf_get_transaddr(struct pf_test_ctx *ctx, struct pf_krule *r,
 {
 	struct pf_pdesc	*pd = ctx->pd;
 	struct pf_addr	*naddr;
+	int		 idx;
 	uint16_t	*nportp;
 	uint16_t	 low, high;
 	u_short		 reason;
@@ -987,8 +1109,19 @@ pf_get_transaddr(struct pf_test_ctx *ctx, struct pf_krule *r,
 			return (PFRES_MEMORY);
 	}
 
-	naddr = &ctx->nk->addr[1];
-	nportp = &ctx->nk->port[1];
+	switch (nat_action) {
+	case PF_NAT:
+		idx = pd->sidx;
+		break;
+	case PF_BINAT:
+		idx = 1;
+		break;
+	case PF_RDR:
+		idx = pd->didx;
+		break;
+	}
+	naddr = &ctx->nk->addr[idx];
+	nportp = &ctx->nk->port[idx];
 
 	switch (nat_action) {
 	case PF_NAT:

@@ -116,6 +116,7 @@ typedef	int fo_kqfilter_t(struct file *fp, struct knote *kn);
 typedef	int fo_stat_t(struct file *fp, struct stat *sb,
 		    struct ucred *active_cred);
 typedef	int fo_close_t(struct file *fp, struct thread *td);
+typedef	void fo_fdclose_t(struct file *fp, int fd, struct thread *td);
 typedef	int fo_chmod_t(struct file *fp, mode_t mode,
 		    struct ucred *active_cred, struct thread *td);
 typedef	int fo_chown_t(struct file *fp, uid_t uid, gid_t gid,
@@ -139,6 +140,8 @@ typedef int fo_fspacectl_t(struct file *fp, int cmd,
 		    off_t *offset, off_t *length, int flags,
 		    struct ucred *active_cred, struct thread *td);
 typedef int fo_cmp_t(struct file *fp, struct file *fp1, struct thread *td);
+typedef	int fo_fork_t(struct filedesc *fdp, struct file *fp, struct file **fp1,
+		    struct proc *p1, struct thread *td);
 typedef int fo_spare_t(struct file *fp);
 typedef	int fo_flags_t;
 
@@ -151,6 +154,7 @@ struct fileops {
 	fo_kqfilter_t	*fo_kqfilter;
 	fo_stat_t	*fo_stat;
 	fo_close_t	*fo_close;
+	fo_fdclose_t	*fo_fdclose;
 	fo_chmod_t	*fo_chmod;
 	fo_chown_t	*fo_chown;
 	fo_sendfile_t	*fo_sendfile;
@@ -163,12 +167,14 @@ struct fileops {
 	fo_fallocate_t	*fo_fallocate;
 	fo_fspacectl_t	*fo_fspacectl;
 	fo_cmp_t	*fo_cmp;
+	fo_fork_t	*fo_fork;
 	fo_spare_t	*fo_spares[8];	/* Spare slots */
 	fo_flags_t	fo_flags;	/* DFLAG_* below */
 };
 
 #define DFLAG_PASSABLE	0x01	/* may be passed via unix sockets. */
 #define DFLAG_SEEKABLE	0x02	/* seekable / nonsequential */
+#define	DFLAG_FORK	0x04	/* copy on fork */
 #endif /* _KERNEL */
 
 #if defined(_KERNEL) || defined(_WANT_FILE)

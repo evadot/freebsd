@@ -183,6 +183,7 @@ static struct filterops zvol_filterops_vnode = {
 	.f_isfd = 1,
 	.f_detach = zvol_filter_detach,
 	.f_event = zvol_filter_vnode,
+	.f_copy = knote_triv_copy,
 };
 
 extern uint_t zfs_geom_probe_vdev_key;
@@ -282,8 +283,8 @@ retry:
 		 * Take spa_namespace_lock to prevent lock inversion when
 		 * zvols from one pool are opened as vdevs in another.
 		 */
-		if (!mutex_owned(&spa_namespace_lock)) {
-			if (!mutex_tryenter(&spa_namespace_lock)) {
+		if (!spa_namespace_held()) {
+			if (!spa_namespace_tryenter(FTAG)) {
 				mutex_exit(&zv->zv_state_lock);
 				rw_exit(&zv->zv_suspend_lock);
 				drop_suspend = B_FALSE;
@@ -295,7 +296,7 @@ retry:
 		}
 		err = zvol_first_open(zv, !(flag & FWRITE));
 		if (drop_namespace)
-			mutex_exit(&spa_namespace_lock);
+			spa_namespace_exit(FTAG);
 		if (err)
 			goto out_locked;
 		pp->mediasize = zv->zv_volsize;
@@ -962,8 +963,8 @@ retry:
 		 * Take spa_namespace_lock to prevent lock inversion when
 		 * zvols from one pool are opened as vdevs in another.
 		 */
-		if (!mutex_owned(&spa_namespace_lock)) {
-			if (!mutex_tryenter(&spa_namespace_lock)) {
+		if (!spa_namespace_held()) {
+			if (!spa_namespace_tryenter(FTAG)) {
 				mutex_exit(&zv->zv_state_lock);
 				rw_exit(&zv->zv_suspend_lock);
 				drop_suspend = B_FALSE;
@@ -975,7 +976,7 @@ retry:
 		}
 		err = zvol_first_open(zv, !(flags & FWRITE));
 		if (drop_namespace)
-			mutex_exit(&spa_namespace_lock);
+			spa_namespace_exit(FTAG);
 		if (err)
 			goto out_locked;
 	}

@@ -611,7 +611,7 @@ static int t4_switchcaps_allowed = FW_CAPS_CONFIG_SWITCH_INGRESS |
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, switchcaps_allowed, CTLFLAG_RDTUN,
     &t4_switchcaps_allowed, 0, "Default switch capabilities");
 
-static int t4_nvmecaps_allowed = 0;
+static int t4_nvmecaps_allowed = -1;
 SYSCTL_INT(_hw_cxgbe, OID_AUTO, nvmecaps_allowed, CTLFLAG_RDTUN,
     &t4_nvmecaps_allowed, 0, "Default NVMe capabilities");
 
@@ -1327,6 +1327,8 @@ t4_attach(device_t dev)
 	sc->dev = dev;
 	sysctl_ctx_init(&sc->ctx);
 	TUNABLE_INT_FETCH("hw.cxgbe.dflags", &sc->debug_flags);
+	if (TUNABLE_INT_FETCH("hw.cxgbe.iflags", &sc->intr_flags) == 0)
+		sc->intr_flags = IHF_INTR_CLEAR_ON_INIT | IHF_CLR_ALL_UNIGNORED;
 
 	if ((pci_get_device(dev) & 0xff00) == 0x5400)
 		t5_attribute_workaround(dev);
@@ -3652,6 +3654,7 @@ port_mword(struct port_info *pi, uint32_t speed)
 	case FW_PORT_TYPE_SFP28:
 	case FW_PORT_TYPE_SFP56:
 	case FW_PORT_TYPE_QSFP56:
+	case FW_PORT_TYPE_QSFPDD:
 		/* Pluggable transceiver */
 		switch (pi->mod_type) {
 		case FW_PORT_MOD_TYPE_LR:
@@ -3671,6 +3674,8 @@ port_mword(struct port_info *pi, uint32_t speed)
 				return (IFM_100G_LR4);
 			case FW_PORT_CAP32_SPEED_200G:
 				return (IFM_200G_LR4);
+			case FW_PORT_CAP32_SPEED_400G:
+				return (IFM_400G_LR8);
 			}
 			break;
 		case FW_PORT_MOD_TYPE_SR:
@@ -3689,6 +3694,8 @@ port_mword(struct port_info *pi, uint32_t speed)
 				return (IFM_100G_SR4);
 			case FW_PORT_CAP32_SPEED_200G:
 				return (IFM_200G_SR4);
+			case FW_PORT_CAP32_SPEED_400G:
+				return (IFM_400G_SR8);
 			}
 			break;
 		case FW_PORT_MOD_TYPE_ER:
@@ -3712,6 +3719,8 @@ port_mword(struct port_info *pi, uint32_t speed)
 				return (IFM_100G_CR4);
 			case FW_PORT_CAP32_SPEED_200G:
 				return (IFM_200G_CR4_PAM4);
+			case FW_PORT_CAP32_SPEED_400G:
+				return (IFM_400G_CR8);
 			}
 			break;
 		case FW_PORT_MOD_TYPE_LRM:
@@ -3723,10 +3732,12 @@ port_mword(struct port_info *pi, uint32_t speed)
 				return (IFM_100G_DR);
 			if (speed == FW_PORT_CAP32_SPEED_200G)
 				return (IFM_200G_DR4);
+			if (speed == FW_PORT_CAP32_SPEED_400G)
+				return (IFM_400G_DR4);
 			break;
 		case FW_PORT_MOD_TYPE_NA:
 			MPASS(0);	/* Not pluggable? */
-			/* fall throough */
+			/* fall through */
 		case FW_PORT_MOD_TYPE_ERROR:
 		case FW_PORT_MOD_TYPE_UNKNOWN:
 		case FW_PORT_MOD_TYPE_NOTSUPPORTED:
@@ -3735,6 +3746,10 @@ port_mword(struct port_info *pi, uint32_t speed)
 			return (IFM_NONE);
 		}
 		break;
+	case M_FW_PORT_CMD_PTYPE:	/* FW_PORT_TYPE_NONE for old firmware */
+		if (chip_id(pi->adapter) >= CHELSIO_T7)
+			return (IFM_UNKNOWN);
+		/* fall through */
 	case FW_PORT_TYPE_NONE:
 		return (IFM_NONE);
 	}
@@ -3930,8 +3945,6 @@ fatal_error_task(void *arg, int pending)
 void
 t4_fatal_err(struct adapter *sc, bool fw_error)
 {
-	const bool verbose = (sc->debug_flags & DF_VERBOSE_SLOWINTR) != 0;
-
 	stop_adapter(sc);
 	if (atomic_testandset_int(&sc->error_flags, ilog2(ADAP_FATAL_ERR)))
 		return;
@@ -3944,7 +3957,7 @@ t4_fatal_err(struct adapter *sc, bool fw_error)
 		 * main INT_CAUSE registers here to make sure we haven't missed
 		 * anything interesting.
 		 */
-		t4_slow_intr_handler(sc, verbose);
+		t4_slow_intr_handler(sc, sc->intr_flags);
 		atomic_set_int(&sc->error_flags, ADAP_CIM_ERR);
 	}
 	t4_report_fw_error(sc);
@@ -5408,6 +5421,7 @@ apply_cfg_and_initialize(struct adapter *sc, char *cfg_file,
 		caps.toecaps = 0;
 		caps.rdmacaps = 0;
 		caps.iscsicaps = 0;
+		caps.nvmecaps = 0;
 	}
 
 	caps.op_to_write = htobe32(V_FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
@@ -5881,61 +5895,63 @@ get_params__post_init(struct adapter *sc)
 		 * that will never be used.
 		 */
 		sc->iscsicaps = 0;
+		sc->nvmecaps = 0;
 		sc->rdmacaps = 0;
 	}
-	if (sc->rdmacaps) {
+	if (sc->nvmecaps || sc->rdmacaps) {
 		param[0] = FW_PARAM_PFVF(STAG_START);
 		param[1] = FW_PARAM_PFVF(STAG_END);
-		param[2] = FW_PARAM_PFVF(RQ_START);
-		param[3] = FW_PARAM_PFVF(RQ_END);
-		param[4] = FW_PARAM_PFVF(PBL_START);
-		param[5] = FW_PARAM_PFVF(PBL_END);
+		param[2] = FW_PARAM_PFVF(PBL_START);
+		param[3] = FW_PARAM_PFVF(PBL_END);
+		rc = -t4_query_params(sc, sc->mbox, sc->pf, 0, 4, param, val);
+		if (rc != 0) {
+			device_printf(sc->dev,
+			    "failed to query NVMe/RDMA parameters: %d.\n", rc);
+			return (rc);
+		}
+		sc->vres.stag.start = val[0];
+		sc->vres.stag.size = val[1] - val[0] + 1;
+		sc->vres.pbl.start = val[2];
+		sc->vres.pbl.size = val[3] - val[2] + 1;
+	}
+	if (sc->rdmacaps) {
+		param[0] = FW_PARAM_PFVF(RQ_START);
+		param[1] = FW_PARAM_PFVF(RQ_END);
+		param[2] = FW_PARAM_PFVF(SQRQ_START);
+		param[3] = FW_PARAM_PFVF(SQRQ_END);
+		param[4] = FW_PARAM_PFVF(CQ_START);
+		param[5] = FW_PARAM_PFVF(CQ_END);
 		rc = -t4_query_params(sc, sc->mbox, sc->pf, 0, 6, param, val);
 		if (rc != 0) {
 			device_printf(sc->dev,
 			    "failed to query RDMA parameters(1): %d.\n", rc);
 			return (rc);
 		}
-		sc->vres.stag.start = val[0];
-		sc->vres.stag.size = val[1] - val[0] + 1;
-		sc->vres.rq.start = val[2];
-		sc->vres.rq.size = val[3] - val[2] + 1;
-		sc->vres.pbl.start = val[4];
-		sc->vres.pbl.size = val[5] - val[4] + 1;
+		sc->vres.rq.start = val[0];
+		sc->vres.rq.size = val[1] - val[0] + 1;
+		sc->vres.qp.start = val[2];
+		sc->vres.qp.size = val[3] - val[2] + 1;
+		sc->vres.cq.start = val[4];
+		sc->vres.cq.size = val[5] - val[4] + 1;
 
-		param[0] = FW_PARAM_PFVF(SQRQ_START);
-		param[1] = FW_PARAM_PFVF(SQRQ_END);
-		param[2] = FW_PARAM_PFVF(CQ_START);
-		param[3] = FW_PARAM_PFVF(CQ_END);
-		param[4] = FW_PARAM_PFVF(OCQ_START);
-		param[5] = FW_PARAM_PFVF(OCQ_END);
+		param[0] = FW_PARAM_PFVF(OCQ_START);
+		param[1] = FW_PARAM_PFVF(OCQ_END);
+		param[2] = FW_PARAM_PFVF(SRQ_START);
+		param[3] = FW_PARAM_PFVF(SRQ_END);
+		param[4] = FW_PARAM_DEV(MAXORDIRD_QP);
+		param[5] = FW_PARAM_DEV(MAXIRD_ADAPTER);
 		rc = -t4_query_params(sc, sc->mbox, sc->pf, 0, 6, param, val);
 		if (rc != 0) {
 			device_printf(sc->dev,
 			    "failed to query RDMA parameters(2): %d.\n", rc);
 			return (rc);
 		}
-		sc->vres.qp.start = val[0];
-		sc->vres.qp.size = val[1] - val[0] + 1;
-		sc->vres.cq.start = val[2];
-		sc->vres.cq.size = val[3] - val[2] + 1;
-		sc->vres.ocq.start = val[4];
-		sc->vres.ocq.size = val[5] - val[4] + 1;
-
-		param[0] = FW_PARAM_PFVF(SRQ_START);
-		param[1] = FW_PARAM_PFVF(SRQ_END);
-		param[2] = FW_PARAM_DEV(MAXORDIRD_QP);
-		param[3] = FW_PARAM_DEV(MAXIRD_ADAPTER);
-		rc = -t4_query_params(sc, sc->mbox, sc->pf, 0, 4, param, val);
-		if (rc != 0) {
-			device_printf(sc->dev,
-			    "failed to query RDMA parameters(3): %d.\n", rc);
-			return (rc);
-		}
-		sc->vres.srq.start = val[0];
-		sc->vres.srq.size = val[1] - val[0] + 1;
-		sc->params.max_ordird_qp = val[2];
-		sc->params.max_ird_adapter = val[3];
+		sc->vres.ocq.start = val[0];
+		sc->vres.ocq.size = val[1] - val[0] + 1;
+		sc->vres.srq.start = val[2];
+		sc->vres.srq.size = val[3] - val[2] + 1;
+		sc->params.max_ordird_qp = val[4];
+		sc->params.max_ird_adapter = val[5];
 	}
 	if (sc->iscsicaps) {
 		param[0] = FW_PARAM_PFVF(ISCSI_START);
@@ -7892,6 +7908,9 @@ t4_sysctls(struct adapter *sc)
 	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "dflags", CTLFLAG_RW,
 	    &sc->debug_flags, 0, "flags to enable runtime debugging");
 
+	SYSCTL_ADD_INT(ctx, children, OID_AUTO, "iflags", CTLFLAG_RW,
+	    &sc->intr_flags, 0, "flags for the slow interrupt handler");
+
 	SYSCTL_ADD_STRING(ctx, children, OID_AUTO, "tp_version",
 	    CTLFLAG_RD, sc->tp_version, 0, "TP microcode version");
 
@@ -8988,7 +9007,7 @@ sysctl_requested_fec(SYSCTL_HANDLER_ARGS)
 	struct adapter *sc = pi->adapter;
 	struct link_config *lc = &pi->link_cfg;
 	int rc;
-	int8_t old;
+	int8_t old = lc->requested_fec;
 
 	if (req->newptr == NULL) {
 		struct sbuf *sb;
@@ -8997,16 +9016,15 @@ sysctl_requested_fec(SYSCTL_HANDLER_ARGS)
 		if (sb == NULL)
 			return (ENOMEM);
 
-		sbuf_printf(sb, "%b", lc->requested_fec, t4_fec_bits);
+		sbuf_printf(sb, "%b", old, t4_fec_bits);
 		rc = sbuf_finish(sb);
 		sbuf_delete(sb);
 	} else {
 		char s[8];
 		int n;
 
-		snprintf(s, sizeof(s), "%d",
-		    lc->requested_fec == FEC_AUTO ? -1 :
-		    lc->requested_fec & (M_FW_PORT_CAP32_FEC | FEC_MODULE));
+		snprintf(s, sizeof(s), "%d", old == FEC_AUTO ? -1 :
+		    old & (M_FW_PORT_CAP32_FEC | FEC_MODULE));
 
 		rc = sysctl_handle_string(oidp, s, sizeof(s), req);
 		if (rc != 0)
@@ -9023,7 +9041,10 @@ sysctl_requested_fec(SYSCTL_HANDLER_ARGS)
 		if (rc)
 			return (rc);
 		PORT_LOCK(pi);
-		old = lc->requested_fec;
+		if (lc->requested_fec != old) {
+			rc = EBUSY;
+			goto done;
+		}
 		if (n == FEC_AUTO)
 			lc->requested_fec = FEC_AUTO;
 		else if (n == 0 || n == FEC_NONE)
@@ -12984,6 +13005,9 @@ clear_stats(struct adapter *sc, u_int port_id)
 				counter_u64_zero(ofld_txq->tx_iscsi_pdus);
 				counter_u64_zero(ofld_txq->tx_iscsi_octets);
 				counter_u64_zero(ofld_txq->tx_iscsi_iso_wrs);
+				counter_u64_zero(ofld_txq->tx_nvme_pdus);
+				counter_u64_zero(ofld_txq->tx_nvme_octets);
+				counter_u64_zero(ofld_txq->tx_nvme_iso_wrs);
 				counter_u64_zero(ofld_txq->tx_aio_jobs);
 				counter_u64_zero(ofld_txq->tx_aio_octets);
 				counter_u64_zero(ofld_txq->tx_toe_tls_records);
@@ -13003,6 +13027,22 @@ clear_stats(struct adapter *sc, u_int port_id)
 				ofld_rxq->rx_iscsi_ddp_octets = 0;
 				ofld_rxq->rx_iscsi_fl_pdus = 0;
 				ofld_rxq->rx_iscsi_fl_octets = 0;
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_ddp_setup_ok);
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_ddp_setup_no_stag);
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_ddp_setup_error);
+				counter_u64_zero(ofld_rxq->rx_nvme_ddp_pdus);
+				counter_u64_zero(ofld_rxq->rx_nvme_ddp_octets);
+				counter_u64_zero(ofld_rxq->rx_nvme_fl_pdus);
+				counter_u64_zero(ofld_rxq->rx_nvme_fl_octets);
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_invalid_headers);
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_header_digest_errors);
+				counter_u64_zero(
+				    ofld_rxq->rx_nvme_data_digest_errors);
 				ofld_rxq->rx_aio_ddp_jobs = 0;
 				ofld_rxq->rx_aio_ddp_octets = 0;
 				ofld_rxq->rx_toe_tls_records = 0;
@@ -13409,11 +13449,16 @@ toe_capability(struct vi_info *vi, bool enable)
 			    ("%s: TOM activated but flag not set", __func__));
 		}
 
-		/* Activate iWARP and iSCSI too, if the modules are loaded. */
+		/*
+		 * Activate iWARP, iSCSI, and NVMe too, if the modules
+		 * are loaded.
+		 */
 		if (!uld_active(sc, ULD_IWARP))
 			(void) t4_activate_uld(sc, ULD_IWARP);
 		if (!uld_active(sc, ULD_ISCSI))
 			(void) t4_activate_uld(sc, ULD_ISCSI);
+		if (!uld_active(sc, ULD_NVME))
+			(void) t4_activate_uld(sc, ULD_NVME);
 
 		if (pi->uld_vis++ == 0)
 			setbit(&sc->offload_map, pi->port_id);
@@ -13694,6 +13739,9 @@ tweak_tunables(void)
 		    FW_CAPS_CONFIG_ISCSI_T10DIF;
 	}
 
+	if (t4_nvmecaps_allowed == -1)
+		t4_nvmecaps_allowed = FW_CAPS_CONFIG_NVME_TCP;
+
 	if (t4_tmr_idx_ofld < 0 || t4_tmr_idx_ofld >= SGE_NTIMERS)
 		t4_tmr_idx_ofld = TMR_IDX_OFLD;
 
@@ -13705,6 +13753,9 @@ tweak_tunables(void)
 
 	if (t4_iscsicaps_allowed == -1)
 		t4_iscsicaps_allowed = 0;
+
+	if (t4_nvmecaps_allowed == -1)
+		t4_nvmecaps_allowed = 0;
 #endif
 
 #ifdef DEV_NETMAP

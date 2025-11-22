@@ -51,9 +51,9 @@
 
 #define HDA_DRV_TEST_REV	"20120126_0002"
 
-#define hdac_lock(sc)		snd_mtxlock((sc)->lock)
-#define hdac_unlock(sc)		snd_mtxunlock((sc)->lock)
-#define hdac_lockassert(sc)	snd_mtxassert((sc)->lock)
+#define hdac_lock(sc)		mtx_lock(&(sc)->lock)
+#define hdac_unlock(sc)		mtx_unlock(&(sc)->lock)
+#define hdac_lockassert(sc)	mtx_assert(&(sc)->lock, MA_OWNED)
 
 #define HDAC_QUIRK_64BIT	(1 << 0)
 #define HDAC_QUIRK_DMAPOS	(1 << 1)
@@ -170,6 +170,7 @@ static const struct {
 	{ HDA_NVIDIA_GF119,  "NVIDIA GF119",	0, 0 },
 	{ HDA_NVIDIA_GF110_1, "NVIDIA GF110",	0, HDAC_QUIRK_MSI },
 	{ HDA_NVIDIA_GF110_2, "NVIDIA GF110",	0, HDAC_QUIRK_MSI },
+	{ HDA_ATI_RAVEN,     "ATI Raven",	0, 0 },
 	{ HDA_ATI_SB450,     "ATI SB450",	0, 0 },
 	{ HDA_ATI_SB600,     "ATI SB600",	0, 0 },
 	{ HDA_ATI_RS600,     "ATI RS600",	0, 0 },
@@ -1170,7 +1171,8 @@ hdac_attach(device_t dev)
 		}
 	}
 
-	sc->lock = snd_mtxcreate(device_get_nameunit(dev), "HDA driver mutex");
+	mtx_init(&sc->lock, device_get_nameunit(dev), "HDA driver mutex",
+	    MTX_DEF);
 	sc->dev = dev;
 	TASK_INIT(&sc->unsolq_task, 0, hdac_unsolq_task, sc);
 	callout_init(&sc->poll_callout, 1);
@@ -1373,7 +1375,7 @@ hdac_attach_fail:
 	hdac_dma_free(sc, &sc->rirb_dma);
 	hdac_dma_free(sc, &sc->corb_dma);
 	hdac_mem_free(sc);
-	snd_mtxfree(sc->lock);
+	mtx_destroy(&sc->lock);
 
 	return (ENXIO);
 }
@@ -1797,7 +1799,7 @@ hdac_detach(device_t dev)
 		sc->chan_dmat = NULL;
 	}
 	hdac_mem_free(sc);
-	snd_mtxfree(sc->lock);
+	mtx_destroy(&sc->lock);
 	return (0);
 }
 
@@ -1887,7 +1889,7 @@ hdac_get_mtx(device_t dev, device_t child)
 {
 	struct hdac_softc *sc = device_get_softc(dev);
 
-	return (sc->lock);
+	return (&sc->lock);
 }
 
 static uint32_t

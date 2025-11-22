@@ -260,6 +260,64 @@ endpoint_independent_compat_cleanup()
 	rm -f server2.out
 }
 
+atf_test_case "endpoint_independent_exhaust" "cleanup"
+endpoint_independent_exhaust_head()
+{
+	atf_set descr 'Test that a client behind NAT gets the same external IP:port for different servers'
+	atf_set require.user root
+}
+
+endpoint_independent_exhaust_body()
+{
+	endpoint_independent_setup # Sets ${epair_…} variables
+
+	endpoint_independent_common \
+		"nat on ${epair_nat}a inet from ! (${epair_nat}a) to any -> (${epair_nat}a)" \
+		"nat on ${epair_nat}a inet from ! (${epair_nat}a) to any -> (${epair_nat}a) port 3000:3001 sticky-address endpoint-independent"
+
+	# Exhaust the available nat ports
+	for i in $(seq 1 10); do
+		echo "ping" | jexec client nc -u 198.51.100.32 1234 -w 0
+		echo "ping" | jexec client nc -u 198.51.100.22 1234 -w 0
+	done
+}
+
+endpoint_independent_exhaust_cleanup()
+{
+	pft_cleanup
+	rm -f server1.out
+	rm -f server2.out
+}
+
+atf_test_case "endpoint_independent_static_port" "cleanup"
+endpoint_independent_static_port_head()
+{
+	atf_set descr 'Test that a client behind NAT gets the same external IP:port for different servers, with static-port'
+	atf_set require.user root
+}
+
+endpoint_independent_static_port_body()
+{
+	endpoint_independent_setup # Sets ${epair_…} variables
+
+	endpoint_independent_common \
+		"nat on ${epair_nat}a inet from ! (${epair_nat}a) to any -> (${epair_nat}a)" \
+		"nat on ${epair_nat}a inet from ! (${epair_nat}a) to any -> (${epair_nat}a) static-port sticky-address endpoint-independent"
+
+	# Exhaust the available nat ports
+	for i in $(seq 1 10); do
+		echo "ping" | jexec client nc -u 198.51.100.32 1234 -w 0
+		echo "ping" | jexec client nc -u 198.51.100.22 1234 -w 0
+	done
+}
+
+endpoint_independent_static_port_cleanup()
+{
+	pft_cleanup
+	rm -f server1.out
+	rm -f server2.out
+}
+
 atf_test_case "endpoint_independent_pass" "cleanup"
 endpoint_independent_pass_head()
 {
@@ -477,15 +535,49 @@ no_addrs_random_cleanup()
 	pft_cleanup
 }
 
-atf_test_case "nat_pass" "cleanup"
-nat_pass_head()
+atf_test_case "nat_pass_in" "cleanup"
+nat_pass_in_head()
 {
-	atf_set descr 'IPv4 NAT on pass rule'
+	atf_set descr 'IPv4 NAT on inbound pass rule'
 	atf_set require.user root
 	atf_set require.progs scapy
 }
 
-nat_pass_body()
+nat_pass_in_body()
+{
+	setup_router_server_ipv4
+	# Delete the route back to make sure that the traffic has been NAT-ed
+	jexec server route del -net ${net_tester} ${net_server_host_router}
+	# Provide routing back to the NAT address
+	jexec server route add 203.0.113.0/24 ${net_server_host_router}
+	jexec router route add 203.0.113.0/24 -iface ${epair_tester}b
+
+	pft_set_rules router \
+		"block" \
+		"pass in  on ${epair_tester}b inet proto tcp nat-to 203.0.113.0 keep state" \
+		"pass out on ${epair_server}a inet proto tcp keep state"
+
+	ping_server_check_reply exit:0 --ping-type=tcp3way --send-sport=4201
+
+	jexec router pfctl -qvvsr
+	jexec router pfctl -qvvss
+	jexec router ifconfig
+	jexec router netstat -rn
+}
+
+nat_pass_in_cleanup()
+{
+	pft_cleanup
+}
+
+nat_pass_out_head()
+{
+	atf_set descr 'IPv4 NAT on outbound pass rule'
+	atf_set require.user root
+	atf_set require.progs scapy
+}
+
+nat_pass_out_body()
 {
 	setup_router_server_ipv4
 	# Delete the route back to make sure that the traffic has been NAT-ed
@@ -504,7 +596,7 @@ nat_pass_body()
 	jexec router netstat -rn
 }
 
-nat_pass_cleanup()
+nat_pass_out_cleanup()
 {
 	pft_cleanup
 }
@@ -866,6 +958,8 @@ atf_init_test_cases()
 	atf_add_test_case "exhaust"
 	atf_add_test_case "nested_anchor"
 	atf_add_test_case "endpoint_independent_compat"
+	atf_add_test_case "endpoint_independent_exhaust"
+	atf_add_test_case "endpoint_independent_static_port"
 	atf_add_test_case "endpoint_independent_pass"
 	atf_add_test_case "nat6_nolinklocal"
 	atf_add_test_case "empty_table_source_hash"
@@ -874,7 +968,8 @@ atf_init_test_cases()
 	atf_add_test_case "no_addrs_random"
 	atf_add_test_case "map_e_compat"
 	atf_add_test_case "map_e_pass"
-	atf_add_test_case "nat_pass"
+	atf_add_test_case "nat_pass_in"
+	atf_add_test_case "nat_pass_out"
 	atf_add_test_case "nat_match"
 	atf_add_test_case "binat_compat"
 	atf_add_test_case "binat_match"

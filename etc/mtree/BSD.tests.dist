@@ -835,6 +835,8 @@
                 ..
                 gpt
                 ..
+                label
+                ..
                 mirror
                 ..
                 multipath
@@ -1163,6 +1165,8 @@
         ..
         jot
         ..
+        lam
+        ..
         lastcomm
         ..
         limits
@@ -1284,6 +1288,8 @@
         praudit
         ..
         pw
+        ..
+        quot
         ..
         rpcbind
         ..

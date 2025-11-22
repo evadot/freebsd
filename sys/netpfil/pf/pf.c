@@ -1007,7 +1007,7 @@ pf_src_node_exists(struct pf_ksrc_node **sn, struct pf_srchash *sh)
 	return (false);
 }
 
-static void
+void
 pf_free_src_node(struct pf_ksrc_node *sn)
 {
 
@@ -5965,6 +5965,7 @@ pf_test_rule(struct pf_krule **rm, struct pf_kstate **sm,
 		ctx.nat_pool = &(ctx.nr->rdr);
 	}
 
+	*ctx.rm = &V_pf_default_rule;
 	if (ctx.nr && ctx.nr->natpass) {
 		r = ctx.nr;
 		ruleset = *ctx.rsm;
@@ -11074,10 +11075,12 @@ pf_test(sa_family_t af, int dir, int pflags, struct ifnet *ifp, struct mbuf **m0
 			break;
 		action = pf_test_state(&s, &pd, &reason);
 		if (action == PF_PASS || action == PF_AFRT) {
-			if (V_pfsync_update_state_ptr != NULL)
-				V_pfsync_update_state_ptr(s);
-			r = s->rule;
-			a = s->anchor;
+			if (s != NULL) {
+				if (V_pfsync_update_state_ptr != NULL)
+					V_pfsync_update_state_ptr(s);
+				r = s->rule;
+				a = s->anchor;
+			}
 		} else if (s == NULL) {
 			/* Validate remote SYN|ACK, re-create original SYN if
 			 * valid. */
@@ -11126,10 +11129,12 @@ pf_test(sa_family_t af, int dir, int pflags, struct ifnet *ifp, struct mbuf **m0
 	default:
 		action = pf_test_state(&s, &pd, &reason);
 		if (action == PF_PASS || action == PF_AFRT) {
-			if (V_pfsync_update_state_ptr != NULL)
-				V_pfsync_update_state_ptr(s);
-			r = s->rule;
-			a = s->anchor;
+			if (s != NULL) {
+				if (V_pfsync_update_state_ptr != NULL)
+					V_pfsync_update_state_ptr(s);
+				r = s->rule;
+				a = s->anchor;
+			}
 		} else if (s == NULL) {
 			action = pf_test_rule(&r, &s,
 			    &pd, &a, &ruleset, &reason, inp, &match_rules);
