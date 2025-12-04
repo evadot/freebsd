@@ -3415,12 +3415,8 @@ igb_initialize_rss_mapping(struct e1000_softc *sc)
 	 */
 	mrqc = E1000_MRQC_ENABLE_RSS_MQ;
 
-#ifdef RSS
 	/* XXX ew typecasting */
 	rss_getkey((uint8_t *) &rss_key);
-#else
-	arc4rand(&rss_key, sizeof(rss_key), 0);
-#endif
 	for (i = 0; i < 10; i++)
 		E1000_WRITE_REG_ARRAY(hw, E1000_RSSRK(0), i, rss_key[i]);
 
@@ -3642,7 +3638,7 @@ em_initialize_transmit_unit(if_ctx_t ctx)
 		bus_addr = txr->tx_paddr;
 
 		/* Clear checksum offload context. */
-		offp = (caddr_t)&txr->csum_flags;
+		offp = (caddr_t)txr + offsetof(struct tx_ring, csum_flags);
 		endp = (caddr_t)(txr + 1);
 		bzero(offp, endp - offp);
 

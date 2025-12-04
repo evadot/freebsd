@@ -31,11 +31,13 @@ MAN=		alloca.3 \
 		snl.3 \
 		stats.3 \
 		stdarg.3 \
+		stdbit.3 \
 		stdckdint.3 \
 		sysexits.3 \
 		tgmath.3 \
 		timeradd.3 \
-		tree.3
+		tree.3 \
+		unreachable.3
 
 MLINKS=		arb.3 ARB8_ENTRY.3 \
 		arb.3 ARB8_HEAD.3 \

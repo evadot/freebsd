@@ -3531,7 +3531,7 @@ pf_change_icmp(struct pf_addr *ia, u_int16_t *ip, struct pf_addr *oa,
 	/* Change inner protocol port, fix inner protocol checksum. */
 	if (ip != NULL) {
 		u_int16_t	oip = *ip;
-		u_int32_t	opc;
+		u_int16_t	opc;
 
 		if (pc != NULL)
 			opc = *pc;
@@ -3547,7 +3547,7 @@ pf_change_icmp(struct pf_addr *ia, u_int16_t *ip, struct pf_addr *oa,
 	switch (af) {
 #ifdef INET
 	case AF_INET: {
-		u_int32_t	 oh2c = *h2c;
+		u_int16_t	 oh2c = *h2c;
 
 		*h2c = pf_cksum_fixup(pf_cksum_fixup(*h2c,
 		    oia.addr16[0], ia->addr16[0], 0),
@@ -7396,7 +7396,11 @@ pf_sctp_track(struct pf_kstate *state, struct pf_pdesc *pd,
 	}
 
 	if (src->scrub != NULL) {
-		if (src->scrub->pfss_v_tag == 0)
+		/*
+		 * Allow tags to be updated, in case of retransmission of
+		 * INIT/INIT_ACK chunks.
+		 **/
+		if (src->state <= SCTP_COOKIE_WAIT)
 			src->scrub->pfss_v_tag = pd->hdr.sctp.v_tag;
 		else  if (src->scrub->pfss_v_tag != pd->hdr.sctp.v_tag)
 			return (PF_DROP);
