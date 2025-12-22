@@ -3328,6 +3328,7 @@ struct scsi_sense_data_fixed
 	uint8_t sense_key_spec[3];
 #define	SSD_SCS_VALID		0x80
 #define	SSD_FIELDPTR_CMD	0x40
+#define	SSD_SD_VALID		0x20
 #define	SSD_BITPTR_VALID	0x08
 #define	SSD_BITPTR_VALUE	0x07
 	uint8_t extra_bytes[14];
@@ -3653,6 +3654,25 @@ struct scsi_sense_forwarded
 };
 
 /*
+ * Direct Access Block Specific Sense Data
+ */
+struct scsi_sense_direct_access_block_device
+{
+	uint8_t	desc_type;
+#define	SSD_DESC_DABD		0x0d
+	uint8_t	length;
+	uint8_t	byte2;
+#define SSD_DESC_DABD_VALID	0x80
+	uint8_t	reserved3;
+	uint8_t sks_byte;
+#define SSD_DESC_DABD_SKS_VALID	0x80
+	uint8_t data[2];	/* Same as SSD_DESC_SKS extra data */
+	uint8_t fru;
+	uint8_t info[8];	/* if SSD_DESC_DA_VALID  */
+	uint8_t command_info[8];
+};
+
+/*
  * Vendor-specific sense descriptor.  The desc_type field will be in the
  * range between MIN and MAX inclusive.
  */
@@ -3888,6 +3908,10 @@ void scsi_sense_forwarded_sbuf(struct sbuf *sb, struct scsi_sense_data *sense,
 			      u_int sense_len, uint8_t *cdb, int cdb_len,
 			      struct scsi_inquiry_data *inq_data,
 			      struct scsi_sense_desc_header *header);
+void scsi_sense_dabd_sbuf(struct sbuf *sb, struct scsi_sense_data *sense,
+			  u_int sense_len, uint8_t *cdb, int cdb_len,
+			  struct scsi_inquiry_data *inq_data,
+			  struct scsi_sense_desc_header *header);
 void scsi_sense_generic_sbuf(struct sbuf *sb, struct scsi_sense_data *sense,
 			     u_int sense_len, uint8_t *cdb, int cdb_len,
 			     struct scsi_inquiry_data *inq_data,
@@ -4523,6 +4547,8 @@ find_mode_page_10(struct scsi_mode_header_10 *mode_header)
 
 	return(page_start);
 }
+
+void scsi_format_sense_devd(struct ccb_scsiio *csio, struct sbuf *sb);
 
 __END_DECLS
 

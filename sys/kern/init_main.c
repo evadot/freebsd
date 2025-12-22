@@ -643,12 +643,12 @@ static void
 proc0_post(void *dummy __unused)
 {
 	struct proc *p;
-	struct rusage ru;
 	struct thread *td;
 
 	/*
 	 * Now we can look at the time, having had a chance to verify the
-	 * time from the filesystem.  Pretend that proc0 started now.
+	 * time from the filesystem.  Pretend that all current threads
+	 * started now.
 	 */
 	sx_slock(&allproc_lock);
 	FOREACH_PROC_IN_SYSTEM(p) {
@@ -659,15 +659,19 @@ proc0_post(void *dummy __unused)
 		}
 		microuptime(&p->p_stats->p_start);
 		PROC_STATLOCK(p);
-		rufetch(p, &ru);	/* Clears thread stats */
-		p->p_rux.rux_runtime = 0;
-		p->p_rux.rux_uticks = 0;
-		p->p_rux.rux_sticks = 0;
-		p->p_rux.rux_iticks = 0;
-		PROC_STATUNLOCK(p);
+		ruxreset(&p->p_rux);
 		FOREACH_THREAD_IN_PROC(p, td) {
+			thread_lock(td);
+			td->td_incruntime = 0;
 			td->td_runtime = 0;
+			td->td_pticks = 0;
+			td->td_sticks = 0;
+			td->td_iticks = 0;
+			td->td_uticks = 0;
+			ruxreset(&td->td_rux);
+			thread_unlock(td);
 		}
+		PROC_STATUNLOCK(p);
 		PROC_UNLOCK(p);
 	}
 	sx_sunlock(&allproc_lock);

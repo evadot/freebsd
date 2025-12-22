@@ -1525,7 +1525,7 @@ acpi_reserve_resources(device_t dev)
 	     * acpi_alloc_resource() will sub-alloc from the system
 	     * resource.
 	     */
-	    resource_list_reserve(rl, dev, children[i], rle->type, &rle->rid,
+	    resource_list_reserve(rl, dev, children[i], rle->type, rle->rid,
 		rle->start, rle->end, rle->count, 0);
 	}
     }
@@ -1562,7 +1562,7 @@ acpi_set_resource(device_t dev, device_t child, int type, int rid,
 }
 
 static struct resource *
-acpi_alloc_resource(device_t bus, device_t child, int type, int *rid,
+acpi_alloc_resource(device_t bus, device_t child, int type, int rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
 #ifndef INTRNG
@@ -1590,8 +1590,8 @@ acpi_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	 * add the resource before allocating it.  Note that these
 	 * resources will not be reserved.
 	 */
-	if (!isdefault && resource_list_find(rl, type, *rid) == NULL)
-		resource_list_add(rl, type, *rid, start, end, count);
+	if (!isdefault && resource_list_find(rl, type, rid) == NULL)
+		resource_list_add(rl, type, rid, start, end, count);
 	res = resource_list_alloc(rl, bus, child, type, rid, start, end, count,
 	    flags);
 #ifndef INTRNG
@@ -1604,7 +1604,7 @@ acpi_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	     *
 	     * XXX: Should we handle the lookup failing?
 	     */
-	    if (ACPI_SUCCESS(acpi_lookup_irq_resource(child, *rid, res, &ares)))
+	    if (ACPI_SUCCESS(acpi_lookup_irq_resource(child, rid, res, &ares)))
 		acpi_config_intr(child, &ares);
 	}
 #endif
@@ -1616,7 +1616,7 @@ acpi_alloc_resource(device_t bus, device_t child, int type, int *rid,
 	 * system resource regions.
 	 */
 	if (res == NULL && isdefault) {
-	    rle = resource_list_find(rl, type, *rid);
+	    rle = resource_list_find(rl, type, rid);
 	    if (rle != NULL) {
 		start = rle->start;
 		end = rle->end;
@@ -1770,13 +1770,13 @@ acpi_unmap_resource(device_t bus, device_t child, struct resource *r,
 
 /* Allocate an IO port or memory resource, given its GAS. */
 int
-acpi_bus_alloc_gas(device_t dev, int *type, int *rid, ACPI_GENERIC_ADDRESS *gas,
+acpi_bus_alloc_gas(device_t dev, int *type, int rid, ACPI_GENERIC_ADDRESS *gas,
     struct resource **res, u_int flags)
 {
     int error, res_type;
 
     error = ENOMEM;
-    if (type == NULL || rid == NULL || gas == NULL || res == NULL)
+    if (type == NULL || gas == NULL || res == NULL)
 	return (EINVAL);
 
     /* We only support memory and IO spaces. */
@@ -1802,14 +1802,14 @@ acpi_bus_alloc_gas(device_t dev, int *type, int *rid, ACPI_GENERIC_ADDRESS *gas,
     if (gas->Address == 0 || gas->BitWidth == 0)
 	return (EINVAL);
 
-    bus_set_resource(dev, res_type, *rid, gas->Address,
+    bus_set_resource(dev, res_type, rid, gas->Address,
 	gas->BitWidth / 8);
     *res = bus_alloc_resource_any(dev, res_type, rid, RF_ACTIVE | flags);
     if (*res != NULL) {
 	*type = res_type;
 	error = 0;
     } else
-	bus_delete_resource(dev, res_type, *rid);
+	bus_delete_resource(dev, res_type, rid);
 
     return (error);
 }

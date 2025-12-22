@@ -224,7 +224,8 @@ nd6_lle_event(void *arg __unused, struct llentry *lle, int evt)
 static void
 nd6_iflladdr(void *arg __unused, struct ifnet *ifp)
 {
-	if (ifp->if_afdata[AF_INET6] == NULL)
+	/* XXXGL: ??? */
+	if (ifp->if_inet6 == NULL)
 		return;
 
 	lltable_update_ifaddr(LLTABLE6(ifp));
@@ -357,7 +358,8 @@ nd6_ifdetach(struct ifnet *ifp, struct nd_ifinfo *nd)
 void
 nd6_setmtu(struct ifnet *ifp)
 {
-	if (ifp->if_afdata[AF_INET6] == NULL)
+	/* XXXGL: ??? */
+	if (ifp->if_inet6 == NULL)
 		return;
 
 	nd6_setmtu0(ifp, ND_IFINFO(ifp));
@@ -1217,7 +1219,7 @@ nd6_lookup(const struct in6_addr *addr6, int flags, struct ifnet *ifp)
 	sin6.sin6_family = AF_INET6;
 	sin6.sin6_addr = *addr6;
 
-	IF_AFDATA_LOCK_ASSERT(ifp);
+	LLTABLE_RLOCK_ASSERT(LLTABLE6(ifp));
 
 	ln = lla_lookup(LLTABLE6(ifp), flags, (struct sockaddr *)&sin6);
 
@@ -1342,7 +1344,7 @@ nd6_is_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 	int rc = 0;
 
 	NET_EPOCH_ASSERT();
-	IF_AFDATA_UNLOCK_ASSERT(ifp);
+
 	if (nd6_is_new_addr_neighbor(addr, ifp))
 		return (1);
 
@@ -1414,10 +1416,10 @@ nd6_try_set_entry_addr(struct ifnet *ifp, struct llentry *lle, char *lladdr)
 	NET_EPOCH_ASSERT();
 	LLE_WLOCK_ASSERT(lle);
 
-	if (!lltable_acquire_wlock(ifp, lle))
+	if (!lltable_trylock(lle))
 		return (false);
 	bool ret = nd6_try_set_entry_addr_locked(ifp, lle, lladdr);
-	IF_AFDATA_WUNLOCK(ifp);
+	LLTABLE_UNLOCK(lle->lle_tbl);
 
 	return (ret);
 }
@@ -1556,7 +1558,7 @@ nd6_free(struct llentry **lnp, int gc)
 	 * free(9) in llentry_free() if someone else holds one as well.
 	 */
 	LLE_WUNLOCK(ln);
-	IF_AFDATA_LOCK(ifp);
+	LLTABLE_LOCK(ln->lle_tbl);
 	LLE_WLOCK(ln);
 	/* Guard against race with other llentry_free(). */
 	if (ln->la_flags & LLE_LINKED) {
@@ -1564,7 +1566,7 @@ nd6_free(struct llentry **lnp, int gc)
 		LLE_REMREF(ln);
 		lltable_unlink_entry(ln->lle_tbl, ln);
 	}
-	IF_AFDATA_UNLOCK(ifp);
+	LLTABLE_UNLOCK(ln->lle_tbl);
 
 	nd6_free_children(ln);
 
@@ -1644,7 +1646,8 @@ nd6_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp)
 	struct epoch_tracker et;
 	int error = 0;
 
-	if (ifp->if_afdata[AF_INET6] == NULL)
+	/* XXXGL: ??? */
+	if (ifp->if_inet6 == NULL)
 		return (EPFNOSUPPORT);
 	switch (cmd) {
 	case OSIOCGIFINFO_IN6:
@@ -1969,7 +1972,6 @@ nd6_cache_lladdr(struct ifnet *ifp, struct in6_addr *from, char *lladdr,
 	int lladdr_off;
 
 	NET_EPOCH_ASSERT();
-	IF_AFDATA_UNLOCK_ASSERT(ifp);
 
 	KASSERT(ifp != NULL, ("%s: ifp == NULL", __func__));
 	KASSERT(from != NULL, ("%s: from == NULL", __func__));
@@ -2011,13 +2013,13 @@ nd6_cache_lladdr(struct ifnet *ifp, struct in6_addr *from, char *lladdr,
 			    lladdr_off);
 		}
 
-		IF_AFDATA_WLOCK(ifp);
+		LLTABLE_LOCK(LLTABLE6(ifp));
 		LLE_WLOCK(ln);
 		/* Prefer any existing lle over newly-created one */
 		ln_tmp = nd6_lookup(from, LLE_SF(AF_INET6, LLE_EXCLUSIVE), ifp);
 		if (ln_tmp == NULL)
 			lltable_link_entry(LLTABLE6(ifp), ln);
-		IF_AFDATA_WUNLOCK(ifp);
+		LLTABLE_UNLOCK(LLTABLE6(ifp));
 		if (ln_tmp == NULL) {
 			/* No existing lle, mark as new entry (6,7) */
 			is_newentry = 1;
@@ -2138,7 +2140,7 @@ nd6_slowtimo(void *arg)
 	    nd6_slowtimo, curvnet);
 	NET_EPOCH_ENTER(et);
 	CK_STAILQ_FOREACH(ifp, &V_ifnet, if_link) {
-		if (ifp->if_afdata[AF_INET6] == NULL)
+		if (ifp->if_inet6 == NULL)
 			continue;
 		nd6if = ND_IFINFO(ifp);
 		if (nd6if->basereachable && /* already initialized */
@@ -2337,7 +2339,7 @@ nd6_get_llentry(struct ifnet *ifp, const struct in6_addr *addr, int family)
 		return (NULL);
 	}
 
-	IF_AFDATA_WLOCK(ifp);
+	LLTABLE_LOCK(LLTABLE6(ifp));
 	LLE_WLOCK(lle);
 	/* Prefer any existing entry over newly-created one */
 	lle_tmp = nd6_lookup(addr, LLE_SF(AF_INET6, LLE_EXCLUSIVE), ifp);
@@ -2363,7 +2365,7 @@ nd6_get_llentry(struct ifnet *ifp, const struct in6_addr *addr, int family)
 		LLE_WUNLOCK(lle);
 		lle = child_lle;
 	}
-	IF_AFDATA_WUNLOCK(ifp);
+	LLTABLE_UNLOCK(LLTABLE6(ifp));
 	return (lle);
 }
 
@@ -2610,14 +2612,14 @@ nd6_add_ifa_lle(struct in6_ifaddr *ia)
 	if (ln == NULL)
 		return (ENOBUFS);
 
-	IF_AFDATA_WLOCK(ifp);
+	LLTABLE_LOCK(LLTABLE6(ifp));
 	LLE_WLOCK(ln);
 	/* Unlink any entry if exists */
 	ln_tmp = lla_lookup(LLTABLE6(ifp), LLE_SF(AF_INET6, LLE_EXCLUSIVE), dst);
 	if (ln_tmp != NULL)
 		lltable_unlink_entry(LLTABLE6(ifp), ln_tmp);
 	lltable_link_entry(LLTABLE6(ifp), ln);
-	IF_AFDATA_WUNLOCK(ifp);
+	LLTABLE_UNLOCK(LLTABLE6(ifp));
 
 	if (ln_tmp != NULL)
 		EVENTHANDLER_INVOKE(lle_event, ln_tmp, LLENTRY_EXPIRED);

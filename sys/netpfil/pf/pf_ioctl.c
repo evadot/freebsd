@@ -2087,19 +2087,20 @@ pf_rule_to_krule(const struct pf_rule *rule, struct pf_krule *krule)
 int
 pf_ioctl_getrules(struct pfioc_rule *pr)
 {
+	PF_RULES_RLOCK_TRACKER;
 	struct pf_kruleset	*ruleset;
 	struct pf_krule		*tail;
 	int			 rs_num;
 
-	PF_RULES_WLOCK();
+	PF_RULES_RLOCK();
 	ruleset = pf_find_kruleset(pr->anchor);
 	if (ruleset == NULL) {
-		PF_RULES_WUNLOCK();
+		PF_RULES_RUNLOCK();
 		return (EINVAL);
 	}
 	rs_num = pf_get_ruleset_number(pr->rule.action);
 	if (rs_num >= PF_RULESET_MAX) {
-		PF_RULES_WUNLOCK();
+		PF_RULES_RUNLOCK();
 		return (EINVAL);
 	}
 	tail = TAILQ_LAST(ruleset->rules[rs_num].active.ptr,
@@ -2109,7 +2110,7 @@ pf_ioctl_getrules(struct pfioc_rule *pr)
 	else
 		pr->nr = 0;
 	pr->ticket = ruleset->rules[rs_num].active.ticket;
-	PF_RULES_WUNLOCK();
+	PF_RULES_RUNLOCK();
 
 	return (0);
 }
@@ -3692,6 +3693,7 @@ DIOCADDRULENV_error:
 	}
 
 	case DIOCGETRULENV: {
+		PF_RULES_RLOCK_TRACKER;
 		struct pfioc_nv		*nv = (struct pfioc_nv *)addr;
 		nvlist_t		*nvrule = NULL;
 		nvlist_t		*nvl = NULL;
@@ -3702,6 +3704,13 @@ DIOCADDRULENV_error:
 		bool			 clear_counter = false;
 
 #define	ERROUT(x)	ERROUT_IOCTL(DIOCGETRULENV_error, x)
+#define	ERROUT_LOCKED(x) do {			\
+	if (clear_counter)			\
+		PF_RULES_WUNLOCK();		\
+	else					\
+		PF_RULES_RUNLOCK();		\
+	ERROUT(x);				\
+} while (0)
 
 		if (nv->len > pf_ioctl_maxcount)
 			ERROUT(ENOMEM);
@@ -3733,78 +3742,64 @@ DIOCADDRULENV_error:
 
 		nr = nvlist_get_number(nvl, "nr");
 
-		PF_RULES_WLOCK();
+		if (clear_counter)
+			PF_RULES_WLOCK();
+		else
+			PF_RULES_RLOCK();
 		ruleset = pf_find_kruleset(nvlist_get_string(nvl, "anchor"));
-		if (ruleset == NULL) {
-			PF_RULES_WUNLOCK();
-			ERROUT(ENOENT);
-		}
+		if (ruleset == NULL)
+			ERROUT_LOCKED(ENOENT);
 
 		rs_num = pf_get_ruleset_number(nvlist_get_number(nvl, "ruleset"));
-		if (rs_num >= PF_RULESET_MAX) {
-			PF_RULES_WUNLOCK();
-			ERROUT(EINVAL);
-		}
+		if (rs_num >= PF_RULESET_MAX)
+			ERROUT_LOCKED(EINVAL);
 
 		if (nvlist_get_number(nvl, "ticket") !=
-		    ruleset->rules[rs_num].active.ticket) {
-			PF_RULES_WUNLOCK();
-			ERROUT(EBUSY);
-		}
+		    ruleset->rules[rs_num].active.ticket)
+			ERROUT_LOCKED(EBUSY);
 
-		if ((error = nvlist_error(nvl))) {
-			PF_RULES_WUNLOCK();
-			ERROUT(error);
-		}
+		if ((error = nvlist_error(nvl)))
+			ERROUT_LOCKED(error);
 
 		rule = TAILQ_FIRST(ruleset->rules[rs_num].active.ptr);
 		while ((rule != NULL) && (rule->nr != nr))
 			rule = TAILQ_NEXT(rule, entries);
-		if (rule == NULL) {
-			PF_RULES_WUNLOCK();
-			ERROUT(EBUSY);
-		}
+		if (rule == NULL)
+			ERROUT_LOCKED(EBUSY);
 
 		nvrule = pf_krule_to_nvrule(rule);
 
 		nvlist_destroy(nvl);
 		nvl = nvlist_create(0);
-		if (nvl == NULL) {
-			PF_RULES_WUNLOCK();
-			ERROUT(ENOMEM);
-		}
+		if (nvl == NULL)
+			ERROUT_LOCKED(ENOMEM);
 		nvlist_add_number(nvl, "nr", nr);
 		nvlist_add_nvlist(nvl, "rule", nvrule);
 		nvlist_destroy(nvrule);
 		nvrule = NULL;
-		if (pf_kanchor_nvcopyout(ruleset, rule, nvl)) {
-			PF_RULES_WUNLOCK();
-			ERROUT(EBUSY);
-		}
+		if (pf_kanchor_nvcopyout(ruleset, rule, nvl))
+			ERROUT_LOCKED(EBUSY);
 
 		free(nvlpacked, M_NVLIST);
 		nvlpacked = nvlist_pack(nvl, &nv->len);
-		if (nvlpacked == NULL) {
-			PF_RULES_WUNLOCK();
-			ERROUT(ENOMEM);
-		}
+		if (nvlpacked == NULL)
+			ERROUT_LOCKED(ENOMEM);
 
-		if (nv->size == 0) {
-			PF_RULES_WUNLOCK();
-			ERROUT(0);
-		}
-		else if (nv->size < nv->len) {
-			PF_RULES_WUNLOCK();
-			ERROUT(ENOSPC);
-		}
+		if (nv->size == 0)
+			ERROUT_LOCKED(0);
+		else if (nv->size < nv->len)
+			ERROUT_LOCKED(ENOSPC);
 
-		if (clear_counter)
+		if (clear_counter) {
 			pf_krule_clear_counters(rule);
-
-		PF_RULES_WUNLOCK();
+			PF_RULES_WUNLOCK();
+		} else {
+			PF_RULES_RUNLOCK();
+		}
 
 		error = copyout(nvlpacked, nv->data, nv->len);
 
+#undef ERROUT_LOCKED
 #undef ERROUT
 DIOCGETRULENV_error:
 		free(nvlpacked, M_NVLIST);
@@ -4118,8 +4113,7 @@ DIOCCHANGERULE_error:
 			goto fail;
 		}
 
-		pfsync_state_export((union pfsync_state_union*)&ps->state,
-		    s, PFSYNC_MSG_VERSION_1301);
+		pfsync_state_export_1301(&ps->state, s);
 		PF_STATE_UNLOCK(s);
 		break;
 	}
@@ -4185,8 +4179,7 @@ DIOCGETSTATES_retry:
 				if (s->timeout == PFTM_UNLINKED)
 					continue;
 
-				pfsync_state_export((union pfsync_state_union*)p,
-				    s, PFSYNC_MSG_VERSION_1301);
+				pfsync_state_export_1301(p, s);
 				p++;
 				nr++;
 			}
@@ -5795,11 +5788,10 @@ fail:
 	return (error);
 }
 
-void
+static void
 pfsync_state_export(union pfsync_state_union *sp, struct pf_kstate *st, int msg_version)
 {
 	const char	*tagname;
-	bzero(sp, sizeof(union pfsync_state_union));
 
 	/* copy from state key */
 	sp->pfs_1301.key[PF_SK_WIRE].addr[0] = st->key[PF_SK_WIRE]->addr[0];
@@ -5930,6 +5922,30 @@ pfsync_state_export(union pfsync_state_union *sp, struct pf_kstate *st, int msg_
 	pf_state_counter_hton(st->packets[1], sp->pfs_1301.packets[1]);
 	pf_state_counter_hton(st->bytes[0], sp->pfs_1301.bytes[0]);
 	pf_state_counter_hton(st->bytes[1], sp->pfs_1301.bytes[1]);
+}
+
+void
+pfsync_state_export_1301(struct pfsync_state_1301 *sp, struct pf_kstate *st)
+{
+	bzero(sp, sizeof(*sp));
+	pfsync_state_export((union pfsync_state_union *)sp, st,
+	    PFSYNC_MSG_VERSION_1301);
+}
+
+void
+pfsync_state_export_1400(struct pfsync_state_1400 *sp, struct pf_kstate *st)
+{
+	bzero(sp, sizeof(*sp));
+	pfsync_state_export((union pfsync_state_union *)sp, st,
+	    PFSYNC_MSG_VERSION_1400);
+}
+
+void
+pfsync_state_export_1500(struct pfsync_state_1500 *sp, struct pf_kstate *st)
+{
+	bzero(sp, sizeof(*sp));
+	pfsync_state_export((union pfsync_state_union *)sp, st,
+	    PFSYNC_MSG_VERSION_1500);
 }
 
 void

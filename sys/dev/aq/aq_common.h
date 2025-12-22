@@ -35,13 +35,7 @@
 #ifndef _AQ_COMMON_H_
 #define _AQ_COMMON_H_
 
-#include <stdint.h>
-
-#define ETH_MAC_LEN 6
-
-/* Types definition */
-#define TRUE     1
-#define FALSE    0
+#include <sys/types.h>
 
 #define s8       __int8_t
 #define u8       __uint8_t
@@ -51,7 +45,6 @@
 #define u64      __uint64_t
 #define s64      __int64_t
 #define s32      int
-typedef __uint32_t DWORD;
 
 #define ETIME ETIMEDOUT
 #define EOK 0
@@ -77,7 +70,6 @@ typedef __uint32_t DWORD;
     } while (0)
 
 
-#define LODWORD(a) ((DWORD)(a))
 #define LOWORD(a) ((u16)(a))
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 

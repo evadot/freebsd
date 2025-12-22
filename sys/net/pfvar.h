@@ -1341,8 +1341,12 @@ VNET_DECLARE(pflow_export_state_t *,	pflow_export_state_ptr);
 #define V_pflow_export_state_ptr	VNET(pflow_export_state_ptr)
 extern pfsync_detach_ifnet_t	*pfsync_detach_ifnet_ptr;
 
-void			pfsync_state_export(union pfsync_state_union *,
-			    struct pf_kstate *, int);
+void			pfsync_state_export_1301(struct pfsync_state_1301 *,
+			    struct pf_kstate *);
+void			pfsync_state_export_1400(struct pfsync_state_1400 *,
+			    struct pf_kstate *);
+void			pfsync_state_export_1500(struct pfsync_state_1500 *,
+			    struct pf_kstate *);
 void			pf_state_export(struct pf_state_export *,
 			    struct pf_kstate *);
 
@@ -2518,7 +2522,6 @@ int	pf_socket_lookup(struct pf_pdesc *);
 struct pf_state_key *pf_alloc_state_key(int);
 int	pf_translate(struct pf_pdesc *, struct pf_addr *, u_int16_t,
 	    struct pf_addr *, u_int16_t, u_int16_t, int);
-int	pf_translate_af(struct pf_pdesc *);
 bool	pf_init_threshold(struct pf_kthreshold *, uint32_t, uint32_t);
 uint16_t	pf_tagname2tag(const char *);
 #ifdef ALTQ

@@ -45,6 +45,7 @@ SUBDIR=	\
 	${_armv8_rng} \
 	${_asmc} \
 	ata \
+	${_aq} \
 	ath \
 	ath_dfs \
 	ath_hal \
@@ -348,6 +349,7 @@ SUBDIR=	\
 	${_rdrand_rng} \
 	${_rdseed_rng} \
 	re \
+	rge \
 	rl \
 	${_rockchip} \
 	rtsx \
@@ -580,10 +582,7 @@ _mlx5ib=	mlx5ib
 _ena=		ena
 _gve=		gve
 _igc=		igc
-# gcc13 and earlier lack __builtin_bitcountg used by linux emulation
-.if !(${COMPILER_TYPE} == "gcc" && ${COMPILER_VERSION} < 140000)
 _iwlwifi=	iwlwifi
-.endif
 _rtw88=		rtw88
 _rtw89=		rtw89
 _vmware=	vmware
@@ -733,6 +732,7 @@ _imx=		imx
 .endif
 
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+_aq=		aq
 _agp=		agp
 .if ${MACHINE_CPUARCH} == "i386" || !empty(COMPAT_FREEBSD32_ENABLED)
 _aout=		aout
