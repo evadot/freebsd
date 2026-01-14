@@ -437,4 +437,16 @@ sign_extend32(uint32_t value, int index)
 	return ((int32_t)(value << shift) >> shift);
 }
 
+static inline uint64_t
+rol64(uint64_t word, unsigned int shift)
+{
+	return ((word << (shift & 63)) | (word >> ((-shift) & 63)));
+}
+
+static inline uint32_t
+rol32(uint32_t word, unsigned int shift)
+{
+	return ((word << (shift & 31)) | (word >> ((-shift) & 31)));
+}
+
 #endif	/* _LINUXKPI_LINUX_BITOPS_H_ */

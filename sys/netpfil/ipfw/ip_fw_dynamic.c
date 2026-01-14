@@ -734,28 +734,44 @@ dyn_destroy(struct ip_fw_chain *ch, struct named_object *no)
 
 static struct opcode_obj_rewrite dyn_opcodes[] = {
 	{
-		O_KEEP_STATE, IPFW_TLV_STATE_NAME,
-		dyn_classify, dyn_update,
-		dyn_findbyname, dyn_findbykidx,
-		dyn_create, dyn_destroy
+		.opcode = O_KEEP_STATE,
+		.etlv = IPFW_TLV_STATE_NAME,
+		.classifier = dyn_classify,
+		.update = dyn_update,
+		.find_byname = dyn_findbyname,
+		.find_bykidx = dyn_findbykidx,
+		.create_object = dyn_create,
+		.destroy_object = dyn_destroy,
 	},
 	{
-		O_CHECK_STATE, IPFW_TLV_STATE_NAME,
-		dyn_classify, dyn_update,
-		dyn_findbyname, dyn_findbykidx,
-		dyn_create, dyn_destroy
+		.opcode = O_CHECK_STATE,
+		.etlv = IPFW_TLV_STATE_NAME,
+		.classifier = dyn_classify,
+		.update = dyn_update,
+		.find_byname = dyn_findbyname,
+		.find_bykidx = dyn_findbykidx,
+		.create_object = dyn_create,
+		.destroy_object = dyn_destroy,
 	},
 	{
-		O_PROBE_STATE, IPFW_TLV_STATE_NAME,
-		dyn_classify, dyn_update,
-		dyn_findbyname, dyn_findbykidx,
-		dyn_create, dyn_destroy
+		.opcode = O_PROBE_STATE,
+		.etlv = IPFW_TLV_STATE_NAME,
+		.classifier = dyn_classify,
+		.update = dyn_update,
+		.find_byname = dyn_findbyname,
+		.find_bykidx = dyn_findbykidx,
+		.create_object = dyn_create,
+		.destroy_object = dyn_destroy,
 	},
 	{
-		O_LIMIT, IPFW_TLV_STATE_NAME,
-		dyn_classify, dyn_update,
-		dyn_findbyname, dyn_findbykidx,
-		dyn_create, dyn_destroy
+		.opcode = O_LIMIT,
+		.etlv = IPFW_TLV_STATE_NAME,
+		.classifier = dyn_classify,
+		.update = dyn_update,
+		.find_byname = dyn_findbyname,
+		.find_bykidx = dyn_findbykidx,
+		.create_object = dyn_create,
+		.destroy_object = dyn_destroy,
 	},
 };
 
@@ -3175,7 +3191,7 @@ dyn_add_protected_rule(struct ip_fw_chain *chain)
 	cmd->opcode = O_COUNT;
 	rule->act_ofs = cmd - rule->cmd;
 	rule->cmd_len = rule->act_ofs + 1;
-	ipfw_add_protected_rule(chain, rule, 0);
+	ipfw_add_protected_rule(chain, rule);
 }
 
 void

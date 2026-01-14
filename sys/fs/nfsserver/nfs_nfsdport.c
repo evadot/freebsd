@@ -1977,6 +1977,7 @@ nfsvno_open(struct nfsrv_descript *nd, struct nameidata *ndp,
 	struct nfsexstuff nes;
 	struct thread *p = curthread;
 	uint32_t oldrepstat;
+	u_long savflags;
 
 	if (ndp->ni_vp == NULL) {
 		/*
@@ -1991,6 +1992,15 @@ nfsvno_open(struct nfsrv_descript *nd, struct nameidata *ndp,
 	}
 	if (!nd->nd_repstat) {
 		if (ndp->ni_vp == NULL) {
+			/*
+			 * Most file systems ignore va_flags for
+			 * VOP_CREATE(), however setting va_flags
+			 * for VOP_CREATE() causes problems for ZFS.
+			 * So disable them and let nfsrv_fixattr()
+			 * do them, as required.
+			 */
+			savflags = nvap->na_flags;
+			nvap->na_flags = VNOVAL;
 			nd->nd_repstat = VOP_CREATE(ndp->ni_dvp,
 			    &ndp->ni_vp, &ndp->ni_cnd, &nvap->na_vattr);
 			/* For a pNFS server, create the data file on a DS. */
@@ -2003,6 +2013,7 @@ nfsvno_open(struct nfsrv_descript *nd, struct nameidata *ndp,
 				nfsrv_pnfscreate(ndp->ni_vp, &nvap->na_vattr,
 				    cred, p);
 			}
+			nvap->na_flags = savflags;
 			VOP_VPUT_PAIR(ndp->ni_dvp, nd->nd_repstat == 0 ?
 			    &ndp->ni_vp : NULL, false);
 			nfsvno_relpathbuf(ndp);
@@ -3228,8 +3239,8 @@ nfsv4_sattr(struct nfsrv_descript *nd, vnode_t vp, struct nfsvattr *nvap,
 			attrsum += NFSX_HYPER;
 			break;
 		case NFSATTRBIT_ACL:
-			error = nfsrv_dissectacl(nd, aclp, true, &aceerr,
-			    &aclsize, p);
+			error = nfsrv_dissectacl(nd, aclp, true, false, &aceerr,
+			    &aclsize);
 			if (error)
 				goto nfsmout;
 			if (aceerr && !nd->nd_repstat)
@@ -3421,8 +3432,8 @@ nfsv4_sattr(struct nfsrv_descript *nd, vnode_t vp, struct nfsvattr *nvap,
 			attrsum += 2 * NFSX_UNSIGNED;
 			break;
 		case NFSATTRBIT_POSIXACCESSACL:
-			error = nfsrv_dissectacl(nd, aclp, true, &aceerr,
-			    &aclsize, p);
+			error = nfsrv_dissectacl(nd, aclp, true, true, &aceerr,
+			    &aclsize);
 			if (error != 0)
 				goto nfsmout;
 			if (!nd->nd_repstat) {
@@ -3436,8 +3447,8 @@ nfsv4_sattr(struct nfsrv_descript *nd, vnode_t vp, struct nfsvattr *nvap,
 			attrsum += aclsize;
 			break;
 		case NFSATTRBIT_POSIXDEFAULTACL:
-			error = nfsrv_dissectacl(nd, daclp, true, &aceerr,
-			    &aclsize, p);
+			error = nfsrv_dissectacl(nd, daclp, true, true, &aceerr,
+			    &aclsize);
 			if (error != 0)
 				goto nfsmout;
 			if (!nd->nd_repstat) {
@@ -5746,7 +5757,7 @@ nfsrv_writedsdorpc(struct nfsmount *nmp, fhandle_t *fhp, off_t off, int len,
 	    (ND_NFSV4 | ND_V4WCCATTR)) {
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0, NULL, NULL,
 		    NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL,
-		    NULL);
+		    NULL, NULL);
 		NFSD_DEBUG(4, "nfsrv_writedsdorpc: wcc attr=%d\n", error);
 		if (error != 0)
 			goto nfsmout;
@@ -5778,7 +5789,7 @@ nfsrv_writedsdorpc(struct nfsmount *nmp, fhandle_t *fhp, off_t off, int len,
 		NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED);
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0, NULL, NULL,
 		    NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL,
-		    NULL);
+		    NULL, NULL);
 	}
 	NFSD_DEBUG(4, "nfsrv_writedsdorpc: aft loadattr=%d\n", error);
 nfsmout:
@@ -5945,7 +5956,7 @@ nfsrv_allocatedsdorpc(struct nfsmount *nmp, fhandle_t *fhp, off_t off,
 		NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED);
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0, NULL, NULL,
 		    NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL,
-		    NULL);
+		    NULL, NULL);
 	} else
 		error = nd->nd_repstat;
 	NFSD_DEBUG(4, "nfsrv_allocatedsdorpc: aft loadattr=%d\n", error);
@@ -6113,7 +6124,7 @@ nfsrv_deallocatedsdorpc(struct nfsmount *nmp, fhandle_t *fhp, off_t off,
 	    (ND_NFSV4 | ND_V4WCCATTR)) {
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0, NULL, NULL,
 		    NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL,
-		    NULL);
+		    NULL, NULL);
 		NFSD_DEBUG(4, "nfsrv_deallocatedsdorpc: wcc attr=%d\n", error);
 		if (error != 0)
 			goto nfsmout;
@@ -6128,7 +6139,7 @@ nfsrv_deallocatedsdorpc(struct nfsmount *nmp, fhandle_t *fhp, off_t off,
 		NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED);
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0, NULL, NULL,
 		    NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL,
-		    NULL);
+		    NULL, NULL);
 	} else
 		error = nd->nd_repstat;
 	NFSD_DEBUG(4, "nfsrv_deallocatedsdorpc: aft loadattr=%d\n", error);
@@ -6277,7 +6288,7 @@ nfsrv_setattrdsdorpc(fhandle_t *fhp, struct ucred *cred, NFSPROC_T *p,
 	    (ND_NFSV4 | ND_V4WCCATTR)) {
 		error = nfsv4_loadattr(nd, NULL, dsnap, NULL, NULL, 0, NULL,
 		    NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL,
-		    NULL, NULL);
+		    NULL, NULL, NULL);
 		NFSD_DEBUG(4, "nfsrv_setattrdsdorpc: wcc attr=%d\n", error);
 		if (error != 0)
 			goto nfsmout;
@@ -6302,7 +6313,7 @@ nfsrv_setattrdsdorpc(fhandle_t *fhp, struct ucred *cred, NFSPROC_T *p,
 		NFSM_DISSECT(tl, uint32_t *, 2 * NFSX_UNSIGNED);
 		error = nfsv4_loadattr(nd, NULL, dsnap, NULL, NULL, 0, NULL,
 		    NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL,
-		    NULL, NULL);
+		    NULL, NULL, NULL);
 	}
 	NFSD_DEBUG(4, "nfsrv_setattrdsdorpc: aft setattr loadattr=%d\n", error);
 nfsmout:
@@ -6591,7 +6602,7 @@ nfsrv_getattrdsrpc(fhandle_t *fhp, struct ucred *cred, NFSPROC_T *p,
 	if (nd->nd_repstat == 0) {
 		error = nfsv4_loadattr(nd, NULL, nap, NULL, NULL, 0,
 		    NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
-		    NULL, NULL, NULL, NULL);
+		    NULL, NULL, NULL, NULL, NULL);
 		/*
 		 * We can only save the updated values in the extended
 		 * attribute if the vp is exclusively locked.
