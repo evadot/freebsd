@@ -182,9 +182,6 @@ _GCC_BROKEN=Missing atomic builtins in libc++.
 .if ${TARGET_ARCH:Mpowerpc64*}
 _GCC_BROKEN=libsys.so.7.full has a LOAD segment with RWX permissions.
 .endif
-.if ${TARGET} == "riscv"
-_GCC_BROKEN=boot code linker script issues.
-.endif
 .if defined(_GCC_BROKEN)
 .warning Target ${TARGET} is broken with GCC: ${_GCC_BROKEN}
 .if defined(TRY_GCC_BROKEN)
@@ -3190,6 +3187,7 @@ NXBMAKEARGS+= \
 	MK_DEBUG_FILES=no \
 	MK_HTML=no \
 	MK_LLDB=no \
+	MK_LLVM_LINK_STATIC_LIBRARIES=yes \
 	MK_MAN=no \
 	MK_MAN_UTILS=yes \
 	MK_OFED=no \

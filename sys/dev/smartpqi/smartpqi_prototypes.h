@@ -167,10 +167,6 @@ int pqisrc_send_tmf(pqisrc_softstate_t *, pqi_scsi_dev_t const *,
                     rcb_t *, rcb_t *, int);
 int pqisrc_write_current_time_to_host_wellness(pqisrc_softstate_t *softs);
 int pqisrc_write_driver_version_to_host_wellness(pqisrc_softstate_t *softs);
-extern inline void pqisrc_aio_build_cdb(aio_req_locator_t *, uint32_t,
-		rcb_t *, uint8_t *);
-extern inline boolean_t pqisrc_aio_req_too_big(pqisrc_softstate_t *, pqi_scsi_dev_t *,
-		rcb_t const *, aio_req_locator_t *, uint32_t);
 void pqisrc_build_aio_common(pqisrc_softstate_t *, pqi_aio_req_t *,
 	rcb_t *, uint32_t);
 void pqisrc_build_aio_R1_write(pqisrc_softstate_t *,
@@ -255,6 +251,7 @@ int pqisrc_process_task_management_response(pqisrc_softstate_t *,
 
 /* smartpqi_ioctl.c*/
 int pqisrc_passthru_ioctl(struct pqisrc_softstate *, void *, int);
+int pqisrc_big_passthru_ioctl(struct pqisrc_softstate *, void *, int);
 
 /* Functions Prototypes */
 /* smartpqi_mem.c */

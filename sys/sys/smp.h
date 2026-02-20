@@ -16,6 +16,7 @@
 
 #ifndef LOCORE
 
+#include <sys/types.h>
 #include <sys/cpuset.h>
 #include <sys/queue.h>
 
@@ -88,6 +89,8 @@ struct cpu_group {
 
 typedef struct cpu_group *cpu_group_t;
 
+extern cpu_group_t cpu_top;
+
 /*
  * Defines common resources for CPUs in the group.  The highest level
  * resource should be used when multiple are shared.
@@ -146,9 +149,6 @@ int topo_analyze(struct topo_node *topo_root, int all,
 #define	TOPO_FOREACH(i, root)	\
 	for (i = root; i != NULL; i = topo_next_node(root, i))
 
-struct cpu_group *smp_topo(void);
-struct cpu_group *smp_topo_alloc(u_int count);
-struct cpu_group *smp_topo_none(void);
 struct cpu_group *smp_topo_1level(int l1share, int l1count, int l1flags);
 struct cpu_group *smp_topo_2level(int l2share, int l2count, int l1share,
     int l1count, int l1flags);
@@ -164,6 +164,10 @@ extern volatile cpuset_t toresume_cpus;	/* cpus to let out of suspend pen */
 extern cpuset_t hlt_cpus_mask;		/* XXX 'mask' is detail in old impl */
 extern cpuset_t logical_cpus_mask;
 #endif /* SMP */
+
+struct cpu_group *smp_topo(void);
+struct cpu_group *smp_topo_alloc(u_int count);
+struct cpu_group *smp_topo_none(void);
 
 extern u_int mp_maxid;
 extern int mp_maxcpus;
@@ -278,7 +282,12 @@ void	smp_rendezvous(void (*)(void *),
 		       void (*)(void *),
 		       void *arg);
 void	smp_rendezvous_cpus(cpuset_t,
-		       void (*)(void *), 
+		       void (*)(void *),
+		       void (*)(void *),
+		       void (*)(void *),
+		       void *arg);
+void	smp_rendezvous_cpu(u_int,
+		       void (*)(void *),
 		       void (*)(void *),
 		       void (*)(void *),
 		       void *arg);

@@ -246,8 +246,6 @@
                 clang       tags=package=clang
                 ..
             ..
-            ncurses
-            ..
             ntp
                 drivers
                     icons
@@ -841,6 +839,10 @@
                 ..
                 man7
                 ..
+            ..
+        ..
+        pkg
+            triggers
             ..
         ..
         security

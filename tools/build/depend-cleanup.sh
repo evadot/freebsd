@@ -317,6 +317,15 @@ check_epoch_and_opts
 #          "$OBJTOP"/tests/sys/kqueue/libkqueue/*
 #fi
 
+# 20251219 # libkrb5profile is now internal
+for libcompat in "" $ALL_libcompats; do
+	dirprfx=${libcompat:+obj-lib${libcompat}}
+	dir="${OBJTOP%/}/${dirprfx}"/krb5/util/profile
+	if [ -L "${dir}"/libkrb5profile.so ]; then
+		run rm -rfv "${dir}"
+	fi
+done
+
 # 20250904  aef807876c30    moused binary to directory
 if [ -f "$OBJTOP"/usr.sbin/moused/moused ]; then
 	echo "Removing old moused binary"
@@ -348,4 +357,10 @@ if [ ${MACHINE} = riscv ]; then
 	# 20251031  b5dbf3de5611  libc/riscv64: implement bcopy() and bzero() through memcpy() and memset()
 	clean_dep   lib/libc bcopy c "libc.string.bcopy.c"
 	clean_dep   lib/libc bzero c "libc.string.bzero.c"
+fi
+
+if [ ${MACHINE_ARCH} = "aarch64" ]; then
+	# 20260113  41ccf82b29f3  libc/aarch64: Use MOPS implementations of memcpy/memmove/memset where availble
+	clean_dep   lib/libc memset S "[^/]memset.S"
+	run rm -fv "$OBJTOP"/lib/libc/memset.S
 fi

@@ -210,7 +210,7 @@ options 	ROOTDEVNAME=\"ufs:da0s2e\"
 #
 options 	SCHED_4BSD
 options 	SCHED_STATS
-#options 	SCHED_ULE
+options 	SCHED_ULE
 
 #####################################################################
 # SMP OPTIONS:
@@ -2673,7 +2673,6 @@ options 	INIT_PATH=/sbin/init:/rescue/init
 
 # Debug options
 options 	BUS_DEBUG	# enable newbus debugging
-options 	DEBUG_VFS_LOCKS	# enable VFS lock debugging
 options 	SOCKBUF_DEBUG	# enable sockbuf last record/mb tail checking
 options 	IFMEDIA_DEBUG	# enable debugging in net/if_media.c
 

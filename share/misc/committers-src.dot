@@ -243,6 +243,7 @@ jonathan [label="Jonathan Anderson\njonathan@FreeBSD.org\n2010/10/07"]
 jpaetzel [label="Josh Paetzel\njpaetzel@FreeBSD.org\n2011/01/21"]
 jrhall [label="John Hall\njrhall@FreeBSD.org\n2025/11/18"]
 jrtc27 [label="Jessica Clarke\njrtc27@FreeBSD.org\n2020/01/23"]
+js [label="Johan Söllvander\njs@FreeBSD.org\n2025/12/16"]
 jtl [label="Jonathan T. Looney\njtl@FreeBSD.org\n2015/10/26"]
 julian [label="Julian Elischer\njulian@FreeBSD.org\n1993/04/19"]
 jwd [label="John De Boskey\njwd@FreeBSD.org\n2000/05/19"]
@@ -360,6 +361,7 @@ sepotvin [label="Stephane E. Potvin\nsepotvin@FreeBSD.org\n2007/02/15"]
 sgalabov [label="Stanislav Galabov\nsgalabov@FreeBSD.org\n2016/02/24"]
 shurd [label="Stephen Hurd\nshurd@FreeBSD.org\n2017/09/02"]
 simon [label="Simon L. Nielsen\nsimon@FreeBSD.org\n2006/03/07"]
+siva [label="Siva Mahadevan\nsiva@FreeBSD.org\n2026/01/16"]
 sjg [label="Simon J. Gerraty\nsjg@FreeBSD.org\n2012/10/23"]
 skra [label="Svatopluk Kraus\nskra@FreeBSD.org\n2015/10/28"]
 slavash [label="Slava Shwartsman\nslavash@FreeBSD.org\n2018/02/08"]
@@ -453,6 +455,8 @@ andrew -> manu
 anholt -> jkim
 
 araujo -> miwi
+
+asomers -> js
 
 avg -> art
 avg -> eugen
@@ -569,6 +573,7 @@ emaste -> ngie
 emaste -> olce
 emaste -> rstone
 emaste -> scottph
+emaste -> siva
 
 emax -> markus
 
@@ -779,6 +784,7 @@ kp -> zlei
 
 lwhsu -> aokblast
 lwhsu -> khng
+lwhsu -> siva
 
 manu -> corvink
 manu -> oh

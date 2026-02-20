@@ -37,6 +37,9 @@ NO_WBITWISE_INSTEAD_OF_LOGICAL=	-Wno-bitwise-instead-of-logical
 NO_WSTRICT_PROTOTYPES=		-Wno-strict-prototypes
 NO_WDEPRECATED_NON_PROTOTYPE=	-Wno-deprecated-non-prototype
 .endif
+.if ${COMPILER_VERSION} >= 210000
+NO_WDEFAULT_CONST_INIT_FIELD_UNSAFE= -Wno-default-const-init-field-unsafe
+.endif
 # Several other warnings which might be useful in some cases, but not severe
 # enough to error out the whole kernel build.  Display them anyway, so there is
 # some incentive to fix them eventually.
@@ -163,7 +166,7 @@ INLINE_LIMIT?=	8000
 # code model as "medium" and "medany" respectively.
 #
 .if ${MACHINE_CPUARCH} == "riscv"
-CFLAGS+=	-march=rv64imafdch
+CFLAGS+=	-march=rv64imafdch_zifencei
 CFLAGS+=	-mabi=lp64
 CFLAGS.clang+=	-mcmodel=medium
 CFLAGS.gcc+=	-mcmodel=medany

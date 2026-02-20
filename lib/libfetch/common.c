@@ -286,6 +286,9 @@ fetch_reopen(int sd)
 	flags = fcntl(sd, F_GETFD);
 	if (flags != -1 && (flags & FD_CLOEXEC) == 0)
 		(void)fcntl(sd, F_SETFD, flags | FD_CLOEXEC);
+	flags = fcntl(sd, F_GETFL);
+	if (flags != -1 && (flags & O_NONBLOCK) == 0)
+		(void)fcntl(sd, F_SETFL, flags | O_NONBLOCK);
 	(void)setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
 	conn->sd = sd;
 	++conn->ref;
@@ -1048,6 +1051,8 @@ fetch_ssl_setup_transport_layer(SSL_CTX *ctx, int verbose)
 		ssl_ctx_options |= SSL_OP_NO_TLSv1_1;
 	if (getenv("SSL_NO_TLS1_2") != NULL)
 		ssl_ctx_options |= SSL_OP_NO_TLSv1_2;
+	if (getenv("SSL_NO_TLS1_3") != NULL)
+		ssl_ctx_options |= SSL_OP_NO_TLSv1_3;
 	if (verbose)
 		fetch_info("SSL options: %lx", ssl_ctx_options);
 	SSL_CTX_set_options(ctx, ssl_ctx_options);
@@ -1180,8 +1185,11 @@ fetch_ssl(conn_t *conn, const struct url *URL, int verbose)
 	X509_NAME *name;
 	char *str;
 
-	conn->ssl_meth = SSLv23_client_method();
-	conn->ssl_ctx = SSL_CTX_new(conn->ssl_meth);
+	if ((conn->ssl_ctx = SSL_CTX_new(TLS_client_method())) == NULL) {
+		fprintf(stderr, "SSL context creation failed\n");
+		ERR_print_errors_fp(stderr);
+		return (-1);
+	}
 	SSL_CTX_set_mode(conn->ssl_ctx, SSL_MODE_AUTO_RETRY);
 
 	fetch_ssl_setup_transport_layer(conn->ssl_ctx, verbose);
@@ -1192,7 +1200,8 @@ fetch_ssl(conn_t *conn, const struct url *URL, int verbose)
 
 	conn->ssl = SSL_new(conn->ssl_ctx);
 	if (conn->ssl == NULL) {
-		fprintf(stderr, "SSL context creation failed\n");
+		fprintf(stderr, "SSL connection creation failed\n");
+		ERR_print_errors_fp(stderr);
 		return (-1);
 	}
 	SSL_set_fd(conn->ssl, conn->sd);
