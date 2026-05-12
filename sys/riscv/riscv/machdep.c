@@ -118,7 +118,7 @@ uint32_t boot_hart = BOOT_HART_INVALID;	/* The hart we booted on. */
 
 cpuset_t all_harts;
 
-extern int *end;
+extern char end[];
 
 static char static_kenv[PAGE_SIZE];
 
@@ -287,7 +287,7 @@ makectx(struct trapframe *tf, struct pcb *pcb)
 }
 
 static void
-init_proc0(vm_offset_t kstack)
+init_proc0(void *kstack)
 {
 	struct pcpu *pcpup;
 

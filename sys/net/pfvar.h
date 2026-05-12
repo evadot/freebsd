@@ -1499,7 +1499,7 @@ struct pfsync_state_1301 {
 	u_int8_t	 state_flags;
 	u_int8_t	 timeout;
 	u_int8_t	 sync_flags;
-	u_int8_t	 updates;	/* unused */
+	u_int8_t	 __spare2;
 } __packed;
 
 struct pfsync_state_1400 {
@@ -2621,9 +2621,8 @@ struct pf_ifspeed_v1 {
 #endif /* _KERNEL */
 
 #ifdef _KERNEL
-LIST_HEAD(pf_ksrc_node_list, pf_ksrc_node);
 struct pf_srchash {
-	struct pf_ksrc_node_list		nodes;
+	LIST_HEAD(pf_ksrc_node_list, pf_ksrc_node) nodes;
 	struct mtx			lock;
 };
 
@@ -2853,6 +2852,7 @@ extern void			 pf_addrcpy(struct pf_addr *, const struct pf_addr *,
 				    sa_family_t);
 void				pf_free_rule(struct pf_krule *);
 
+struct inpcb;
 int	pf_test_eth(int, int, struct ifnet *, struct mbuf **, struct inpcb *);
 int	pf_scan_sctp(struct pf_pdesc *);
 #if defined(INET) || defined(INET6)

@@ -781,15 +781,21 @@ main(int argc, char *argv[])
 		case EVFILT_SIGNAL:
 			switch (ev.ident) {
 			case SIGHUP:
+				/* Reload */
 				init(true);
 				break;
 			case SIGINT:
 			case SIGQUIT:
+				/* Ignore these unless -F and / or -d */
+				if (!Foreground && !Debug)
+					break;
+				/* FALLTHROUGH */
 			case SIGTERM:
-				if (ev.ident == SIGTERM || Debug)
-					die(ev.ident);
+				/* Terminate */
+				die(ev.ident);
 				break;
 			case SIGALRM:
+				/* Mark and flush */
 				markit();
 				break;
 			}
@@ -2814,7 +2820,7 @@ prop_filter_compile(const char *cfilter)
 		pfilter.cmp_type = FILT_CMP_REGEX;
 	else if (strcasecmp(argv[1], "ereregex") == 0) {
 		pfilter.cmp_type = FILT_CMP_REGEX;
-		pfilter.cmp_flags |= REG_EXTENDED;
+		pfilter.cmp_flags |= FILT_FLAG_EXTENDED;
 	} else {
 		dprintf("unknown cmp function");
 		goto error;

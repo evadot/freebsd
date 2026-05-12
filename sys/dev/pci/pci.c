@@ -798,6 +798,9 @@ pci_fill_devinfo(device_t pcib, device_t bus, int d, int b, int s, int f,
 	devlist_entry->conf.pc_progif = cfg->progif;
 	devlist_entry->conf.pc_revid = cfg->revid;
 
+	devlist_entry->conf.pc_secbus = cfg->bridge.br_secbus;
+	devlist_entry->conf.pc_subbus = cfg->bridge.br_subbus;
+
 	pci_numdevs++;
 	pci_generation++;
 
@@ -3753,7 +3756,7 @@ xhci_early_takeover(device_t self)
 	struct resource *res;
 	uint32_t cparams;
 	uint32_t eec;
-	uint8_t eecp;
+	uint32_t eecp;
 	uint8_t bios_sem;
 	uint8_t offs;
 	int rid;

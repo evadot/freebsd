@@ -221,21 +221,16 @@ _Static_assert(sizeof(struct vnode) <= 448, "vnode size crosses 448 bytes");
 
 #define	bo2vnode(bo)	__containerof((bo), struct vnode, v_bufobj)
 
-/* XXX: These are temporary to avoid a source sweep at this time */
 #define v_object	v_bufobj.bo_object
 
-/* We don't need to lock the knlist */
-#define	VN_KNLIST_EMPTY(vp) ((vp)->v_pollinfo == NULL ||	\
-	    KNLIST_EMPTY(&(vp)->v_pollinfo->vpi_selinfo.si_note))
-
-#define VN_KNOTE(vp, b, a)					\
-	do {							\
-		if (!VN_KNLIST_EMPTY(vp))			\
-			KNOTE(&vp->v_pollinfo->vpi_selinfo.si_note, (b), \
-			    (a) | KNF_NOKQLOCK);		\
-	} while (0)
-#define	VN_KNOTE_LOCKED(vp, b)		VN_KNOTE(vp, b, KNF_LISTLOCKED)
-#define	VN_KNOTE_UNLOCKED(vp, b)	VN_KNOTE(vp, b, 0)
+#define VN_KNOTE(vp, b, a) do {                    			\
+	if ((vn_irflag_read(vp) & VIRF_KNOTE) != 0) {			\
+		KNOTE(&vp->v_pollinfo->vpi_selinfo.si_note, (b),	\
+		    (a) | KNF_NOKQLOCK);				\
+	}								\
+} while (0)
+#define   VN_KNOTE_LOCKED(vp, b)     VN_KNOTE(vp, b, KNF_LISTLOCKED)
+#define   VN_KNOTE_UNLOCKED(vp, b)   VN_KNOTE(vp, b, 0)
 
 /*
  * Vnode flags.
@@ -260,6 +255,7 @@ _Static_assert(sizeof(struct vnode) <= 448, "vnode size crosses 448 bytes");
 #define	VIRF_INOTIFY	0x0080	/* This vnode is being watched */
 #define	VIRF_INOTIFY_PARENT 0x0100 /* A parent of this vnode may be being
 				      watched */
+#define	VIRF_KNOTE	0x0200	/* Has knlist */
 
 #define	VI_UNUSED0	0x0001	/* unused */
 #define	VI_MOUNT	0x0002	/* Mount in progress */
@@ -268,6 +264,7 @@ _Static_assert(sizeof(struct vnode) <= 448, "vnode size crosses 448 bytes");
 #define	VI_DEFINACT	0x0010	/* deferred inactive */
 #define	VI_FOPENING	0x0020	/* In open, with opening process having the
 				   first right to advlock file */
+#define	VI_DELAYED_SETSIZE 0x0040	/* Delayed setsize */
 
 #define	VV_ROOT		0x0001	/* root of its filesystem */
 #define	VV_ISTTY	0x0002	/* vnode represents a tty */
@@ -1051,7 +1048,7 @@ void	vop_rename_fail(struct vop_rename_args *ap);
 	off_t osize, ooffset, noffset;					\
 									\
 	osize = ooffset = noffset = 0;					\
-	if (!VN_KNLIST_EMPTY((ap)->a_vp)) {				\
+	if ((vn_irflag_read((ap)->a_vp) & VIRF_KNOTE) != 0) {		\
 		error = VOP_GETATTR((ap)->a_vp, &va, (ap)->a_cred);	\
 		if (error)						\
 			return (error);					\
@@ -1062,10 +1059,8 @@ void	vop_rename_fail(struct vop_rename_args *ap);
 #define vop_write_post(ap, ret)						\
 	noffset = (ap)->a_uio->uio_offset;				\
 	if (noffset > ooffset) {					\
-		if (!VN_KNLIST_EMPTY((ap)->a_vp)) {			\
-			VFS_KNOTE_LOCKED((ap)->a_vp, NOTE_WRITE |	\
-			    (noffset > osize ? NOTE_EXTEND : 0));	\
-		}							\
+		VFS_KNOTE_LOCKED((ap)->a_vp, NOTE_WRITE |		\
+		    (noffset > osize ? NOTE_EXTEND : 0));		\
 		INOTIFY((ap)->a_vp, IN_MODIFY);				\
 	}
 
@@ -1250,6 +1245,36 @@ vn_get_state(struct vnode *vp)
 	VFS_SMR_ASSERT_ENTERED();		\
 	atomic_load_consume_ptr(&(_vp)->v_data);\
 })
+
+static inline void
+vn_delayed_setsize_locked(struct vnode *vp)
+{
+	ASSERT_VI_LOCKED(vp, "delayed_setsize");
+	vp->v_iflag |= VI_DELAYED_SETSIZE;
+}
+
+static inline void
+vn_delayed_setsize(struct vnode *vp)
+{
+	VI_LOCK(vp);
+	vn_delayed_setsize_locked(vp);
+	VI_UNLOCK(vp);
+}
+
+static inline void
+vn_clear_delayed_setsize_locked(struct vnode *vp)
+{
+	ASSERT_VI_LOCKED(vp, "delayed_setsize");
+	vp->v_iflag &= ~VI_DELAYED_SETSIZE;
+}
+
+static inline void
+vn_clear_delayed_setsize(struct vnode *vp)
+{
+	VI_LOCK(vp);
+	vn_clear_delayed_setsize_locked(vp);
+	VI_UNLOCK(vp);
+}
 
 #endif /* _KERNEL */
 

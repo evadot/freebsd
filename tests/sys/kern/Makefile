@@ -17,6 +17,7 @@ ATF_TESTS_C+=	kern_copyin
 ATF_TESTS_C+=	kern_descrip_test
 # One test modifies the maxfiles limit, which can cause spurious test failures.
 TEST_METADATA.kern_descrip_test+= is_exclusive="true"
+PLAIN_TESTS_C+=	execve_overflow
 ATF_TESTS_C+=	exterr_test
 ATF_TESTS_C+=	fdgrowtable_test
 ATF_TESTS_C+=	getdirentries_test
@@ -25,6 +26,7 @@ ATF_TESTS_C+=	inotify_test
 ATF_TESTS_C+=	kill_zombie
 .if ${MK_OPENSSL} != "no"
 ATF_TESTS_C+=	ktls_test
+ATF_TESTS_C+=	ssl_sendfile
 .endif
 ATF_TESTS_C+=	ktrace_test
 ATF_TESTS_C+=	listener_wakeup
@@ -50,9 +52,12 @@ TEST_METADATA.sigwait+=	is_exclusive="true"
 ATF_TESTS_C+=	subr_physmem_test
 .endif
 PLAIN_TESTS_C+=	subr_unit_test
-ATF_TESTS_C+=	ssl_sendfile
 ATF_TESTS_C+=	sysctl_kern_proc
 ATF_TESTS_C+=	sys_getrandom
+ATF_TESTS_C+=	timerfd
+LIBADD.timerfd+=	pthread
+# One test modifies the system time.
+TEST_METADATA.timerfd+=	is_exclusive="true"
 ATF_TESTS_C+=	tty_pts
 ATF_TESTS_C+=	unix_dgram
 ATF_TESTS_C+=	unix_passfd_dgram

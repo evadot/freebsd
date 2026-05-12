@@ -2573,8 +2573,8 @@ userland_sysctl(struct thread *td, int *name, u_int namelen, void *old,
 		ktrsysctl(name, namelen);
 #endif
 	memlocked = false;
-	if (priv_check(td, PRIV_SYSCTL_MEMLOCK) != 0 &&
-	    req.oldptr != NULL && req.oldlen > 4 * PAGE_SIZE) {
+	if (req.oldptr != NULL && req.oldlen > 4 * PAGE_SIZE &&
+	    priv_check(td, PRIV_SYSCTL_MEMLOCK) != 0) {
 		memlocked = true;
 		sx_xlock(&sysctlmemlock);
 	}
@@ -3084,7 +3084,7 @@ db_sysctl_cmd_usage(void)
 	    "								    \n"
 	    "For example:						    \n"
 	    "sysctl vm.v_free_min					    \n"
-	    "vn.v_free_min: 12669					    \n"
+	    "vm.v_free_min: 12669					    \n"
 	    );
 }
 
