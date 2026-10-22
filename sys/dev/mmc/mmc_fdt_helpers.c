@@ -44,6 +44,12 @@
 
 #include "mmc_pwrseq_if.h"
 
+/*
+ * Settling time after a card is powered up (supplies enabled and any
+ * mmc-pwrseq reset de-asserted) before the first command may be issued.
+ */
+#define	MMC_FDT_POWER_UP_DELAY_US	10000
+
 int
 mmc_fdt_parse(device_t dev, phandle_t node, struct mmc_helper *helper,
     struct mmc_host *host)
@@ -382,6 +388,17 @@ mmc_fdt_set_power(struct mmc_helper *helper, enum mmc_power_mode power_mode)
 		}
 		if (helper->mmc_pwrseq)
 			MMC_PWRSEQ_SET_POWER(helper->mmc_pwrseq, true);
+		/*
+		 * Give the card time to settle after the supplies have been
+		 * enabled and any mmc-pwrseq reset has been de-asserted before
+		 * the first command is sent.  The SD/SDIO specifications
+		 * require a power-ramp settling period, and some devices (e.g.
+		 * Broadcom SDIO Wi-Fi) do not respond to the initial CMD0/CMD5
+		 * if probed immediately.  Linux applies an equivalent delay in
+		 * its MMC power-up path; MMCCAM has none, which makes such
+		 * cards enumerate unreliably.
+		 */
+		DELAY(MMC_FDT_POWER_UP_DELAY_US);
 		break;
 	}
 }
