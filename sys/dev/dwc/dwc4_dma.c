@@ -112,6 +112,7 @@
 #define	TDES3_CIC_FULLP	(0x3 << TDES3_CIC_S) /* IP header, payload, pseudo-hdr*/
 #define	TDES3_TPL_S	0 /* TCP Payload Length */
 #define	TDES3_TPL_M	(0x3ffff << TDES3_TPL_S)
+#define	TDES3_PL_M	0x7fff /* Packet Length */
 
 /*
  * A hardware buffer descriptor.  Rx and Tx buffers have the same descriptor
@@ -170,7 +171,7 @@ txdesc_clear(struct dwc_softc *sc, int idx)
 
 inline static void
 txdesc_setup(struct dwc_softc *sc, int idx, bus_addr_t paddr,
-  uint32_t len, uint32_t flags, bool first, bool last)
+  uint32_t len, uint32_t pktlen, uint32_t flags, bool first, bool last)
 {
 	uint32_t tdes0, tdes1, tdes2, tdes3;
 
@@ -178,7 +179,8 @@ txdesc_setup(struct dwc_softc *sc, int idx, bus_addr_t paddr,
 		tdes0 = (uint32_t)paddr;
 		tdes1 = (uint32_t)((uint64_t)paddr >> 32);
 		tdes2 = len | TDES2_TTSE;
-		tdes3 = flags;
+		/* The core needs the total packet length in TDES3. */
+		tdes3 = flags | (pktlen & TDES3_PL_M);
 
 		if (first)
 			tdes3 |= TDES3_FD;
@@ -275,7 +277,7 @@ dma4_setup_txbuf(struct dwc_softc *sc, int idx, struct mbuf **mp)
 
 	for (i = 0; i < nsegs; i++) {
 		txdesc_setup(sc, sc->tx_desc_head,
-		    segs[i].ds_addr, segs[i].ds_len,
+		    segs[i].ds_addr, segs[i].ds_len, m->m_pkthdr.len,
 		    (i == 0) ? flags : 0, /* only first desc needs flags */
 		    (i == 0),
 		    (i == nsegs - 1));
