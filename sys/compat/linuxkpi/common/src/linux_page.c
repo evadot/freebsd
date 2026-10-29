@@ -336,6 +336,8 @@ struct vmmap {
 	LIST_ENTRY(vmmap)	vm_next;
 	void			*vm_addr;
 	unsigned long		vm_size;
+	vm_memattr_t		vm_attr;	/* set by vmap() */
+	bool			vm_attr_set;
 };
 
 struct vmmaphd {
@@ -373,6 +375,26 @@ vmmap_add(void *addr, unsigned long size)
 	vmmap->vm_size = size;
 	vmmap->vm_addr = addr;
 	LIST_INSERT_HEAD(&vmmaphead[VM_HASH(addr)], vmmap, vm_next);
+	mtx_unlock(&vmmaplock);
+}
+
+/*
+ * Remember that vmap() changed the memory attribute of the pages of this
+ * mapping, so that it can be restored by vunmap().
+ */
+static void
+vmmap_set_attr(void *addr, vm_memattr_t attr)
+{
+	struct vmmap *vmmap;
+
+	mtx_lock(&vmmaplock);
+	LIST_FOREACH(vmmap, &vmmaphead[VM_HASH(addr)], vm_next)
+		if (vmmap->vm_addr == addr)
+			break;
+	if (vmmap != NULL) {
+		vmmap->vm_attr = attr;
+		vmmap->vm_attr_set = true;
+	}
 	mtx_unlock(&vmmaplock);
 }
 
@@ -455,12 +477,38 @@ vmap(struct page **pages, unsigned int count, unsigned long flags, int prot)
 {
 	void *off;
 	size_t size;
+	vm_memattr_t attr;
+	unsigned int i;
 
 	size = count * PAGE_SIZE;
 	off = kva_alloc(size);
 	if (off == NULL)
 		return (NULL);
 	vmmap_add(off, size);
+
+	/*
+	 * pmap_qenter() uses the memory attribute of each page, so honor the
+	 * requested protection by setting it on the pages that still have the
+	 * default one.  Without this a write-combining or uncached mapping is
+	 * in fact write-back, and callers that rely on the mapping not being
+	 * cached (e.g. i915 does not flush the CPU caches for I915_MAP_WC)
+	 * leave stale data in memory for the device.  Pages which already have
+	 * another attribute (e.g. set by TTM) are left alone.
+	 */
+	attr = pgprot2cachemode(prot);
+	if (attr != VM_MEMATTR_DEFAULT) {
+		bool changed = false;
+
+		for (i = 0; i < count; i++) {
+			if (pmap_page_get_memattr(pages[i]) ==
+			    VM_MEMATTR_DEFAULT) {
+				pmap_page_set_memattr(pages[i], attr);
+				changed = true;
+			}
+		}
+		if (changed)
+			vmmap_set_attr(off, attr);
+	}
 	pmap_qenter(off, pages, count);
 
 	return (off);
@@ -526,10 +574,22 @@ void
 vunmap(void *addr)
 {
 	struct vmmap *vmmap;
+	vm_page_t m;
+	unsigned int i;
 
 	vmmap = vmmap_remove(addr);
 	if (vmmap == NULL)
 		return;
+	if (vmmap->vm_attr_set) {
+		/* Restore the attribute that vmap() changed. */
+		for (i = 0; i < vmmap->vm_size / PAGE_SIZE; i++) {
+			m = PHYS_TO_VM_PAGE(pmap_kextract(
+			    (vm_offset_t)addr + ptoa(i)));
+			if (m != NULL &&
+			    pmap_page_get_memattr(m) == vmmap->vm_attr)
+				pmap_page_set_memattr(m, VM_MEMATTR_DEFAULT);
+		}
+	}
 	pmap_qremove(addr, vmmap->vm_size / PAGE_SIZE);
 	kva_free(addr, vmmap->vm_size);
 	kfree(vmmap);
