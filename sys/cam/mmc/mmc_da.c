@@ -1070,6 +1070,7 @@ mmc_set_timing(struct cam_periph *periph,
 			value = EXT_CSD_HS_TIMING_BC;
 			break;
 		case bus_timing_hs:
+		case bus_timing_mmc_ddr52:
 			value = EXT_CSD_HS_TIMING_HS;
 			break;
 		case bus_timing_mmc_hs200:
@@ -1312,6 +1313,7 @@ struct sdda_speed {
 	u_long	 max_clock;		/* Per-slot clock limit, 0 for none */
 	enum mmc_bus_timing max_timing;	/* Per-slot timing limit */
 	bool	 use_hs200;
+	bool	 use_ddr52;
 };
 
 /*
@@ -1413,6 +1415,7 @@ sdda_get_host_speed(struct cam_periph *periph, union ccb *ccb,
 	spd->host_f_max = cts->host_f_max;
 	spd->host_caps = cts->host_caps;
 	spd->use_hs200 = false;
+	spd->use_ddr52 = false;
 
 	sdda_get_slot_limits(periph, &spd->max_timing, &spd->max_clock);
 	if (spd->max_timing != bus_timing_max)
@@ -1512,6 +1515,24 @@ sdda_probe_mmc_speed(struct cam_periph *periph, struct sdda_speed *spd)
 		spd->use_hs200 = true;
 }
 
+/*
+ * Return the signaling voltage that DDR52 can use on this card and host, or
+ * vccq_330 (which DDR52 can not use) if there is none.
+ */
+static enum mmc_vccq
+sdda_ddr52_vccq(struct cam_periph *periph, struct sdda_speed *spd)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+
+	if (isset(&softc->vccq_120, bus_timing_mmc_ddr52) &&
+	    (spd->host_caps & MMC_CAP_MMC_DDR52_120) != 0)
+		return (vccq_120);
+	if (isset(&softc->vccq_180, bus_timing_mmc_ddr52) &&
+	    (spd->host_caps & MMC_CAP_MMC_DDR52_180) != 0)
+		return (vccq_180);
+	return (vccq_330);
+}
+
 /* Find out what the card and the host can do, within the slot limits. */
 static void
 sdda_probe_speed(struct cam_periph *periph, union ccb *ccb,
@@ -1537,6 +1558,10 @@ sdda_probe_speed(struct cam_periph *periph, union ccb *ccb,
 		xpt_print(periph->path, "HS200 disabled by tunable\n");
 		spd->use_hs200 = false;
 	}
+
+	/* Without HS200, DDR52 is the fastest mode of an eMMC. */
+	if (!spd->use_hs200 && spd->max_timing >= bus_timing_mmc_ddr52)
+		spd->use_ddr52 = sdda_ddr52_vccq(periph, spd) != vccq_330;
 }
 
 /* Set the signaling voltage for the speed that was chosen. */
@@ -1555,6 +1580,13 @@ sdda_set_vccq(struct cam_periph *periph, union ccb *ccb, struct sdda_speed *spd)
 		CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
 		    ("Cannot set VCCQ to 1.8V, not using HS200\n"));
 		spd->use_hs200 = false;
+	}
+
+	if (spd->use_ddr52) {
+		cts->ios.vccq = sdda_ddr52_vccq(periph, spd);
+		cts->ios_valid = MMC_VCCQ;
+		sdda_set_host_ios(ccb);
+		return;
 	}
 
 	/* Use the voltage of DDR52 if the card has it, 3.3V otherwise. */
@@ -1627,6 +1659,51 @@ sdda_enable_hs200(struct cam_periph *periph, union ccb *ccb,
 	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card switched to HS200\n"));
 }
 
+/*
+ * Switch an eMMC to DDR52.  The bus width has to be set to its DDR variant
+ * after the card has been switched to high speed timing.  Go back to
+ * single data rate if that fails.
+ */
+static void
+sdda_enable_ddr52(struct cam_periph *periph, union ccb *ccb,
+    enum mmc_bus_width width)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	struct ccb_trans_settings_mmc *cts = &ccb->cts.proto_specific.mmc;
+	int err;
+
+	err = mmc_set_timing(periph, ccb, bus_timing_mmc_ddr52);
+	if (err == MMC_ERR_NONE) {
+		switch (width) {
+		case bus_width_4:
+			err = mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+			    EXT_CSD_BUS_WIDTH, EXT_CSD_BUS_WIDTH_4_DDR,
+			    softc->cmd6_time);
+			break;
+		case bus_width_8:
+			err = mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+			    EXT_CSD_BUS_WIDTH, EXT_CSD_BUS_WIDTH_8_DDR,
+			    softc->cmd6_time);
+			break;
+		default:
+			/* DDR needs at least 4 data lines. */
+			err = MMC_ERR_INVALID;
+			break;
+		}
+	}
+	if (err != MMC_ERR_NONE) {
+		CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
+		    ("Cannot switch to DDR52, err %d, falling back to "
+		    "high speed\n", err));
+		cts->ios.timing = bus_timing_hs;
+		cts->ios_valid = MMC_BT;
+		sdda_set_host_ios(ccb);
+		sdda_set_bus_width(periph, ccb, width);
+		return;
+	}
+	CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH, ("Card switched to DDR52\n"));
+}
+
 /* Program the timing, voltage, clock and bus width into the card and host. */
 static void
 sdda_set_speed(struct cam_periph *periph, union ccb *ccb,
@@ -1670,6 +1747,8 @@ sdda_set_speed(struct cam_periph *periph, union ccb *ccb,
 
 	if (spd->use_hs200)
 		sdda_enable_hs200(periph, ccb, spd, width);
+	else if (spd->use_ddr52)
+		sdda_enable_ddr52(periph, ccb, width);
 }
 
 static void
