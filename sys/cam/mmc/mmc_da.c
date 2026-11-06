@@ -90,12 +90,16 @@ typedef enum {
 	SDDA_STATE_INVALID,
 	SDDA_STATE_NORMAL,
 	SDDA_STATE_PART_SWITCH,
+	SDDA_STATE_TRIM,
 } sdda_state;
 
 /* Purposefully ignore a '%d' argument to snprintf in SDDA_FMT! */
 #define	SDDA_FMT		"%s"
 #define	SDDA_FMT_BOOT		"%s%dboot"
 #define	SDDA_FMT_GP		"%s%dgp"
+
+/* Largest BIO_DELETE sent in one TRIM sequence. */
+#define	SDDA_TRIM_MAXSIZE	(256ULL * 1024 * 1024)
 #define	SDDA_FMT_RPMB		"%s%drpmb"
 #define	SDDA_LABEL_ENH		"enh"
 
@@ -118,6 +122,9 @@ struct sdda_softc {
 	int	 outstanding_cmds;	/* Number of active commands */
 	int	 refcount;		/* Active xpt_action() calls */
 	sdda_state state;
+	struct bio *trim_bp;	/* BIO_DELETE being processed */
+	struct bio *delete_bp;	/* BIO_DELETE waiting for the I/O in flight */
+	uint8_t trim_step;	/* Next TRIM command to send */
 	struct mmc_data *mmcdata;
 	struct cam_periph *periph;
 //	sdda_quirks quirks;
@@ -1876,6 +1883,18 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	part->disk->d_maxsize = MIN(maxphys, cpi.maxio);
 	part->disk->d_unit = cnt;
 	part->disk->d_flags = 0;
+	/*
+	 * Use TRIM on eMMC (EXT_CSD_SEC_FEATURE_SUPPORT_GB_CL_EN denotes
+	 * support for both insecure and secure TRIM) for the user area.
+	 */
+	if (type == EXT_CSD_PART_CONFIG_ACC_DEFAULT &&
+	    (periph->path->device->mmc_ident_data.card_features &
+	    CARD_FEATURE_MMC) != 0 && mmc_get_spec_vers(periph) >= 4 &&
+	    (sc->raw_ext_csd[EXT_CSD_SEC_FEATURE_SUPPORT] &
+	    EXT_CSD_SEC_FEATURE_SUPPORT_GB_CL_EN) != 0) {
+		part->disk->d_flags |= DISKFLAG_CANDELETE;
+		part->disk->d_delmaxsize = MIN(SDDA_TRIM_MAXSIZE, media_size);
+	}
 	strlcpy(part->disk->d_descr, sc->card_id_string,
 	    MIN(sizeof(part->disk->d_descr), sizeof(sc->card_id_string)));
 	strlcpy(part->disk->d_ident, sc->card_sn_string,
@@ -2079,6 +2098,46 @@ sdda_init_switch_part(struct cam_periph *periph, union ccb *start_ccb,
 	cam_periph_lock(periph);
 }
 
+/*
+ * Fill in the next command of a TRIM sequence (CMD35, CMD36, CMD38).  The
+ * three commands must be sent back to back, so the sequence is driven from
+ * sddadone() while the state is SDDA_STATE_TRIM.
+ */
+static void
+sdda_trim_fill(struct cam_periph *periph, union ccb *ccb, struct bio *bp,
+    uint8_t step)
+{
+	struct mmc_params *mmcp = &periph->path->device->mmc_ident_data;
+	uint64_t start, end;
+	uint32_t opcode, arg, flags;
+
+	start = bp->bio_pblkno;
+	end = start + bp->bio_bcount / MMC_SECTOR_SIZE - 1;
+	switch (step) {
+	case 0:
+		opcode = MMC_ERASE_GROUP_START;
+		arg = start;
+		flags = MMC_RSP_R1 | MMC_CMD_AC;
+		break;
+	case 1:
+		opcode = MMC_ERASE_GROUP_END;
+		arg = end;
+		flags = MMC_RSP_R1 | MMC_CMD_AC;
+		break;
+	default:
+		opcode = MMC_ERASE;
+		arg = MMC_ERASE_TRIM;
+		flags = MMC_RSP_R1B | MMC_CMD_AC;
+		break;
+	}
+	if (step < 2 && !(mmcp->card_features & CARD_FEATURE_SDHC))
+		arg <<= 9;
+
+	cam_fill_mmcio(&ccb->mmcio, /*retries*/ 0, sddadone, CAM_DIR_NONE,
+	    opcode, arg, flags, NULL, /*timeout*/ 15 * 1000);
+	ccb->ccb_h.ccb_bp = bp;
+}
+
 /* Called with periph lock held! */
 static void
 sddastart(struct cam_periph *periph, union ccb *start_ccb)
@@ -2097,20 +2156,38 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 		return;
 	}
 
-	/* Find partition that has outstanding commands.  Prefer current partition. */
-	part_index = softc->part_curr;
-	part = softc->part[softc->part_curr];
-	bp = bioq_first(&part->bio_queue);
-	if (bp == NULL) {
-		for (part_index = 0; part_index < MMC_PART_MAX; part_index++) {
-			if ((part = softc->part[part_index]) != NULL &&
-			    (bp = bioq_first(&softc->part[part_index]->bio_queue)) != NULL)
-				break;
+	if (softc->delete_bp != NULL) {
+		/*
+		 * A BIO_DELETE is waiting for the I/O in flight to be done,
+		 * do not start anything else or it would never get its turn.
+		 */
+		if (softc->outstanding_cmds != 0) {
+			xpt_release_ccb(start_ccb);
+			return;
 		}
-	}
-	if (bp == NULL) {
-		xpt_release_ccb(start_ccb);
-		return;
+		bp = softc->delete_bp;
+		part = (struct sdda_part *)bp->bio_disk->d_drv1;
+		part_index = part->type;
+	} else {
+		/*
+		 * Find partition that has outstanding commands.  Prefer current
+		 * partition.
+		 */
+		part_index = softc->part_curr;
+		part = softc->part[softc->part_curr];
+		bp = bioq_first(&part->bio_queue);
+		if (bp == NULL) {
+			for (part_index = 0; part_index < MMC_PART_MAX;
+			    part_index++) {
+				if ((part = softc->part[part_index]) != NULL &&
+				    (bp = bioq_first(&softc->part[part_index]->bio_queue)) != NULL)
+					break;
+			}
+		}
+		if (bp == NULL) {
+			xpt_release_ccb(start_ccb);
+			return;
+		}
 	}
 	if (part_index != softc->part_curr) {
 		CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
@@ -2131,7 +2208,8 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 		return;
 	}
 
-	bioq_remove(&part->bio_queue, bp);
+	if (bp != softc->delete_bp)
+		bioq_remove(&part->bio_queue, bp);
 
 	switch (bp->bio_cmd) {
 	case BIO_WRITE:
@@ -2191,8 +2269,25 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 
 		break;
 	}
+	case BIO_DELETE:
+		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_DELETE\n"));
+		/*
+		 * The commands of a TRIM sequence must not be interleaved with
+		 * others, wait for the ones in flight to be done.
+		 */
+		if (softc->outstanding_cmds != 0) {
+			softc->delete_bp = bp;
+			xpt_release_ccb(start_ccb);
+			return;
+		}
+		softc->delete_bp = NULL;
+		softc->state = SDDA_STATE_TRIM;
+		softc->trim_bp = bp;
+		softc->trim_step = 1;
+		sdda_trim_fill(periph, start_ccb, bp, 0);
+		break;
 	default:
-		/* BIO_FLUSH and BIO_DELETE are not implemented. */
+		/* BIO_FLUSH is not implemented. */
 		biofinish(bp, NULL, EOPNOTSUPP);
 		xpt_release_ccb(start_ccb);
 		return;
@@ -2217,6 +2312,7 @@ sddadone(struct cam_periph *periph, union ccb *done_ccb)
 	struct cam_path *path;
 	uint32_t card_status;
 	int error = 0;
+	bool is_trim;
 
 	softc = (struct sdda_softc *)periph->softc;
 	mmcio = &done_ccb->mmcio;
@@ -2239,10 +2335,38 @@ sddadone(struct cam_periph *periph, union ccb *done_ccb)
 	}
 
 	card_status = mmcio->cmd.resp[0];
+
+	/*
+	 * Releasing a CCB can start the next BIO_DELETE before this function
+	 * returns, so being in the TRIM state does not mean that this CCB is
+	 * one of its commands.
+	 */
+	is_trim = softc->state == SDDA_STATE_TRIM && softc->trim_bp != NULL &&
+	    (struct bio *)done_ccb->ccb_h.ccb_bp == softc->trim_bp;
 	CAM_DEBUG(path, CAM_DEBUG_TRACE,
 	    ("Card status: %08x\n", R1_STATUS(card_status)));
 	CAM_DEBUG(path, CAM_DEBUG_TRACE,
 	    ("Current state: %d\n", R1_CURRENT_STATE(card_status)));
+
+	/* The card tells in its status when it dropped the TRIM. */
+	if (is_trim && error == 0 &&
+	    (card_status & (R1_OUT_OF_RANGE | R1_ADDRESS_ERROR |
+	    R1_ERASE_SEQ_ERROR | R1_ERASE_PARAM | R1_ERROR | R1_WP_ERASE_SKIP |
+	    R1_ERASE_RESET)) != 0) {
+		CAM_DEBUG(path, CAM_DEBUG_PERIPH,
+		    ("TRIM failed, card status 0x%08x\n", card_status));
+		error = EIO;
+	}
+
+	/* Send the next command of a TRIM sequence */
+	if (is_trim && error == 0 && softc->trim_step < 3) {
+		sdda_trim_fill(periph, done_ccb, softc->trim_bp,
+		    softc->trim_step++);
+		cam_periph_unlock(periph);
+		xpt_action(done_ccb);
+		cam_periph_lock(periph);
+		return;
+	}
 
 	/* Process result of switching MMC partitions */
 	if (softc->state == SDDA_STATE_PART_SWITCH) {
@@ -2294,6 +2418,15 @@ sddadone(struct cam_periph *periph, union ccb *done_ccb)
 
 	softc->outstanding_cmds--;
 	xpt_release_ccb(done_ccb);
+	if (is_trim) {
+		softc->state = SDDA_STATE_NORMAL;
+		softc->trim_bp = NULL;
+		/* Return to processing BIO requests */
+		xpt_schedule(periph, CAM_PRIORITY_NORMAL);
+	} else if (softc->delete_bp != NULL && softc->outstanding_cmds == 0) {
+		/* The I/O that a BIO_DELETE was waiting for is done */
+		xpt_schedule(periph, CAM_PRIORITY_NORMAL);
+	}
 	/*
 	 * Release the periph refcount taken in sddastart() for each CCB.
 	 */
