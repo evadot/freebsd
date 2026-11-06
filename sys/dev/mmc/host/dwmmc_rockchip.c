@@ -154,11 +154,21 @@ dwmmc_rockchip_update_ios(struct dwmmc_softc *sc, struct mmc_ios *ios)
 	struct rockchip_dwmmc_softc *rsc;
 	unsigned int clock;
 	int error;
+	bool ddr52_8bit;
 
 	rsc = (struct rockchip_dwmmc_softc *)sc;
 
-	if (ios->clock && ios->clock != sc->bus_hz) {
-		sc->bus_hz = clock = ios->clock;
+	/*
+	 * The clock divider can only be 0 or 1, and it must be 1 for eMMC
+	 * DDR52 with 8 data lines: the ciu clock then has to be four times
+	 * the card clock instead of twice.
+	 */
+	ddr52_8bit = ios->timing == bus_timing_mmc_ddr52 &&
+	    ios->bus_width == bus_width_8;
+	clock = ios->clock * (ddr52_8bit ? 2 : 1);
+
+	if (ios->clock && clock != sc->bus_hz) {
+		sc->bus_hz = clock;
 		/* Set the MMC clock. */
 		if (sc->ciu) {
 			/*
@@ -180,20 +190,22 @@ dwmmc_rockchip_update_ios(struct dwmmc_softc *sc, struct mmc_ios *ios)
 					device_printf(sc->dev,
 					    "ciu clock %ju Hz for bus clock "
 					    "%u Hz\n", (uintmax_t)actual,
-					    clock);
+					    ios->clock);
 			}
 		}
 	}
 
 	/*
-	 * Only HS200 needs the phases to be set: the legacy speeds keep the
-	 * phases the controller starts with.  The drive phase is not tuned,
-	 * a fixed offset provides enough hold time.  At up to 150MHz, 180
-	 * degrees gives more margin than the usual 90 degrees.
+	 * Only HS200 and 8-bit DDR52 need the phases to be set: the legacy
+	 * speeds keep the phases the controller starts with.  The drive phase
+	 * is not tuned, a fixed offset provides enough hold time.  At up to
+	 * 150MHz, 180 degrees gives more margin than the usual 90 degrees.  It
+	 * is also needed for DDR52 with 8 data lines as the ciu clock is
+	 * doubled then.
 	 */
 	if (rsc->drv_clk != NULL && ios->clock != 0 &&
 	    (ios->timing == bus_timing_mmc_hs200 ||
-	    ios->timing == bus_timing_uhs_sdr104) &&
+	    ios->timing == bus_timing_uhs_sdr104 || ddr52_8bit) &&
 	    rsc->drv_phase != 180) {
 		error = clk_set_phase(rsc->drv_clk, 180);
 		if (error != 0)
