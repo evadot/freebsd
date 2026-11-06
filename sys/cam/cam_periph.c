@@ -895,14 +895,19 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo,
 	case XPT_MMC_IO:
 		if ((ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_NONE)
 			return(0);
-		/* Two mappings: one for cmd->data and one for cmd->data->data */
+		if (ccb->mmcio.cmd.data == NULL)
+			return (EINVAL);
+		/*
+		 * Two mappings: one for cmd->data and one for cmd->data->data.
+		 * cmd->data is a userland pointer until it has been mapped, so
+		 * only map it here.  The second mapping is set up in the loop
+		 * below, once struct mmc_data can be read through the kernel
+		 * mapping.
+		 */
 		data_ptrs[0] = (unsigned char **)&ccb->mmcio.cmd.data;
 		lengths[0] = sizeof(struct mmc_data);
 		dirs[0] = ccb->ccb_h.flags & CAM_DIR_MASK;
-		data_ptrs[1] = (unsigned char **)&ccb->mmcio.cmd.data->data;
-		lengths[1] = ccb->mmcio.cmd.data->len;
-		dirs[1] = ccb->ccb_h.flags & CAM_DIR_MASK;
-		numbufs = 2;
+		numbufs = 1;
 		break;
 	case XPT_SMP_IO:
 		data_ptrs[0] = &ccb->smpio.smp_request;
@@ -1000,6 +1005,23 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo,
 
 		/* set our pointer to the new mapped area */
 		*data_ptrs[i] = mapinfo->bp[i]->b_data;
+
+		if (i == 0 && ccb->ccb_h.func_code == XPT_MMC_IO) {
+			struct mmc_data *md = ccb->mmcio.cmd.data;
+
+			/* Now map the data buffer, if there is one. */
+			if (md->data != NULL && md->len > 0) {
+				if (md->len > maxmap) {
+					/* Unwind the first mapping. */
+					i = 1;
+					goto fail;
+				}
+				data_ptrs[1] = (uint8_t **)&md->data;
+				lengths[1] = md->len;
+				dirs[1] = ccb->ccb_h.flags & CAM_DIR_MASK;
+				numbufs = 2;
+			}
+		}
 	}
 
 	/*
@@ -1078,10 +1100,13 @@ cam_periph_unmapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 		data_ptrs[0] = (uint8_t **)&ccb->mmcio.cmd.data;
 		lengths[0] = sizeof(struct mmc_data);
 		dirs[0] = ccb->ccb_h.flags & CAM_DIR_MASK;
-		data_ptrs[1] = (uint8_t **)&ccb->mmcio.cmd.data->data;
-		lengths[1] = ccb->mmcio.cmd.data->len;
-		dirs[1] = ccb->ccb_h.flags & CAM_DIR_MASK;
-		numbufs = 2;
+		numbufs = mapinfo->num_bufs_used;
+		if (numbufs == 2) {
+			/* cmd.data is the kernel mapping at this point. */
+			data_ptrs[1] = (uint8_t **)&ccb->mmcio.cmd.data->data;
+			lengths[1] = ccb->mmcio.cmd.data->len;
+			dirs[1] = ccb->ccb_h.flags & CAM_DIR_MASK;
+		}
 		break;
 	case XPT_SMP_IO:
 		data_ptrs[0] = &ccb->smpio.smp_request;
