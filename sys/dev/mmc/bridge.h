@@ -184,6 +184,9 @@ struct mmc_host {
 #ifdef _KERNEL
 extern driver_t   mmc_driver;
 
+const char *mmc_bus_timing_name(enum mmc_bus_timing timing);
+bool mmc_bus_timing_from_name(const char *name, enum mmc_bus_timing *timing);
+
 #define	MMC_VERSION	5
 
 #define	MMC_DECLARE_BRIDGE(name)					\
