@@ -327,6 +327,13 @@ sdhci_fdt_rockchip_attach(device_t dev)
 		mmc_fdt_parse(dev, ofw_bus_get_node(dev), &rsc->helper,
 		    &sc->slots[0].host);
 
+		/*
+		 * The controller can do eMMC DDR52, but neither its
+		 * capabilities nor the DT of the boards tell so.
+		 */
+		if ((sc->slots[0].host.caps & MMC_CAP_SIGNALING_180) != 0)
+			sc->slots[0].host.caps |= MMC_CAP_MMC_DDR52_180;
+
 		sdhci_export_clocks(sc);
 		if ((err = sdhci_init_phy(sc)) != 0) {
 			device_printf(dev, "Cannot init phy\n");
