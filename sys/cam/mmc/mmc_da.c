@@ -2191,15 +2191,8 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 
 		break;
 	}
-	case BIO_FLUSH:
-		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_FLUSH\n"));
-		sddaschedule(periph);
-		break;
-	case BIO_DELETE:
-		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_DELETE\n"));
-		sddaschedule(periph);
-		break;
 	default:
+		/* BIO_FLUSH and BIO_DELETE are not implemented. */
 		biofinish(bp, NULL, EOPNOTSUPP);
 		xpt_release_ccb(start_ccb);
 		return;
