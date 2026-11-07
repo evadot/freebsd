@@ -133,6 +133,8 @@ struct sdda_softc {
 	struct bio *trim_bp;	/* BIO_DELETE being processed */
 	uint8_t trim_step;	/* Next TRIM or erase command to send */
 	struct bio *delete_bp;	/* BIO_DELETE waiting for the I/O in flight */
+	bool cache_en;		/* The eMMC cache is enabled */
+	bool cache_dirty;	/* Data was written since the last flush */
 	daddr_t trim_start;	/* Sectors to TRIM or erase, end excluded */
 	daddr_t trim_end;
 	struct mmc_data *mmcdata;
@@ -200,6 +202,9 @@ static  int		sddaerror(union ccb *ccb, uint32_t cam_flags,
 static int mmc_handle_reply(union ccb *ccb);
 static uint16_t get_rca(struct cam_periph *periph);
 static void sdda_start_init(void *context, union ccb *start_ccb);
+static int sdda_flush_cache(struct cam_periph *periph);
+static int sdda_flush_polled(struct cam_periph *periph);
+static void sddashutdown(void *arg, int howto);
 static void sdda_start_init_task(void *context, int pending);
 static void sdda_process_mmc_partitions(struct cam_periph *periph, union ccb *start_ccb);
 static uint32_t sdda_get_host_caps(struct cam_periph *periph, union ccb *ccb);
@@ -212,6 +217,18 @@ static SYSCTL_NODE(_kern_cam, OID_AUTO, sdda, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
 static int sdda_mmcsd_compat = 1;
 SYSCTL_INT(_kern_cam_sdda, OID_AUTO, mmcsd_compat, CTLFLAG_RDTUN,
     &sdda_mmcsd_compat, 1, "Enable creation of mmcsd aliases.");
+
+/*
+ * Enable the cache of the eMMC cards that have one.  Data in the cache is
+ * lost if the power goes away before it is flushed, which BIO_FLUSH, closing
+ * the disk, a shutdown and a crash dump do.
+ */
+static int sdda_cache = 1;
+SYSCTL_INT(_kern_cam_sdda, OID_AUTO, cache, CTLFLAG_RDTUN,
+    &sdda_cache, 1, "Enable the cache of eMMC cards.");
+
+/* Flushing the cache can take a long time. */
+#define	SDDA_FLUSH_TIMEOUT	(60 * 1000)	/* milliseconds */
 
 /* TODO: actually issue GET_TRAN_SETTINGS to get R/O status */
 static inline bool sdda_get_read_only(struct cam_periph *periph, union ccb *start_ccb)
@@ -507,6 +524,8 @@ sddaclose(struct disk *dp)
 
 	while (softc->refcount != 0)
 		cam_periph_sleep(periph, &softc->refcount, PRIBIO, "sddaclose", 1);
+	if (sdda_flush_cache(periph) != 0)
+		xpt_print(periph->path, "Flushing the cache failed\n");
 	cam_periph_unlock(periph);
 	cam_periph_release(periph);
 	return (0);
@@ -567,7 +586,10 @@ sddastrategy(struct bio *bp)
 	/*
 	 * Place it in the queue of disk activities for this disk
 	 */
-	bioq_disksort(&part->bio_queue, bp);
+	if (bp->bio_cmd == BIO_FLUSH)
+		bioq_insert_tail(&part->bio_queue, bp);
+	else
+		bioq_disksort(&part->bio_queue, bp);
 
 	/*
 	 * Schedule ourselves for performing the work.
@@ -593,6 +615,11 @@ sddainit(void)
 		printf("sdda: Failed to attach master async callback "
 		       "due to status 0x%x!\n", status);
 	}
+
+	/* Flush the cache of the cards when the system goes down. */
+	if (EVENTHANDLER_REGISTER(shutdown_post_sync, sddashutdown, NULL,
+	    SHUTDOWN_PRI_DEFAULT) == NULL)
+		printf("sdda: shutdown event registration failed!\n");
 }
 
 /*
@@ -1768,6 +1795,123 @@ sdda_set_speed(struct cam_periph *periph, union ccb *ccb,
 		sdda_enable_ddr52(periph, ccb, width);
 }
 
+/*
+ * Flush the cache of the card if it has data that was not flushed.  Called
+ * with the periph lock held.
+ */
+static int
+sdda_flush_cache(struct cam_periph *periph)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	union ccb *ccb;
+	int error, tries;
+
+	cam_periph_assert(periph, MA_OWNED);
+	if (!softc->cache_en || !softc->cache_dirty)
+		return (0);
+
+	/*
+	 * The command must not be interleaved with the ones of a TRIM or erase
+	 * sequence, wait for it to be done.
+	 */
+	for (tries = 0; tries < 1000 && (softc->state != SDDA_STATE_NORMAL ||
+	    softc->delete_bp != NULL); tries++)
+		cam_periph_sleep(periph, &softc->state, PRIBIO, "sddaflush",
+		    MAX(hz / 100, 1));
+	if (softc->state != SDDA_STATE_NORMAL)
+		return (EBUSY);
+
+	/* A BIO_DELETE has to wait for this command. */
+	softc->cache_dirty = false;
+	softc->outstanding_cmds++;
+	ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
+	error = mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+	    EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH, SDDA_FLUSH_TIMEOUT);
+	xpt_release_ccb(ccb);
+	softc->outstanding_cmds--;
+	if (error != MMC_ERR_NONE)
+		softc->cache_dirty = true;
+	if (softc->delete_bp != NULL && softc->outstanding_cmds == 0)
+		xpt_schedule(periph, CAM_PRIORITY_NORMAL);
+	return (error != MMC_ERR_NONE ? EIO : 0);
+}
+
+/*
+ * Flush the cache of the card without sleeping, for the crash dump.  The
+ * periph lock may be held by whoever panicked.
+ */
+static int
+sdda_flush_polled(struct cam_periph *periph)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	struct ccb_mmcio mmcio;
+	int error;
+
+	if (softc == NULL || !softc->cache_en || !softc->cache_dirty)
+		return (0);
+	memset(&mmcio, 0, sizeof(mmcio));
+	xpt_setup_ccb(&mmcio.ccb_h, periph->path, CAM_PRIORITY_NORMAL);
+	mmc_switch_fill_mmcio((union ccb *)&mmcio, EXT_CSD_CMD_SET_NORMAL,
+	    EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH, SDDA_FLUSH_TIMEOUT);
+	error = cam_periph_runccb((union ccb *)&mmcio, cam_periph_error, 0,
+	    SF_NO_RECOVERY | SF_NO_RETRY, NULL);
+	if (error == 0)
+		softc->cache_dirty = false;
+	return (error);
+}
+
+/* Flush the cache of the cards at shutdown, once the filesystems are done. */
+static void
+sddashutdown(void *arg, int howto)
+{
+	struct cam_periph *periph;
+
+	if ((howto & RB_NOSYNC) != 0)
+		return;
+
+	CAM_PERIPH_FOREACH(periph, &sddadriver) {
+		if (SCHEDULER_STOPPED()) {
+			/* If we paniced with the lock held, do not recurse. */
+			if (!cam_periph_owned(periph))
+				sdda_flush_polled(periph);
+			continue;
+		}
+		cam_periph_lock(periph);
+		if (sdda_flush_cache(periph) != 0)
+			xpt_print(periph->path, "Flushing the cache failed\n");
+		cam_periph_unlock(periph);
+	}
+}
+
+/* Enable the cache of an eMMC card, if it has one and it is wanted. */
+static void
+sdda_enable_cache(struct cam_periph *periph, union ccb *ccb)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	struct mmc_params *mmcp = &periph->path->device->mmc_ident_data;
+	uint32_t size;
+	int err;
+
+	if (sdda_cache == 0 || (mmcp->card_features & CARD_FEATURE_MMC) == 0 ||
+	    mmc_get_spec_vers(periph) < 4 ||
+	    softc->raw_ext_csd[EXT_CSD_REV] < 6)
+		return;
+	/* The size is in Kbits. */
+	size = le32dec(&softc->raw_ext_csd[EXT_CSD_CACHE_SIZE]);
+	if (size == 0)
+		return;
+	err = mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+	    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_CTRL_CACHE_EN, softc->cmd6_time);
+	if (err != MMC_ERR_NONE) {
+		xpt_print(periph->path, "Cannot enable the cache, err %d\n",
+		    err);
+		return;
+	}
+	softc->cache_en = true;
+	if (bootverbose)
+		xpt_print(periph->path, "Cache of %u KB enabled\n", size / 8);
+}
+
 static void
 sdda_start_init(void *context, union ccb *start_ccb)
 {
@@ -1789,6 +1933,7 @@ sdda_start_init(void *context, union ccb *start_ccb)
 	if (sdda_read_card_info(periph, start_ccb) != 0)
 		return;
 	sdda_set_card_ident(periph);
+	sdda_enable_cache(periph, start_ccb);
 
 	/* Set the clock frequency that the card can handle */
 	sdda_get_host_speed(periph, start_ccb, &spd);
@@ -1911,6 +2056,8 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 		part->disk->d_flags |= DISKFLAG_CANDELETE;
 		part->disk->d_delmaxsize = MIN(SDDA_ERASE_MAXSIZE, media_size);
 	}
+	if (sc->cache_en)
+		part->disk->d_flags |= DISKFLAG_CANFLUSHCACHE;
 	strlcpy(part->disk->d_descr, sc->card_id_string,
 	    MIN(sizeof(part->disk->d_descr), sizeof(sc->card_id_string)));
 	strlcpy(part->disk->d_ident, sc->card_sn_string,
@@ -2291,6 +2438,7 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 	case BIO_WRITE:
 		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_WRITE\n"));
 		part->flags |= SDDA_FLAG_DIRTY;
+		softc->cache_dirty = true;
 		/* FALLTHROUGH */
 	case BIO_READ:
 	{
@@ -2358,6 +2506,7 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 			return;
 		}
 		softc->delete_bp = NULL;
+		softc->cache_dirty = true;
 		if (!sdda_set_delete_range(periph, part, bp)) {
 			/* Less than an erase sector, nothing to do for now. */
 			biofinish(bp, NULL, 0);
@@ -2370,8 +2519,26 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 		softc->trim_step = 1;
 		sdda_trim_fill(periph, start_ccb, 0);
 		break;
+	case BIO_FLUSH:
+		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_FLUSH\n"));
+		if (!softc->cache_dirty) {
+			/* Nothing was written since the last flush. */
+			biofinish(bp, NULL, 0);
+			xpt_release_ccb(start_ccb);
+			sddaschedule(periph);
+			return;
+		}
+		/*
+		 * A write that starts from now on dirties the cache again, so
+		 * clear the flag now and put it back if the flush fails.
+		 */
+		softc->cache_dirty = false;
+		mmc_switch_fill_mmcio(start_ccb, EXT_CSD_CMD_SET_NORMAL,
+		    EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
+		    SDDA_FLUSH_TIMEOUT);
+		start_ccb->ccb_h.cbfcnp = sddadone;
+		break;
 	default:
-		/* BIO_FLUSH is not implemented. */
 		biofinish(bp, NULL, EOPNOTSUPP);
 		xpt_release_ccb(start_ccb);
 		return;
@@ -2491,6 +2658,8 @@ sddadone(struct cam_periph *periph, union ccb *done_ccb)
 	}
 
 	bp = (struct bio *)done_ccb->ccb_h.ccb_bp;
+	if (error != 0 && bp->bio_cmd == BIO_FLUSH)
+		softc->cache_dirty = true;
 	bp->bio_error = error;
 	if (error != 0) {
 		bp->bio_resid = bp->bio_bcount;
@@ -2556,8 +2725,10 @@ sddadump(void *arg, void *virtual, off_t offset, size_t length)
 		return (ENXIO);
 
 	count = length / MMC_SECTOR_SIZE;
-	if (count == 0)
-		return (0);
+	if (count == 0) {
+		/* A length of zero means to flush the cache. */
+		return (sdda_flush_polled(periph));
+	}
 
 	if (softc->part[softc->part_curr] != part)
 		return (EIO);	/* TODO implement polled partition switch */
