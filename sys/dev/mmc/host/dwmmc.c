@@ -185,6 +185,15 @@ static struct resource_spec dwmmc_spec[] = {
  */
 #define	DWMMC_SIMPLE_REQ_TIMEOUT	1	/* seconds */
 
+/*
+ * The card can be busy for a long time after a command: an erase or a cache
+ * flush can take tens of seconds.  Spin for a short while as the busy period
+ * after a write is usually short, then poll without blocking.
+ */
+#define	DWMMC_BUSY_SPIN_US	1000
+#define	DWMMC_BUSY_POLL_US	200
+#define	DWMMC_BUSY_TIMEOUT	30	/* seconds */
+
 static void
 dwmmc_get1paddr(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 {
@@ -719,6 +728,7 @@ dwmmc_attach(device_t dev)
 
 	DWMMC_LOCK_INIT(sc);
 	callout_init_mtx(&sc->req_callout, &sc->sc_mtx, 0);
+	callout_init_mtx(&sc->busy_callout, &sc->sc_mtx, 0);
 
 	if (bus_alloc_resources(dev, dwmmc_spec, sc->res)) {
 		device_printf(dev, "could not allocate resources\n");
@@ -819,6 +829,7 @@ dwmmc_detach(device_t dev)
 		return (ret);
 
 	callout_drain(&sc->req_callout);
+	callout_drain(&sc->busy_callout);
 	taskqueue_drain(taskqueue_bus, &sc->card_task);
 	taskqueue_drain_timeout(taskqueue_bus, &sc->card_delayed_task);
 
@@ -1338,6 +1349,29 @@ dwmmc_start_cmd(struct dwmmc_softc *sc, struct mmc_command *cmd)
 	WRITE4(sc, SDMMC_CMD, cmdr | SDMMC_CMD_START);
 };
 
+/* Try again to go on with the request once the card is not busy anymore. */
+static void
+dwmmc_busy_retry(void *arg)
+{
+	struct dwmmc_softc *sc = arg;
+
+	DWMMC_ASSERT_LOCKED(sc);
+
+	dwmmc_next_operation(sc);
+}
+
+/* Return true if the card is still holding the data line low. */
+static bool
+dwmmc_card_busy(struct dwmmc_softc *sc)
+{
+	int i;
+
+	for (i = 0; i < DWMMC_BUSY_SPIN_US / 10 &&
+	    (READ4(sc, SDMMC_STATUS) & SDMMC_STATUS_DATA_BUSY) != 0; i++)
+		DELAY(10);
+	return ((READ4(sc, SDMMC_STATUS) & SDMMC_STATUS_DATA_BUSY) != 0);
+}
+
 static void
 dwmmc_next_operation(struct dwmmc_softc *sc)
 {
@@ -1347,7 +1381,6 @@ dwmmc_next_operation(struct dwmmc_softc *sc)
 	struct mmc_request *req;
 #endif
 	struct mmc_command *cmd;
-	int busy;
 
 	dprintf("%s\n", __func__);
 	DWMMC_ASSERT_LOCKED(sc);
@@ -1358,12 +1391,16 @@ dwmmc_next_operation(struct dwmmc_softc *sc)
 		cmd = &ccb->mmcio.cmd;
 	else if (sc->tune_cmd != NULL)
 		cmd = sc->tune_cmd;
-	else
+	else {
+		sc->busy_start = 0;
 		return;
+	}
 #else
 	req = sc->req;
-	if (req == NULL)
+	if (req == NULL) {
+		sc->busy_start = 0;
 		return;
+	}
 	cmd = req->cmd;
 #endif
 
@@ -1372,16 +1409,31 @@ dwmmc_next_operation(struct dwmmc_softc *sc)
 	sc->cmd_done = 0;
 
 	/*
-	 * XXX: Wait until card is still busy.
-	 * We do need this to prevent data timeouts,
-	 * mostly caused by multi-block write command
-	 * followed by single-read.
+	 * Wait until the card is not busy anymore.  We do need this to
+	 * prevent data timeouts, mostly caused by multi-block write command
+	 * followed by single-read, and it makes a command with a busy
+	 * response, like an erase, complete when the card is done with it.
+	 * The card can stay busy for a long time, so do not block: try again
+	 * later, and fail the command if the card never gets ready.
 	 */
-	for (busy = 0; busy < 100000 &&
-	    (READ4(sc, SDMMC_STATUS) & SDMMC_STATUS_DATA_BUSY) != 0; busy++)
-		DELAY(10);
-	if (busy == 100000)
-		panic("%s: card still busy after 1s\n", __func__);
+	if (dwmmc_card_busy(sc)) {
+		if (sc->busy_start == 0)
+			sc->busy_start = sbinuptime();
+		if (sbinuptime() - sc->busy_start <
+		    DWMMC_BUSY_TIMEOUT * SBT_1S) {
+			/* The busy wait has its own time limit. */
+			callout_stop(&sc->req_callout);
+			callout_reset_sbt(&sc->busy_callout,
+			    DWMMC_BUSY_POLL_US * SBT_1US, 0,
+			    dwmmc_busy_retry, sc, 0);
+			return;
+		}
+		device_printf(sc->dev, "card still busy after %d seconds, "
+		    "giving up on cmd %u\n", DWMMC_BUSY_TIMEOUT, cmd->opcode);
+		cmd->error = MMC_ERR_TIMEOUT;
+		sc->flags &= ~(PENDING_CMD | PENDING_STOP);
+	}
+	sc->busy_start = 0;
 
 	if (sc->flags & PENDING_CMD) {
 		sc->flags &= ~PENDING_CMD;
