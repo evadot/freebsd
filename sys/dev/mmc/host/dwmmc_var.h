@@ -62,6 +62,8 @@ struct dwmmc_softc {
 #endif
 	struct mmc_command	*curcmd;
 	struct callout		req_callout;	/* Request watchdog */
+	struct callout		busy_callout;	/* Wait for the card to be ready */
+	sbintime_t		busy_start;	/* When the wait started, 0: none */
 	struct mmc_command	*tune_cmd;	/* Internal tuning command */
 	int			tune_done;
 	uint8_t			*tune_buf;	/* Tuning block buffer */
