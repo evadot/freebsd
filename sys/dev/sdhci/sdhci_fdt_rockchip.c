@@ -193,8 +193,19 @@ sdhci_fdt_rockchip_set_clock(device_t dev, struct sdhci_slot *slot, int clock)
 				    RK3568_EMMC_DLL_CTRL, 0x0);
 				bus_write_4(sc->mem_res[slot->num],
 				    RK3568_EMMC_DLL_RXCLK, DLL_RXCLK_NO_INV);
+				/*
+				 * The TX clock needs its delay line for data
+				 * transfers at any speed: without it, the
+				 * automatic CMD12 that ends a multi-block
+				 * transfer fails on some boards.  Leave it off
+				 * while identifying the card as some boards
+				 * do not find it with the delay.
+				 */
 				bus_write_4(sc->mem_res[slot->num],
-				    RK3568_EMMC_DLL_TXCLK, 0x0);
+				    RK3568_EMMC_DLL_TXCLK, clock > 375000 ?
+				    (DLL_TXCLK_DELAY_ENABLE |
+				    DLL_TXCLK_TAPNUM_DEFAULT |
+				    DLL_TXCLK_TAPNUM_FROM_SW) : 0x0);
 				bus_write_4(sc->mem_res[slot->num],
 				    RK3568_EMMC_DLL_STRBIN, 0x0);
 				return (clock);
