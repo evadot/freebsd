@@ -700,8 +700,8 @@ sdhci_card_task(void *arg, int pending __unused)
 				slot_printf(slot, "Card inserted\n");
 #ifdef MMCCAM
 			slot->card_present = 1;
-			mmccam_start_discovery(slot->sim);
 			SDHCI_UNLOCK(slot);
+			mmccam_start_discovery(slot->sim);
 #else
 			SDHCI_UNLOCK(slot);
 			bus_topo_lock();
@@ -727,8 +727,8 @@ sdhci_card_task(void *arg, int pending __unused)
 			slot->dev = NULL;
 #ifdef MMCCAM
 			slot->card_present = 0;
-			mmccam_start_discovery(slot->sim);
 			SDHCI_UNLOCK(slot);
+			mmccam_start_discovery(slot->sim);
 #else
 			slot->intmask &= ~sdhci_tuning_intmask(slot);
 			WR4(slot, SDHCI_INT_ENABLE, slot->intmask);
