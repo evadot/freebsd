@@ -100,6 +100,13 @@ typedef enum {
 
 /* Largest BIO_DELETE sent in one TRIM sequence. */
 #define	SDDA_TRIM_MAXSIZE	(256ULL * 1024 * 1024)
+
+/*
+ * Largest BIO_DELETE sent in one erase sequence on an SD card.  Erasing is
+ * much slower than TRIM on some cards, and the busy timeout of the host is
+ * only a few seconds.
+ */
+#define	SDDA_ERASE_MAXSIZE	(4ULL * 1024 * 1024)
 #define	SDDA_FMT_RPMB		"%s%drpmb"
 #define	SDDA_LABEL_ENH		"enh"
 
@@ -115,6 +122,7 @@ struct sdda_part {
 	u_int cnt;
 	u_int type;
 	bool ro;
+	daddr_t eblock, eend;	/* Range remaining after the last erase */
 	char name[SDDA_PART_NAMELEN];
 };
 
@@ -123,8 +131,10 @@ struct sdda_softc {
 	int	 refcount;		/* Active xpt_action() calls */
 	sdda_state state;
 	struct bio *trim_bp;	/* BIO_DELETE being processed */
+	uint8_t trim_step;	/* Next TRIM or erase command to send */
 	struct bio *delete_bp;	/* BIO_DELETE waiting for the I/O in flight */
-	uint8_t trim_step;	/* Next TRIM command to send */
+	daddr_t trim_start;	/* Sectors to TRIM or erase, end excluded */
+	daddr_t trim_end;
 	struct mmc_data *mmcdata;
 	struct cam_periph *periph;
 //	sdda_quirks quirks;
@@ -1894,6 +1904,12 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	    EXT_CSD_SEC_FEATURE_SUPPORT_GB_CL_EN) != 0) {
 		part->disk->d_flags |= DISKFLAG_CANDELETE;
 		part->disk->d_delmaxsize = MIN(SDDA_TRIM_MAXSIZE, media_size);
+	} else if (type == 0 &&
+	    (periph->path->device->mmc_ident_data.card_features &
+	    CARD_FEATURE_MMC) == 0 && (sc->csd.ccc & (1 << 5)) != 0) {
+		/* SD cards that support the erase command class. */
+		part->disk->d_flags |= DISKFLAG_CANDELETE;
+		part->disk->d_delmaxsize = MIN(SDDA_ERASE_MAXSIZE, media_size);
 	}
 	strlcpy(part->disk->d_descr, sc->card_id_string,
 	    MIN(sizeof(part->disk->d_descr), sizeof(sc->card_id_string)));
@@ -2099,43 +2115,103 @@ sdda_init_switch_part(struct cam_periph *periph, union ccb *start_ccb,
 }
 
 /*
- * Fill in the next command of a TRIM sequence (CMD35, CMD36, CMD38).  The
- * three commands must be sent back to back, so the sequence is driven from
- * sddadone() while the state is SDDA_STATE_TRIM.
+ * Work out the range to TRIM or erase for a BIO_DELETE.  An eMMC can TRIM
+ * any range, but an SD card can only erase whole erase sectors: round the
+ * range to them and remember what is left over, to coalesce it with the
+ * next request.  Return false if there is nothing to erase yet.
+ */
+static bool
+sdda_set_delete_range(struct cam_periph *periph, struct sdda_part *part,
+    struct bio *bp)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	struct mmc_params *mmcp = &periph->path->device->mmc_ident_data;
+	daddr_t block, end, start, stop;
+	u_int erase_sector;
+
+	block = bp->bio_pblkno;
+	end = block + bp->bio_bcount / MMC_SECTOR_SIZE;
+	if ((mmcp->card_features & CARD_FEATURE_MMC) != 0) {
+		softc->trim_start = block;
+		softc->trim_end = end;
+		return (true);
+	}
+
+	/* Coalesce with the remainder of the previous request. */
+	if (block > part->eblock && block <= part->eend)
+		block = part->eblock;
+	if (end >= part->eblock && end < part->eend)
+		end = part->eend;
+	/* Safely round to the erase sector boundaries. */
+	erase_sector = softc->csd.erase_sector * softc->csd.write_bl_len /
+	    MMC_SECTOR_SIZE;
+	if (erase_sector == 0)
+		erase_sector = 1;
+	start = roundup(block, erase_sector);
+	stop = rounddown(end, erase_sector);
+	/*
+	 * We can not erase an area smaller than an erase sector, so store it
+	 * for later.
+	 */
+	if (start >= stop) {
+		part->eblock = block;
+		part->eend = end;
+		return (false);
+	}
+	/* Store one of the remaining parts for the next call. */
+	if (bp->bio_pblkno >= part->eblock || block == start) {
+		part->eblock = stop;	/* Predict next forward. */
+		part->eend = end;
+	} else {
+		part->eblock = block;	/* Predict next backward. */
+		part->eend = start;
+	}
+	softc->trim_start = start;
+	softc->trim_end = stop;
+	return (true);
+}
+
+/*
+ * Fill in the next command of a TRIM (CMD35, CMD36, CMD38) or erase (CMD32,
+ * CMD33, CMD38) sequence.  The three commands must be sent back to back, so
+ * the sequence is driven from sddadone() while the state is SDDA_STATE_TRIM.
  */
 static void
-sdda_trim_fill(struct cam_periph *periph, union ccb *ccb, struct bio *bp,
-    uint8_t step)
+sdda_trim_fill(struct cam_periph *periph, union ccb *ccb, uint8_t step)
 {
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
 	struct mmc_params *mmcp = &periph->path->device->mmc_ident_data;
-	uint64_t start, end;
+	bool emmc = (mmcp->card_features & CARD_FEATURE_MMC) != 0;
+	uint64_t addr;
 	uint32_t opcode, arg, flags;
 
-	start = bp->bio_pblkno;
-	end = start + bp->bio_bcount / MMC_SECTOR_SIZE - 1;
 	switch (step) {
 	case 0:
-		opcode = MMC_ERASE_GROUP_START;
-		arg = start;
+		opcode = emmc ? MMC_ERASE_GROUP_START : SD_ERASE_WR_BLK_START;
+		addr = softc->trim_start;
 		flags = MMC_RSP_R1 | MMC_CMD_AC;
 		break;
 	case 1:
-		opcode = MMC_ERASE_GROUP_END;
-		arg = end;
+		opcode = emmc ? MMC_ERASE_GROUP_END : SD_ERASE_WR_BLK_END;
+		addr = softc->trim_end - 1;
 		flags = MMC_RSP_R1 | MMC_CMD_AC;
 		break;
 	default:
 		opcode = MMC_ERASE;
-		arg = MMC_ERASE_TRIM;
+		addr = 0;
 		flags = MMC_RSP_R1B | MMC_CMD_AC;
 		break;
 	}
-	if (step < 2 && !(mmcp->card_features & CARD_FEATURE_SDHC))
-		arg <<= 9;
+	if (step < 2) {
+		if (!(mmcp->card_features & CARD_FEATURE_SDHC))
+			addr <<= 9;
+		arg = addr;
+	} else
+		arg = emmc ? MMC_ERASE_TRIM : MMC_ERASE_ERASE;
 
 	cam_fill_mmcio(&ccb->mmcio, /*retries*/ 0, sddadone, CAM_DIR_NONE,
 	    opcode, arg, flags, NULL, /*timeout*/ 15 * 1000);
-	ccb->ccb_h.ccb_bp = bp;
+	ccb->ccb_h.ccb_bp = softc->trim_bp;
 }
 
 /* Called with periph lock held! */
@@ -2272,8 +2348,9 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 	case BIO_DELETE:
 		CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("BIO_DELETE\n"));
 		/*
-		 * The commands of a TRIM sequence must not be interleaved with
-		 * others, wait for the ones in flight to be done.
+		 * The commands of a TRIM or erase sequence must not be
+		 * interleaved with others, wait for the ones in flight to be
+		 * done.
 		 */
 		if (softc->outstanding_cmds != 0) {
 			softc->delete_bp = bp;
@@ -2281,10 +2358,17 @@ sddastart(struct cam_periph *periph, union ccb *start_ccb)
 			return;
 		}
 		softc->delete_bp = NULL;
+		if (!sdda_set_delete_range(periph, part, bp)) {
+			/* Less than an erase sector, nothing to do for now. */
+			biofinish(bp, NULL, 0);
+			xpt_release_ccb(start_ccb);
+			sddaschedule(periph);
+			return;
+		}
 		softc->state = SDDA_STATE_TRIM;
 		softc->trim_bp = bp;
 		softc->trim_step = 1;
-		sdda_trim_fill(periph, start_ccb, bp, 0);
+		sdda_trim_fill(periph, start_ccb, 0);
 		break;
 	default:
 		/* BIO_FLUSH is not implemented. */
@@ -2348,20 +2432,22 @@ sddadone(struct cam_periph *periph, union ccb *done_ccb)
 	CAM_DEBUG(path, CAM_DEBUG_TRACE,
 	    ("Current state: %d\n", R1_CURRENT_STATE(card_status)));
 
-	/* The card tells in its status when it dropped the TRIM. */
+	/*
+	 * The card tells in its status when it dropped the erase, for example
+	 * because the commands were not received in sequence.
+	 */
 	if (is_trim && error == 0 &&
 	    (card_status & (R1_OUT_OF_RANGE | R1_ADDRESS_ERROR |
 	    R1_ERASE_SEQ_ERROR | R1_ERASE_PARAM | R1_ERROR | R1_WP_ERASE_SKIP |
 	    R1_ERASE_RESET)) != 0) {
 		CAM_DEBUG(path, CAM_DEBUG_PERIPH,
-		    ("TRIM failed, card status 0x%08x\n", card_status));
+		    ("Erase failed, card status 0x%08x\n", card_status));
 		error = EIO;
 	}
 
 	/* Send the next command of a TRIM sequence */
 	if (is_trim && error == 0 && softc->trim_step < 3) {
-		sdda_trim_fill(periph, done_ccb, softc->trim_bp,
-		    softc->trim_step++);
+		sdda_trim_fill(periph, done_ccb, softc->trim_step++);
 		cam_periph_unlock(periph);
 		xpt_action(done_ccb);
 		cam_periph_lock(periph);
