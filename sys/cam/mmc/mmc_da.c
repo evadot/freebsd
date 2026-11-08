@@ -52,6 +52,9 @@
 #include <sys/cons.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
+#include <sys/fcntl.h>
+#include <sys/ioccom.h>
+#include <sys/priv.h>
 #include <geom/geom_disk.h>
 #include <machine/_inttypes.h>  /* for PRIu64 */
 #endif /* _KERNEL */
@@ -74,6 +77,8 @@
 
 #include <cam/mmc/mmc_all.h>
 
+#include <dev/mmc/mmc_ioctl.h>
+
 /* SDT Probes */
 SDT_PROBE_DEFINE3(cam, , sdda, error, "union ccb *", "uint32_t", "uint32_t");
 SDT_PROBE_DEFINE2(cam, , sdda, recovery, "union ccb *", "int");
@@ -91,6 +96,7 @@ typedef enum {
 	SDDA_STATE_NORMAL,
 	SDDA_STATE_PART_SWITCH,
 	SDDA_STATE_TRIM,
+	SDDA_STATE_IOCTL,
 } sdda_state;
 
 /* Purposefully ignore a '%d' argument to snprintf in SDDA_FMT! */
@@ -187,6 +193,7 @@ static const char *mmc_errmsg[] =
 
 static	disk_strategy_t	sddastrategy;
 static	dumper_t	sddadump;
+static	disk_ioctl_t	sddaioctl;
 static	periph_init_t	sddainit;
 static	void		sddaasync(void *callback_arg, uint32_t code,
 				struct cam_path *path, void *arg);
@@ -229,6 +236,9 @@ SYSCTL_INT(_kern_cam_sdda, OID_AUTO, cache, CTLFLAG_RDTUN,
 
 /* Flushing the cache can take a long time. */
 #define	SDDA_FLUSH_TIMEOUT	(60 * 1000)	/* milliseconds */
+
+/* Time given to a command sent from userland. */
+#define	SDDA_IOCTL_TIMEOUT	(10 * 1000)	/* milliseconds */
 
 /* TODO: actually issue GET_TRAN_SETTINGS to get R/O status */
 static inline bool sdda_get_read_only(struct cam_periph *periph, union ccb *start_ccb)
@@ -1860,6 +1870,275 @@ sdda_flush_polled(struct cam_periph *periph)
 	return (error);
 }
 
+/*
+ * Check a command sent from userland.  Commands that would change what the
+ * driver relies on are refused: the card selection, the bus settings, the
+ * cache and the partition access.
+ */
+static int
+sdda_ioctl_check(struct cam_periph *periph, struct mmc_ioc_cmd *mic,
+    uint8_t *new_part_config)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	uint8_t index, value, cur;
+
+	*new_part_config = softc->raw_ext_csd[EXT_CSD_PART_CONFIG];
+	if (mic->is_acmd != 0)
+		return (0);
+
+	switch (mic->opcode) {
+	case MMC_SET_RELATIVE_ADDR:
+	case MMC_SELECT_CARD:
+		return (EPERM);
+	case MMC_SWITCH_FUNC:
+		/* Only the SWITCH of an eMMC puts its arguments in the argument */
+		if ((periph->path->device->mmc_ident_data.card_features &
+		    CARD_FEATURE_MMC) == 0)
+			return (0);
+		index = (mic->arg >> 16) & 0xff;
+		value = (mic->arg >> 8) & 0xff;
+		switch (index) {
+		case EXT_CSD_BUS_WIDTH:
+		case EXT_CSD_HS_TIMING:
+		case EXT_CSD_POWER_CLASS:
+		case EXT_CSD_CACHE_CTRL:
+			return (EPERM);
+		case EXT_CSD_PART_CONFIG:
+			cur = softc->raw_ext_csd[EXT_CSD_PART_CONFIG];
+			switch ((mic->arg >> 24) & 3) {
+			case MMC_SWITCH_FUNC_SET:
+				*new_part_config = cur | value;
+				break;
+			case MMC_SWITCH_FUNC_CLR:
+				*new_part_config = cur & ~value;
+				break;
+			case MMC_SWITCH_FUNC_WR:
+				*new_part_config = value;
+				break;
+			}
+			/* No partition switching in userland. */
+			if ((*new_part_config & EXT_CSD_PART_CONFIG_ACC_MASK) !=
+			    (cur & EXT_CSD_PART_CONFIG_ACC_MASK))
+				return (EINVAL);
+			break;
+		}
+		break;
+	}
+	return (0);
+}
+
+/*
+ * Send a command from userland to the card.  The periph lock is not held, but
+ * the state is SDDA_STATE_IOCTL so that no I/O is started in between.
+ */
+static int
+sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
+    struct mmc_ioc_cmd *mic, int fflag)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	struct mmc_data data;
+	union ccb *ccb;
+	void *dp;
+	u_long len;
+	uint32_t flags;
+	uint8_t part_config;
+	bool block_cmd;
+	int error, dir;
+
+	if ((fflag & FWRITE) == 0 && mic->write_flag != 0)
+		return (EBADF);
+	if (part->ro && mic->write_flag != 0)
+		return (EROFS);
+
+	len = (u_long)mic->blksz * mic->blocks;
+	if (len > MMC_IOC_MAX_BYTES)
+		return (EOVERFLOW);
+	/* The host works out the block size from the length. */
+	if (len != 0 && (mic->blksz == 0 || mic->blksz > MMC_SECTOR_SIZE ||
+	    (mic->blocks > 1 && mic->blksz != MMC_SECTOR_SIZE)))
+		return (EINVAL);
+	error = sdda_ioctl_check(periph, mic, &part_config);
+	if (error != 0)
+		return (error);
+	/* Reads and writes of the blocks go to the partition last selected. */
+	block_cmd = mic->is_acmd == 0 &&
+	    (mic->opcode == MMC_READ_SINGLE_BLOCK ||
+	    mic->opcode == MMC_READ_MULTIPLE_BLOCK ||
+	    mic->opcode == MMC_WRITE_BLOCK ||
+	    mic->opcode == MMC_WRITE_MULTIPLE_BLOCK);
+
+	dp = NULL;
+	if (len != 0) {
+		dp = malloc(len, M_SDDA, M_WAITOK | M_ZERO);
+		if (mic->write_flag != 0) {
+			error = copyin((void *)(uintptr_t)mic->data_ptr, dp,
+			    len);
+			if (error != 0)
+				goto out;
+		}
+	}
+
+	cam_periph_lock(periph);
+	if ((periph->flags & CAM_PERIPH_INVALID) != 0) {
+		cam_periph_unlock(periph);
+		error = ENXIO;
+		goto out;
+	}
+	ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
+
+	/* The I/O leaves the partition it used selected, go back to ours. */
+	if (block_cmd && softc->part_curr != part->type) {
+		part_config = (softc->raw_ext_csd[EXT_CSD_PART_CONFIG] &
+		    ~EXT_CSD_PART_CONFIG_ACC_MASK) | part->type;
+		if (mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+		    EXT_CSD_PART_CONFIG, part_config, softc->part_time) !=
+		    MMC_ERR_NONE) {
+			error = EIO;
+			goto done;
+		}
+		softc->raw_ext_csd[EXT_CSD_PART_CONFIG] = part_config;
+		softc->part_curr = part->type;
+	}
+
+	if (mic->is_acmd != 0) {
+		cam_fill_mmcio(&ccb->mmcio, 0, NULL, CAM_DIR_NONE,
+		    MMC_APP_CMD, (uint32_t)get_rca(periph) << 16,
+		    MMC_RSP_R1 | MMC_CMD_AC, NULL, SDDA_IOCTL_TIMEOUT);
+		cam_periph_runccb(ccb, sddaerror, CAM_FLAG_NONE, 0, NULL);
+		if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP ||
+		    ccb->mmcio.cmd.error != MMC_ERR_NONE) {
+			error = EIO;
+			goto done;
+		}
+	}
+
+	flags = mic->flags;
+	memset(&data, 0, sizeof(data));
+	dir = CAM_DIR_NONE;
+	if (len != 0) {
+		data.data = dp;
+		data.len = len;
+		data.flags = mic->write_flag != 0 ? MMC_DATA_WRITE :
+		    MMC_DATA_READ;
+		dir = mic->write_flag != 0 ? CAM_DIR_OUT : CAM_DIR_IN;
+	}
+	/* The commands of the card do not use the RCA of userland. */
+	if (mic->is_acmd == 0) {
+		switch (mic->opcode) {
+		case MMC_STOP_TRANSMISSION:
+			if ((mic->arg & 0x1) == 0)
+				break;
+			/* FALLTHROUGH */
+		case MMC_SLEEP_AWAKE:
+		case MMC_SEND_CSD:
+		case MMC_SEND_CID:
+		case MMC_SEND_STATUS:
+		case MMC_GO_INACTIVE_STATE:
+		case MMC_FAST_IO:
+		case MMC_APP_CMD:
+			mic->arg = (mic->arg & 0x0000FFFF) |
+			    ((uint32_t)get_rca(periph) << 16);
+			break;
+		}
+	}
+	cam_fill_mmcio(&ccb->mmcio, 0, NULL, dir, mic->opcode, mic->arg,
+	    flags, len != 0 ? &data : NULL, SDDA_IOCTL_TIMEOUT);
+	if (len > MMC_SECTOR_SIZE && (mic->opcode == MMC_READ_MULTIPLE_BLOCK ||
+	    mic->opcode == MMC_WRITE_MULTIPLE_BLOCK)) {
+		/* Direct h/w to issue CMD12 upon completion */
+		data.flags |= MMC_DATA_MULTI;
+		ccb->mmcio.stop.opcode = MMC_STOP_TRANSMISSION;
+		ccb->mmcio.stop.flags = MMC_RSP_R1B | MMC_CMD_AC;
+		ccb->mmcio.stop.arg = 0;
+	}
+	cam_periph_runccb(ccb, sddaerror, CAM_FLAG_NONE, 0, NULL);
+	/* What was written may be in the cache of the card. */
+	if (mic->write_flag != 0 || mic->opcode == MMC_WRITE_BLOCK ||
+	    mic->opcode == MMC_WRITE_MULTIPLE_BLOCK ||
+	    mic->opcode == MMC_ERASE)
+		softc->cache_dirty = true;
+	if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP ||
+	    ccb->mmcio.cmd.error != MMC_ERR_NONE) {
+		error = EIO;
+		goto done;
+	}
+	memcpy(mic->response, ccb->mmcio.cmd.resp, sizeof(mic->response));
+	/* Keep what the driver has of the EXT_CSD up to date. */
+	if (mic->is_acmd == 0 && mic->opcode == MMC_SWITCH_FUNC &&
+	    (periph->path->device->mmc_ident_data.card_features &
+	    CARD_FEATURE_MMC) != 0 && ((mic->arg >> 16) & 0xff) ==
+	    EXT_CSD_PART_CONFIG)
+		softc->raw_ext_csd[EXT_CSD_PART_CONFIG] = part_config;
+	error = 0;
+done:
+	xpt_release_ccb(ccb);
+	cam_periph_unlock(periph);
+	if (error == 0 && len != 0 && mic->write_flag == 0)
+		error = copyout(dp, (void *)(uintptr_t)mic->data_ptr, len);
+out:
+	free(dp, M_SDDA);
+	return (error);
+}
+
+static int
+sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
+    struct thread *td)
+{
+	struct sdda_part *part = (struct sdda_part *)dp->d_drv1;
+	struct sdda_softc *softc = part->sc;
+	struct cam_periph *periph = softc->periph;
+	int error;
+
+	/*
+	 * Only the user area takes them: the boot and general purpose
+	 * partitions can not be selected from userland.
+	 *
+	 * MMC_IOC_MULTI_CMD is not supported, the commands that follow the
+	 * header can not be read as the ioctl framework only copies in the
+	 * size of the header.
+	 */
+	if (cmd != MMC_IOC_CMD || part->type != EXT_CSD_PART_CONFIG_ACC_DEFAULT)
+		return (ENOIOCTL);
+	if ((fflag & FREAD) == 0)
+		return (EBADF);
+	error = priv_check(td, PRIV_DRIVER);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * Wait for a TRIM or another command to be done, and keep the I/O
+	 * from starting meanwhile.
+	 */
+	cam_periph_lock(periph);
+	while (softc->state != SDDA_STATE_NORMAL) {
+		if ((periph->flags & CAM_PERIPH_INVALID) != 0) {
+			cam_periph_unlock(periph);
+			return (ENXIO);
+		}
+		error = cam_periph_sleep(periph, &softc->state,
+		    PRIBIO | PCATCH, "sddaioc", MAX(hz / 100, 1));
+		if (error != 0 && error != EWOULDBLOCK) {
+			cam_periph_unlock(periph);
+			return (error);
+		}
+	}
+	softc->state = SDDA_STATE_IOCTL;
+	cam_periph_unlock(periph);
+
+	error = sdda_ioctl_cmd(periph, part, (struct mmc_ioc_cmd *)data,
+	    fflag);
+
+	cam_periph_lock(periph);
+	softc->state = SDDA_STATE_NORMAL;
+	/* The I/O that was held back, and a BIO_DELETE that was waiting. */
+	if (softc->delete_bp != NULL && softc->outstanding_cmds == 0)
+		xpt_schedule(periph, CAM_PRIORITY_NORMAL);
+	else
+		sddaschedule(periph);
+	cam_periph_unlock(periph);
+	return (error);
+}
+
 /* Flush the cache of the cards at shutdown, once the filesystems are done. */
 static void
 sddashutdown(void *arg, int howto)
@@ -2029,6 +2308,7 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	part->disk->d_open = sddaopen;
 	part->disk->d_close = sddaclose;
 	part->disk->d_strategy = sddastrategy;
+	part->disk->d_ioctl = sddaioctl;
 	if (cam_sim_pollable(periph->sim))
 		part->disk->d_dump = sddadump;
 	part->disk->d_getattr = sddagetattr;
