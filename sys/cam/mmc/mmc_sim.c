@@ -208,7 +208,7 @@ mmc_cam_sim_alloc(device_t dev, const char *name, struct mmc_sim *mmc_sim)
 	 * the card initialization, which waits for these requests.
 	 */
 	TASK_INIT(&mmc_sim->sim_task, 0, mmc_sim_task, mmc_sim);
-	mmc_sim->tq = taskqueue_create(mmc_sim->name, M_WAITOK,
+	mmc_sim->tq = taskqueue_create("mmc_sim taskq", M_WAITOK,
 	    taskqueue_thread_enqueue, &mmc_sim->tq);
 	taskqueue_start_threads(&mmc_sim->tq, 1, PI_DISK, "%s taskq",
 	    mmc_sim->name);
