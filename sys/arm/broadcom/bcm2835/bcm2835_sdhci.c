@@ -388,6 +388,18 @@ bcm_sdhci_intr(void *arg)
 {
 	struct bcm_sdhci_softc *sc = arg;
 
+	/*
+	 * The two controllers of the SoC share their interrupt, so this can
+	 * run because of the other one.  Status bits that are not enabled
+	 * for the interrupt can be set at that time: the data bits are masked
+	 * while a DMA transfer is running, and the generic handler would
+	 * process them and push a transfer that is already under way through
+	 * the SDHCI framework.
+	 */
+	if ((bus_space_read_4(sc->sc_bst, sc->sc_bsh, SDHCI_INT_STATUS) &
+	    bus_space_read_4(sc->sc_bst, sc->sc_bsh, SDHCI_SIGNAL_ENABLE)) == 0)
+		return;
+
 	sdhci_generic_intr(&sc->sc_slot);
 }
 
