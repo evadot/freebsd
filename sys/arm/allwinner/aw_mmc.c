@@ -531,6 +531,12 @@ aw_mmc_attach(device_t dev)
 	sc->aw_host.host_ocr = MMC_OCR_320_330 | MMC_OCR_330_340;
 	sc->aw_host.caps |= MMC_CAP_HSPEED | MMC_CAP_SIGNALING_330;
 	mmc_fdt_parse(dev, 0, &sc->mmc_helper, &sc->aw_host);
+	/*
+	 * HS200 and HS400 need the host to tune the sampling of the data
+	 * lines, which this driver cannot do.
+	 */
+	sc->aw_host.caps &= ~(MMC_CAP_MMC_HS200 | MMC_CAP_MMC_HS400 |
+	    MMC_CAP_MMC_ENH_STROBE);
 	mmc_fdt_gpio_setup(dev, 0, &sc->mmc_helper, aw_mmc_helper_cd_handler);
 
 #ifdef MMCCAM
