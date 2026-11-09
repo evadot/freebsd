@@ -230,6 +230,33 @@ SYSCTL_INT(_hw_aw_mmc, OID_AUTO, debug, CTLFLAG_RWTUN, &aw_mmc_debug, 0,
 #define	AW_MMC_DEBUG_INT	0x4
 #define	AW_MMC_DEBUG_CMD	0x8
 
+/* Set the voltage of the signalling lines, through the vqmmc supply. */
+static int
+aw_mmc_set_vqmmc(struct aw_mmc_softc *sc, enum mmc_vccq vccq)
+{
+	int uvolt, err;
+
+	if (sc->mmc_helper.vqmmc_supply == NULL)
+		return (EOPNOTSUPP);
+
+	switch (vccq) {
+	case vccq_180:
+		uvolt = 1800000;
+		break;
+	case vccq_330:
+		uvolt = 3300000;
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	err = regulator_set_voltage(sc->mmc_helper.vqmmc_supply, uvolt, uvolt);
+	if (err != 0)
+		device_printf(sc->aw_dev, "Cannot set vqmmc to %d<->%d\n",
+		    uvolt, uvolt);
+	return (err);
+}
+
 #ifdef MMCCAM
 static int
 aw_mmc_get_tran_settings(device_t dev, struct ccb_trans_settings_mmc *cts)
@@ -255,10 +282,30 @@ aw_mmc_set_tran_settings(device_t dev, struct ccb_trans_settings_mmc *cts)
 	struct aw_mmc_softc *sc;
 	struct mmc_ios *ios;
 	struct mmc_ios *new_ios;
+	int err;
 
 	sc = device_get_softc(dev);
 	ios = &sc->aw_host.ios;
 	new_ios = &cts->ios;
+
+	/*
+	 * The signalling voltage goes first: fail without changing anything
+	 * else if it cannot be set, so that the caller does not use a timing
+	 * that needs it.  The lines are at 3.3V without a supply to change.
+	 */
+	if ((cts->ios_valid & MMC_VCCQ) != 0 && new_ios->vccq != ios->vccq) {
+		if (sc->mmc_helper.vqmmc_supply == NULL) {
+			if (new_ios->vccq != vccq_330)
+				return (EOPNOTSUPP);
+		} else {
+			err = aw_mmc_set_vqmmc(sc, new_ios->vccq);
+			if (err != 0)
+				return (err);
+		}
+		ios->vccq = new_ios->vccq;
+		if (__predict_false(aw_mmc_debug & AW_MMC_DEBUG_IOS))
+			device_printf(sc->aw_dev, "VCCQ => %d\n", ios->vccq);
+	}
 
 	/* Update only requested fields */
 	if (cts->ios_valid & MMC_CLK) {
@@ -1290,34 +1337,10 @@ static int
 aw_mmc_switch_vccq(device_t bus, device_t child)
 {
 	struct aw_mmc_softc *sc;
-	int uvolt, err;
 
 	sc = device_get_softc(bus);
 
-	if (sc->mmc_helper.vqmmc_supply == NULL)
-		return EOPNOTSUPP;
-
-	switch (sc->aw_host.ios.vccq) {
-	case vccq_180:
-		uvolt = 1800000;
-		break;
-	case vccq_330:
-		uvolt = 3300000;
-		break;
-	default:
-		return EINVAL;
-	}
-
-	err = regulator_set_voltage(sc->mmc_helper.vqmmc_supply, uvolt, uvolt);
-	if (err != 0) {
-		device_printf(sc->aw_dev,
-		    "Cannot set vqmmc to %d<->%d\n",
-		    uvolt,
-		    uvolt);
-		return (err);
-	}
-
-	return (0);
+	return (aw_mmc_set_vqmmc(sc, sc->aw_host.ios.vccq));
 }
 #endif
 
