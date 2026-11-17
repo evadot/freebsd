@@ -281,6 +281,7 @@ dev/axgbe/xgbe-txrx.c				optional axa fdt
 dev/axgbe/xgbe_osdep.c				optional axa fdt
 dev/axgbe/xgbe-phy-v1.c				optional axa fdt
 
+dev/cpufreq/cpufreq_allwinner.c			optional cpufreq aw_sid nvmem fdt
 dev/cpufreq/cpufreq_dt.c			optional cpufreq fdt
 dev/cpufreq/cpufreq_dt_vendor_if.m			optional cpufreq fdt
 
