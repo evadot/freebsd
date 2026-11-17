@@ -283,6 +283,7 @@ dev/axgbe/xgbe_osdep.c				optional axa fdt
 dev/axgbe/xgbe-phy-v1.c				optional axa fdt
 
 dev/cpufreq/cpufreq_dt.c			optional cpufreq fdt
+dev/cpufreq/cpufreq_dt_vendor_if.m			optional cpufreq fdt
 
 dev/dpaa2/dpaa2_bp.c				optional soc_nxp_ls dpaa2
 dev/dpaa2/dpaa2_buf.c				optional soc_nxp_ls dpaa2
