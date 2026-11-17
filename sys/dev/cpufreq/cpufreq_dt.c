@@ -70,6 +70,12 @@ struct cpufreq_dt_opp {
 
 #define	CPUFREQ_DT_HAVE_REGULATOR(sc)	((sc)->reg != NULL)
 
+/*
+ * The latencies are in nanoseconds in the device tree and in microseconds in
+ * the cpufreq framework.  Round up so that a latency is never reported as 0.
+ */
+#define	CPUFREQ_DT_NS_TO_US(ns)		(((uint64_t)(ns) + 999) / 1000)
+
 struct cpufreq_dt_softc {
 	device_t dev;
 	clk_t clk;
@@ -358,6 +364,8 @@ cpufreq_dt_oppv1_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 
 	if (OF_getencprop(node, "clock-latency", &lat, sizeof(lat)) == -1)
 		lat = CPUFREQ_VAL_UNKNOWN;
+	else
+		lat = CPUFREQ_DT_NS_TO_US(lat);
 
 	sc->opp = malloc(sizeof(*sc->opp) * sc->nopp, M_DEVBUF, M_WAITOK);
 
@@ -422,11 +430,11 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 		sc->opp[i].freq <<= 32;
 		sc->opp[i].freq |= cell[1];
 
-		if (OF_getencprop(opp_table, "clock-latency", &lat,
+		if (OF_getencprop(opp_table, "clock-latency-ns", &lat,
 		    sizeof(lat)) == -1)
 			sc->opp[i].clk_latency = CPUFREQ_VAL_UNKNOWN;
 		else
-			sc->opp[i].clk_latency = (int)lat;
+			sc->opp[i].clk_latency = CPUFREQ_DT_NS_TO_US(lat);
 
 		if (OF_hasprop(opp_table, "turbo-mode"))
 			sc->opp[i].turbo_mode = true;
