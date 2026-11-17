@@ -66,6 +66,66 @@ nvmem_get_cell_node(phandle_t node, int idx, phandle_t *cell)
 	return (0);
 }
 
+/*
+ * Find the nvmem provider of the idx-th cell of the nvmem-cells property of
+ * node and the offset and size of the cell in it.  Unlike nvmem_read_cell_*()
+ * this does not need nvmem-cell-names and it does not read the cell, for the
+ * consumers that have to read and decode it themselves.
+ */
+int
+nvmem_cell_get_by_ofw_idx(phandle_t node, int idx, device_t *provider,
+    uint32_t *offset, uint32_t *size)
+{
+	phandle_t *cells, cell, xref;
+	uint32_t reg[2];
+	device_t dev;
+	int ncells;
+
+	if (!OF_hasprop(node, "nvmem-cells"))
+		return (ENOENT);
+	ncells = OF_getencprop_alloc_multi(node, "nvmem-cells", sizeof(*cells),
+	    (void **)&cells);
+	if (ncells <= 0)
+		return (EINVAL);
+	if (idx < 0 || idx >= ncells) {
+		OF_prop_free(cells);
+		return (EINVAL);
+	}
+	xref = cells[idx];
+	OF_prop_free(cells);
+
+	/* OF_node_from_xref() returns xref if it cannot resolve it. */
+	cell = OF_node_from_xref(xref);
+	if (cell == xref)
+		return (EINVAL);
+	if (OF_getencprop(cell, "reg", reg, sizeof(reg)) != sizeof(reg))
+		return (EINVAL);
+
+	/* The cells are the children of the nvmem provider. */
+	dev = OF_device_from_xref(OF_xref_from_node(OF_parent(cell)));
+	if (dev == NULL)
+		return (ENODEV);
+
+	*provider = dev;
+	*offset = reg[0];
+	*size = reg[1];
+
+	return (0);
+}
+
+int
+nvmem_cell_get_by_ofw_name(phandle_t node, const char *name, device_t *provider,
+    uint32_t *offset, uint32_t *size)
+{
+	int error, idx;
+
+	error = ofw_bus_find_string_index(node, "nvmem-cell-names", name, &idx);
+	if (error != 0)
+		return (error);
+
+	return (nvmem_cell_get_by_ofw_idx(node, idx, provider, offset, size));
+}
+
 int
 nvmem_get_cell_len(phandle_t node, const char *name)
 {

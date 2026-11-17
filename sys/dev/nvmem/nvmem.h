@@ -26,6 +26,13 @@
 #ifndef _DEV_NVMEM_H_
 #define	_DEV_NVMEM_H_
 
+#include <sys/bus.h>
+#include <dev/ofw/openfirm.h>
+
+int nvmem_cell_get_by_ofw_idx(phandle_t node, int idx, device_t *provider,
+    uint32_t *offset, uint32_t *size);
+int nvmem_cell_get_by_ofw_name(phandle_t node, const char *name,
+    device_t *provider, uint32_t *offset, uint32_t *size);
 int nvmem_get_cell_len(phandle_t node, const char *name);
 int nvmem_read_cell_by_name(phandle_t node, const char *name, void *cell, size_t buflen);
 int nvmem_read_cell_by_idx(phandle_t node, int idx, void *cell, size_t buflen);
