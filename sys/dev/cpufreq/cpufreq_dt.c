@@ -414,8 +414,10 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 		return (ENXIO);
 	}
 
+	/* opp-hz is a required property, do not count the nodes without it */
 	for (opp = OF_child(opp_table); opp > 0; opp = OF_peer(opp))
-		sc->nopp += 1;
+		if (OF_hasprop(opp, "opp-hz"))
+			sc->nopp += 1;
 
 	sc->opp = malloc(sizeof(*sc->opp) * sc->nopp, M_DEVBUF, M_WAITOK);
 
