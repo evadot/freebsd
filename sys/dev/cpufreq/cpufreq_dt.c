@@ -37,6 +37,7 @@
 #include <sys/cpu.h>
 #include <sys/cpuset.h>
 #include <sys/smp.h>
+#include <sys/sysctl.h>
 
 #include <dev/ofw/ofw_bus.h>
 #include <dev/ofw/ofw_bus_subr.h>
@@ -77,6 +78,14 @@ struct cpufreq_dt_opp {
  * the cpufreq framework.  Round up so that a latency is never reported as 0.
  */
 #define	CPUFREQ_DT_NS_TO_US(ns)		(((uint64_t)(ns) + 999) / 1000)
+
+static SYSCTL_NODE(_hw, OID_AUTO, cpufreq_dt, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
+    "Generic DT cpufreq driver");
+
+static int cpufreq_dt_ignore_supported_hw = 0;
+SYSCTL_INT(_hw_cpufreq_dt, OID_AUTO, ignore_supported_hw, CTLFLAG_RDTUN,
+    &cpufreq_dt_ignore_supported_hw, 0,
+    "Use the OPPs even if opp-supported-hw does not match the hardware");
 
 SET_DECLARE(cpufreq_dt_compat_set, const struct ofw_compat_data);
 SET_DECLARE(cpufreq_dt_match_set, struct kobj_class);
@@ -457,16 +466,68 @@ cpufreq_dt_oppv1_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 	return (0);
 }
 
+/*
+ * An OPP with opp-supported-hw is only usable by the hardware versions it
+ * lists. The property is a list of sub-groups, each one having a bitmask for
+ * each level of version, and it matches if all the levels of a sub-group have
+ * a bit in common with the version of the hardware.
+ */
+static bool
+cpufreq_dt_opp_supported(struct cpufreq_dt_softc *sc, phandle_t opp)
+{
+	uint32_t *versions;
+	bool supported;
+	int ncells, nlevels, i, level;
+
+	if (!OF_hasprop(opp, "opp-supported-hw") ||
+	    cpufreq_dt_ignore_supported_hw)
+		return (true);
+
+	/* The OPP is restricted to some versions and we do not know ours. */
+	nlevels = sc->hw.nlevels;
+	if (nlevels == 0)
+		return (false);
+
+	ncells = OF_getencprop_alloc_multi(opp, "opp-supported-hw",
+	    sizeof(*versions), (void **)&versions);
+	if (ncells <= 0 || ncells % nlevels != 0) {
+		OF_prop_free(versions);
+		return (false);
+	}
+
+	supported = false;
+	for (i = 0; i < ncells / nlevels && !supported; i++) {
+		supported = true;
+		for (level = 0; level < nlevels; level++)
+			if ((versions[i * nlevels + level] &
+			    sc->hw.levels[level]) == 0)
+				supported = false;
+	}
+	OF_prop_free(versions);
+
+	return (supported);
+}
+
 static int
 cpufreq_dt_oppv2_parse_uvolt(struct cpufreq_dt_softc *sc, phandle_t node,
     struct cpufreq_dt_opp *opp)
 {
 	uint32_t *volts;
+	const char *prop;
+	char name[40];
 	int nvolt;
 
+	/* Use opp-microvolt-<name> if there is one, opp-microvolt otherwise */
+	prop = "opp-microvolt";
+	if (sc->hw.name[0] != '\0') {
+		snprintf(name, sizeof(name), "opp-microvolt-%s", sc->hw.name);
+		if (OF_hasprop(node, name))
+			prop = name;
+	}
+
 	if (CPUFREQ_DT_HAVE_REGULATOR(sc)) {
-		nvolt = OF_getencprop_alloc_multi(node, "opp-microvolt",
-		    sizeof(*volts), (void **)&volts);
+		nvolt = OF_getencprop_alloc_multi(node, prop, sizeof(*volts),
+		    (void **)&volts);
 		if (nvolt == 1) {
 			opp->uvolt_target = volts[0];
 			opp->uvolt_min = volts[0];
@@ -477,7 +538,7 @@ cpufreq_dt_oppv2_parse_uvolt(struct cpufreq_dt_softc *sc, phandle_t node,
 			opp->uvolt_max = volts[2];
 		} else {
 			device_printf(sc->dev,
-			    "Wrong count of opp-microvolt property\n");
+			    "Wrong count of %s property\n", prop);
 			OF_prop_free(volts);
 			return (ENXIO);
 		}
@@ -499,7 +560,7 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 	kobj_t vendor;
 	pcell_t cell[2];
 	uint32_t lat;
-	int error, i;
+	int error, i, ndropped;
 
 	/*
 	 * operating-points-v2 does not require the voltage entries
@@ -533,14 +594,29 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 	}
 
 	/* opp-hz is a required property, do not count the nodes without it */
-	for (opp = OF_child(opp_table); opp > 0; opp = OF_peer(opp))
-		if (OF_hasprop(opp, "opp-hz"))
-			sc->nopp += 1;
+	ndropped = 0;
+	for (opp = OF_child(opp_table); opp > 0; opp = OF_peer(opp)) {
+		if (!OF_hasprop(opp, "opp-hz"))
+			continue;
+		if (!cpufreq_dt_opp_supported(sc, opp)) {
+			ndropped++;
+			continue;
+		}
+		sc->nopp += 1;
+	}
+	if (ndropped > 0 && bootverbose)
+		device_printf(sc->dev, "%d OPPs not supported by the hardware "
+		    "(see hw.cpufreq_dt.ignore_supported_hw)\n", ndropped);
 
 	sc->opp = malloc(sizeof(*sc->opp) * sc->nopp, M_DEVBUF, M_WAITOK);
 
 	for (i = 0, opp_table = OF_child(opp_table); opp_table > 0;
-	     opp_table = OF_peer(opp_table), i++) {
+	     opp_table = OF_peer(opp_table)) {
+		/* Skip the nodes that were not counted */
+		if (!OF_hasprop(opp_table, "opp-hz") ||
+		    !cpufreq_dt_opp_supported(sc, opp_table))
+			continue;
+
 		/* opp-hz is a required property */
 		if (OF_getencprop(opp_table, "opp-hz", cell,
 		    sizeof(cell)) == -1)
@@ -573,6 +649,7 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 			    sc->opp[i].freq / 1000000,
 			    sc->opp[i].freq % 1000000,
 			    sc->opp[i].uvolt_target);
+		i++;
 	}
 	return (0);
 }
