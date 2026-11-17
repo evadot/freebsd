@@ -622,7 +622,7 @@ cpufreq_dt_attach(device_t dev)
 	struct cpufreq_dt_softc *sc;
 	phandle_t node;
 	phandle_t cnode, opp, copp;
-	int cpu;
+	int cpu, first;
 	uint64_t freq;
 	int rv = 0;
 	char device_type[16];
@@ -736,6 +736,25 @@ cpufreq_dt_attach(device_t dev)
 			CPU_SET(cpu, &sc->cpus);
 		}
 		cpu++;
+	}
+
+	/*
+	 * The CPUs sharing the OPP table share the clock and the regulator, so
+	 * only the first one of the group controls them. The device tree can
+	 * have cpu-supply only for the first CPU, the others could change the
+	 * frequency without changing the voltage.
+	 */
+	first = CPU_FFS(&sc->cpus) - 1;
+	if (first != sc->cpu) {
+		if (bootverbose)
+			device_printf(dev,
+			    "Controlled by the driver of CPU %d\n", first);
+		if (CPUFREQ_DT_HAVE_REGULATOR(sc))
+			regulator_release(sc->reg);
+		free(sc->opp, M_DEVBUF);
+		sc->opp = NULL;
+		sc->nopp = 0;
+		return (0);
 	}
 
 	if (clk_get_freq(sc->clk, &freq) == 0)
