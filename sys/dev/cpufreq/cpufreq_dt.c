@@ -44,6 +44,7 @@
 #include <dev/clk/clk.h>
 #include <dev/regulator/regulator.h>
 
+#include "cpufreq_dt.h"
 #include "cpufreq_if.h"
 
 #if 0
@@ -349,6 +350,44 @@ cpufreq_dt_probe(device_t dev)
 
 	device_set_desc(dev, "Generic cpufreq driver");
 	return (BUS_PROBE_GENERIC);
+}
+
+int
+cpufreq_dt_get_nvmem_cell(phandle_t node, int idx, device_t *provider,
+    uint32_t *offset, uint32_t *size)
+{
+	phandle_t *cells, cell, xref;
+	uint32_t reg[2];
+	device_t dev;
+	int ncells;
+
+	ncells = OF_getencprop_alloc_multi(node, "nvmem-cells", sizeof(*cells),
+	    (void **)&cells);
+	if (ncells <= 0)
+		return (ENOENT);
+	if (idx >= ncells) {
+		OF_prop_free(cells);
+		return (ENOENT);
+	}
+	xref = cells[idx];
+	OF_prop_free(cells);
+
+	cell = OF_node_from_xref(xref);
+	if (cell == xref)
+		return (ENOENT);
+	if (OF_getencprop(cell, "reg", reg, sizeof(reg)) != sizeof(reg))
+		return (ENOENT);
+
+	/* The cells are the children of the nvmem provider. */
+	dev = OF_device_from_xref(OF_xref_from_node(OF_parent(cell)));
+	if (dev == NULL || !device_is_attached(dev))
+		return (ENXIO);
+
+	*provider = dev;
+	*offset = reg[0];
+	*size = reg[1];
+
+	return (0);
 }
 
 static int
