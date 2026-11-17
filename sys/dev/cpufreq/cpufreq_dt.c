@@ -45,6 +45,7 @@
 #include <dev/regulator/regulator.h>
 
 #include "cpufreq_dt.h"
+#include "cpufreq_dt_vendor_if.h"
 #include "cpufreq_if.h"
 
 #if 0
@@ -77,10 +78,14 @@ struct cpufreq_dt_opp {
  */
 #define	CPUFREQ_DT_NS_TO_US(ns)		(((uint64_t)(ns) + 999) / 1000)
 
+SET_DECLARE(cpufreq_dt_compat_set, const struct ofw_compat_data);
+SET_DECLARE(cpufreq_dt_match_set, struct kobj_class);
+
 struct cpufreq_dt_softc {
 	device_t dev;
 	clk_t clk;
 	regulator_t reg;
+	struct cpufreq_dt_hw hw;
 
 	struct cpufreq_dt_opp *opp;
 	ssize_t nopp;
@@ -390,6 +395,32 @@ cpufreq_dt_get_nvmem_cell(phandle_t node, int idx, device_t *provider,
 	return (0);
 }
 
+/* Return an instance of the class handling the OPP table, to be deleted. */
+static kobj_t
+cpufreq_dt_find_vendor(phandle_t cpu, phandle_t table)
+{
+	const struct ofw_compat_data **cd, *ocd;
+	struct kobj_class **class;
+	kobj_t vendor;
+
+	SET_FOREACH(cd, cpufreq_dt_compat_set) {
+		for (ocd = *cd; ocd->ocd_str != NULL; ocd++) {
+			if (ofw_bus_node_is_compatible(table, ocd->ocd_str))
+				return (kobj_create((kobj_class_t)ocd->ocd_data,
+				    M_DEVBUF, M_WAITOK));
+		}
+	}
+
+	SET_FOREACH(class, cpufreq_dt_match_set) {
+		vendor = kobj_create(*class, M_DEVBUF, M_WAITOK);
+		if (CPUFREQ_DT_VENDOR_MATCH(vendor, cpu, table))
+			return (vendor);
+		kobj_delete(vendor, M_DEVBUF);
+	}
+
+	return (NULL);
+}
+
 static int
 cpufreq_dt_oppv1_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 {
@@ -465,6 +496,7 @@ static int
 cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 {
 	phandle_t opp, opp_table, opp_xref;
+	kobj_t vendor;
 	pcell_t cell[2];
 	uint32_t lat;
 	int error, i;
@@ -486,6 +518,18 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 	if (!OF_hasprop(opp_table, "opp-shared") && mp_ncpus > 1) {
 		device_printf(sc->dev, "Only opp-shared is supported\n");
 		return (ENXIO);
+	}
+
+	vendor = cpufreq_dt_find_vendor(node, opp_table);
+	if (vendor != NULL) {
+		error = CPUFREQ_DT_VENDOR_GET_HW(vendor, sc->dev, node,
+		    opp_table, &sc->hw);
+		kobj_delete(vendor, M_DEVBUF);
+		if (error != 0) {
+			device_printf(sc->dev,
+			    "Cannot get the hardware version: %d\n", error);
+			return (error);
+		}
 	}
 
 	/* opp-hz is a required property, do not count the nodes without it */
