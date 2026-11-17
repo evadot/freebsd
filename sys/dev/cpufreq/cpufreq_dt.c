@@ -388,12 +388,47 @@ cpufreq_dt_oppv1_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 }
 
 static int
+cpufreq_dt_oppv2_parse_uvolt(struct cpufreq_dt_softc *sc, phandle_t node,
+    struct cpufreq_dt_opp *opp)
+{
+	uint32_t *volts;
+	int nvolt;
+
+	if (CPUFREQ_DT_HAVE_REGULATOR(sc)) {
+		nvolt = OF_getencprop_alloc_multi(node, "opp-microvolt",
+		    sizeof(*volts), (void **)&volts);
+		if (nvolt == 1) {
+			opp->uvolt_target = volts[0];
+			opp->uvolt_min = volts[0];
+			opp->uvolt_max = volts[0];
+		} else if (nvolt == 3) {
+			opp->uvolt_target = volts[0];
+			opp->uvolt_min = volts[1];
+			opp->uvolt_max = volts[2];
+		} else {
+			device_printf(sc->dev,
+			    "Wrong count of opp-microvolt property\n");
+			OF_prop_free(volts);
+			return (ENXIO);
+		}
+		OF_prop_free(volts);
+	} else {
+		/* No regulator required; don't add anything */
+		opp->uvolt_target = 0;
+		opp->uvolt_min = 0;
+		opp->uvolt_max = 0;
+	}
+
+	return (0);
+}
+
+static int
 cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 {
 	phandle_t opp, opp_table, opp_xref;
 	pcell_t cell[2];
-	uint32_t *volts, lat;
-	int nvolt, i;
+	uint32_t lat;
+	int error, i;
 
 	/*
 	 * operating-points-v2 does not require the voltage entries
@@ -443,30 +478,11 @@ cpufreq_dt_oppv2_parse(struct cpufreq_dt_softc *sc, phandle_t node)
 		if (OF_hasprop(opp_table, "opp-suspend"))
 			sc->opp[i].opp_suspend = true;
 
-		if (CPUFREQ_DT_HAVE_REGULATOR(sc)) {
-			nvolt = OF_getencprop_alloc_multi(opp_table,
-			    "opp-microvolt", sizeof(*volts), (void **)&volts);
-			if (nvolt == 1) {
-				sc->opp[i].uvolt_target = volts[0];
-				sc->opp[i].uvolt_min = volts[0];
-				sc->opp[i].uvolt_max = volts[0];
-			} else if (nvolt == 3) {
-				sc->opp[i].uvolt_target = volts[0];
-				sc->opp[i].uvolt_min = volts[1];
-				sc->opp[i].uvolt_max = volts[2];
-			} else {
-				device_printf(sc->dev,
-				    "Wrong count of opp-microvolt property\n");
-				OF_prop_free(volts);
-				free(sc->opp, M_DEVBUF);
-				return (ENXIO);
-			}
-			OF_prop_free(volts);
-		} else {
-			/* No regulator required; don't add anything */
-			sc->opp[i].uvolt_target = 0;
-			sc->opp[i].uvolt_min = 0;
-			sc->opp[i].uvolt_max = 0;
+		error = cpufreq_dt_oppv2_parse_uvolt(sc, opp_table,
+		    &sc->opp[i]);
+		if (error != 0) {
+			free(sc->opp, M_DEVBUF);
+			return (error);
 		}
 
 		if (bootverbose)
