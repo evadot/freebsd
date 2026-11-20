@@ -470,6 +470,16 @@ dma4_txstart(struct dwc_softc *sc)
 		if (m == NULL)
 			break;
 		if (dma4_setup_txbuf(sc, sc->tx_map_head, &m) != 0) {
+			/*
+			 * Without any packet in flight no transmit interrupt
+			 * will clear IFF_DRV_OACTIVE and restart the queue,
+			 * drop the packet instead of stalling the interface.
+			 */
+			if (sc->tx_mapcount == 0) {
+				m_freem(m);
+				if_inc_counter(sc->ifp, IFCOUNTER_OERRORS, 1);
+				continue;
+			}
 			if_sendq_prepend(sc->ifp, m);
 			if_setdrvflagbits(sc->ifp, IFF_DRV_OACTIVE, 0);
 			break;
