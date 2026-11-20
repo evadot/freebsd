@@ -135,6 +135,7 @@ struct dwc_softc {
 	bus_addr_t		rxdesc_ring_paddr;
 	bus_dma_tag_t		rxbuf_tag;
 	struct dwc_bufmap	rxbuf_map[RX_DESC_COUNT];
+	bus_dmamap_t		rxbuf_spare_map;
 	uint32_t		rx_idx;
 
 	/* TX */
