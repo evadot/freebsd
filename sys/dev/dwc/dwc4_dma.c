@@ -294,25 +294,39 @@ dma4_setup_txbuf(struct dwc_softc *sc, int idx, struct mbuf **mp)
 }
 
 static int
-dma4_setup_rxbuf(struct dwc_softc *sc, int idx, struct mbuf *m)
+dma4_map_rxbuf(struct dwc_softc *sc, bus_dmamap_t map, struct mbuf *m,
+    bus_addr_t *paddr)
 {
 	struct bus_dma_segment seg;
 	int error, nsegs;
 
 	m_adj(m, ETHER_ALIGN);
 
-	error = bus_dmamap_load_mbuf_sg(sc->rxbuf_tag, sc->rxbuf_map[idx].map,
-	    m, &seg, &nsegs, 0);
+	error = bus_dmamap_load_mbuf_sg(sc->rxbuf_tag, map, m, &seg, &nsegs, 0);
 	if (error != 0)
 		return (error);
 
 	KASSERT(nsegs == 1, ("%s: %d segments returned!", __func__, nsegs));
 
-	bus_dmamap_sync(sc->rxbuf_tag, sc->rxbuf_map[idx].map,
-	    BUS_DMASYNC_PREREAD);
+	bus_dmamap_sync(sc->rxbuf_tag, map, BUS_DMASYNC_PREREAD);
+
+	*paddr = seg.ds_addr;
+
+	return (0);
+}
+
+static int
+dma4_setup_rxbuf(struct dwc_softc *sc, int idx, struct mbuf *m)
+{
+	bus_addr_t paddr;
+	int error;
+
+	error = dma4_map_rxbuf(sc, sc->rxbuf_map[idx].map, m, &paddr);
+	if (error != 0)
+		return (error);
 
 	sc->rxbuf_map[idx].mbuf = m;
-	rxdesc_setup(sc, idx, seg.ds_addr);
+	rxdesc_setup(sc, idx, paddr);
 
 	return (0);
 }
@@ -329,12 +343,20 @@ dwc_alloc_mbufcl(struct dwc_softc *sc)
 	return (m);
 }
 
-static struct mbuf *
+/*
+ * Replace the buffer of a received packet with a new one and hand the
+ * packet to the stack.  The new buffer is mapped before the old one is
+ * released, if that fails the old buffer is kept on the ring, the packet
+ * is dropped and false is returned.  On success the bus address of the new
+ * buffer is returned in paddr.
+ */
+static bool
 dwc_rxfinish_one(struct dwc_softc *sc, struct dwc_hwdesc *desc,
-    struct dwc_bufmap *map)
+    struct dwc_bufmap *map, bus_addr_t *paddr)
 {
 	if_t ifp;
 	struct mbuf *m, *m0;
+	bus_dmamap_t tmp;
 	int len;
 	uint32_t rdes1;
 	uint32_t rdes3;
@@ -352,7 +374,7 @@ dwc_rxfinish_one(struct dwc_softc *sc, struct dwc_hwdesc *desc,
 		device_printf(sc->dev,
 		    "%s: RX descriptor without FIRST and LAST bit set: 0x%08X",
 		    __func__, rdes3);
-		return (NULL);
+		return (false);
 	}
 
 	len = (rdes3 & RDES3_PL_M) >> RDES3_PL_S;
@@ -364,11 +386,23 @@ dwc_rxfinish_one(struct dwc_softc *sc, struct dwc_hwdesc *desc,
 
 		/* no new mbuf available, recycle old */
 		if_inc_counter(sc->ifp, IFCOUNTER_IQDROPS, 1);
-		return (NULL);
+		return (false);
+	}
+	if (dma4_map_rxbuf(sc, sc->rxbuf_spare_map, m0, paddr) != 0) {
+		/* cannot map the new mbuf (no bounce page), recycle old */
+		m_freem(m0);
+		if_inc_counter(sc->ifp, IFCOUNTER_IQDROPS, 1);
+		return (false);
 	}
 	/* Do dmasync for newly received packet */
 	bus_dmamap_sync(sc->rxbuf_tag, map->map, BUS_DMASYNC_POSTREAD);
 	bus_dmamap_unload(sc->rxbuf_tag, map->map);
+
+	/* The map of the old buffer is the spare one from now on */
+	tmp = map->map;
+	map->map = sc->rxbuf_spare_map;
+	sc->rxbuf_spare_map = tmp;
+	map->mbuf = m0;
 
 	/* Received packet is valid, process it */
 	m->m_pkthdr.rcvif = ifp;
@@ -394,7 +428,7 @@ dwc_rxfinish_one(struct dwc_softc *sc, struct dwc_hwdesc *desc,
 	DWC_UNLOCK(sc);
 	if_input(ifp, m);
 	DWC_LOCK(sc);
-	return (m0);
+	return (true);
 }
 
 void
@@ -497,8 +531,8 @@ dma4_txstart(struct dwc_softc *sc)
 void
 dma4_rxfinish_locked(struct dwc_softc *sc)
 {
-	struct mbuf *m;
-	int error, idx;
+	bus_addr_t paddr;
+	int idx;
 	struct dwc_hwdesc *desc;
 
 	DWC_ASSERT_LOCKED(sc);
@@ -508,16 +542,11 @@ dma4_rxfinish_locked(struct dwc_softc *sc)
 		desc = sc->rxdesc_ring + idx;
 		if (desc->tdes3 & RDES3_OWN)
 			break;
-		m = dwc_rxfinish_one(sc, desc, sc->rxbuf_map + idx);
-		if (m == NULL) {
+		if (dwc_rxfinish_one(sc, desc, sc->rxbuf_map + idx, &paddr)) {
+			rxdesc_setup(sc, idx, paddr);
+		} else {
 			desc->tdes3 = RDES3_BUF1V | RDES3_IOC | RDES3_OWN;
 			wmb();
-		} else {
-			/* We cannot create hole in RX ring */
-			error = dma4_setup_rxbuf(sc, idx, m);
-			if (error != 0)
-				panic("dma4_setup_rxbuf failed:  error %d\n",
-				    error);
 		}
 
 		WRITE4(sc, ETH_DMACRXDTPR(0), sc->rxdesc_ring_paddr +
@@ -863,6 +892,13 @@ dma4_init(struct dwc_softc *sc)
 		}
 	}
 
+	error = bus_dmamap_create(sc->rxbuf_tag, 0, &sc->rxbuf_spare_map);
+	if (error != 0) {
+		device_printf(sc->dev,
+		    "could not create the spare RX buffer DMA map.\n");
+		goto out;
+	}
+
 	WRITE4(sc, ETH_DMACRXDLAR_HI(0),
 	    (uint32_t)((uint64_t)sc->rxdesc_ring_paddr >> 32));
 	WRITE4(sc, ETH_DMACRXDLAR(0), (uint32_t)sc->rxdesc_ring_paddr);
@@ -894,6 +930,10 @@ dma4_free(struct dwc_softc *sc)
 			bus_dmamap_destroy(sc->rxbuf_tag, map);
 			m_freem(sc->rxbuf_map[idx].mbuf);
 		}
+	}
+	if (sc->rxbuf_spare_map != NULL) {
+		bus_dmamap_destroy(sc->rxbuf_tag, sc->rxbuf_spare_map);
+		sc->rxbuf_spare_map = NULL;
 	}
 	if (sc->rxbuf_tag != NULL)
 		bus_dma_tag_destroy(sc->rxbuf_tag);
