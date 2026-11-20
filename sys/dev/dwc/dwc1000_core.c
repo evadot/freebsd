@@ -68,8 +68,6 @@
 #include <dev/dwc/dwc1000_core.h>
 #include <dev/dwc/dwc1000_dma.h>
 
-#include "if_dwc_if.h"
-
 struct dwc_hash_maddr_ctx {
 	struct dwc_softc *sc;
 	uint32_t hash[8];
@@ -199,9 +197,6 @@ dwc1000_miibus_statchg(device_t dev)
 	if ((IFM_OPTIONS(mii->mii_media_active) & IFM_FDX) != 0)
 		reg |= dwc_pause_time << FLOW_CONTROL_PT_SHIFT;
 	WRITE4(sc, FLOW_CONTROL, reg);
-
-	IF_DWC_SET_SPEED(dev, IFM_SUBTYPE(mii->mii_media_active));
-
 }
 
 void

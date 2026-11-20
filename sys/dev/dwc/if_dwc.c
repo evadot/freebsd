@@ -48,6 +48,7 @@
 #include <sys/rman.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/taskqueue.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -89,6 +90,7 @@ static struct resource_spec dwc_spec[] = {
 static void dwc_stop_locked(struct dwc_softc *sc);
 
 static void dwc_tick(void *arg);
+static void dwc_link_task(void *arg, int pending);
 
 /*
  * Media functions
@@ -662,6 +664,7 @@ dwc_attach(device_t dev)
 	    MTX_NETWORK_LOCK, MTX_DEF);
 
 	callout_init_mtx(&sc->dwc_callout, &sc->mtx, 0);
+	TASK_INIT(&sc->link_task, 0, dwc_link_task, sc);
 
 	/* Setup interrupt handler. */
 	error = bus_setup_intr(dev, sc->res[1], INTR_TYPE_NET | INTR_MPSAFE,
@@ -735,6 +738,7 @@ dwc_detach(device_t dev)
 		dwc_stop_locked(sc);
 		DWC_UNLOCK(sc);
 		callout_drain(&sc->dwc_callout);
+		taskqueue_drain(taskqueue_thread, &sc->link_task);
 		ether_ifdetach(sc->ifp);
 	}
 
@@ -772,6 +776,36 @@ dwc_miibus_write_reg(device_t dev, int phy, int reg, int val)
 	return (sc->ops->core_miibus_write_reg(dev, phy, reg, val));
 }
 
+/*
+ * Set the speed in the SoC specific code.  It can sleep (it can change
+ * clocks), so it cannot be done from the media status change which holds
+ * the lock and can run from a callout.  The link is declared up once it
+ * is done, unless the media changed again in the meantime.
+ */
+static void
+dwc_link_task(void *arg, int pending __unused)
+{
+	struct dwc_softc *sc;
+	u_int gen;
+	int speed;
+
+	sc = arg;
+
+	DWC_LOCK(sc);
+	gen = sc->link_gen;
+	speed = sc->link_speed;
+	DWC_UNLOCK(sc);
+
+	IF_DWC_SET_SPEED(sc->dev, speed);
+
+	DWC_LOCK(sc);
+	if (gen == sc->link_gen && !sc->is_detaching) {
+		sc->link_is_up = true;
+		dwc_txstart_locked(sc);
+	}
+	DWC_UNLOCK(sc);
+}
+
 static void
 dwc_miibus_statchg(device_t dev)
 {
@@ -779,6 +813,13 @@ dwc_miibus_statchg(device_t dev)
 
 	sc = device_get_softc(dev);
 	sc->ops->core_miibus_statchg(dev);
+
+	sc->link_gen++;
+	if (sc->link_is_up) {
+		sc->link_is_up = false;
+		sc->link_speed = IFM_SUBTYPE(sc->mii_softc->mii_media_active);
+		taskqueue_enqueue(taskqueue_thread, &sc->link_task);
+	}
 }
 
 static device_method_t dwc_methods[] = {

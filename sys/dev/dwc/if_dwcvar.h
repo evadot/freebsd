@@ -38,6 +38,8 @@
 #ifndef	__IF_DWCVAR_H__
 #define	__IF_DWCVAR_H__
 
+#include <sys/_task.h>
+
 /*
  * Driver data and defines.
  */
@@ -105,6 +107,9 @@ struct dwc_softc {
 	void *			intr_cookie;
 	struct callout		dwc_callout;
 	bool			link_is_up;
+	struct task		link_task;
+	int			link_speed;	/* IFM subtype to set */
+	u_int			link_gen;	/* Changed by every statchg */
 	bool			is_attached;
 	bool			is_detaching;
 	int			tx_watchdog_count;
