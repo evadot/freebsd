@@ -148,7 +148,6 @@ struct if_dwc_rk_softc {
 	clk_t			mac_clk_tx;
 	clk_t			aclk_mac;
 	clk_t			pclk_mac;
-	clk_t			clk_stmmaceth;
 	clk_t			clk_mac_speed;
 	/* RMII clocks */
 	clk_t			clk_mac_ref;
@@ -582,7 +581,7 @@ if_dwc_rk_init_clocks(device_t dev)
 				sc->clk_mac_refout = NULL;
 			}
 
-			clk_set_freq(sc->clk_stmmaceth, 50000000, 0);
+			clk_set_freq(sc->base.clk_stmmaceth, 50000000, 0);
 		}
 	}
 
