@@ -129,6 +129,7 @@ struct sdda_part {
 	u_int type;
 	bool ro;
 	daddr_t eblock, eend;	/* Range remaining after the last erase */
+	struct cdev *rpmb_dev;	/* RPMB partition: the device node, no disk */
 	char name[SDDA_PART_NAMELEN];
 };
 
@@ -201,6 +202,7 @@ static	periph_ctor_t	sddaregister;
 static	periph_dtor_t	sddacleanup;
 static	periph_start_t	sddastart;
 static	periph_oninv_t	sddaoninvalidate;
+static	void		sddarpmbgonecb(void *arg);
 static	void		sddadone(struct cam_periph *periph,
 			       union ccb *done_ccb);
 static  int		sddaerror(union ccb *ccb, uint32_t cam_flags,
@@ -250,6 +252,8 @@ static inline bool sdda_get_read_only(struct cam_periph *periph, union ccb *star
 static uint32_t mmc_get_spec_vers(struct cam_periph *periph);
 static uint64_t mmc_get_media_size(struct cam_periph *periph);
 static uint32_t mmc_get_cmd6_timeout(struct cam_periph *periph);
+static bool sdda_add_rpmb(struct cam_periph *periph, struct sdda_part *part,
+			    const char *name);
 static bool sdda_add_part(struct cam_periph *periph, u_int type,
     const char *name, u_int cnt, off_t media_size, bool ro);
 
@@ -671,11 +675,16 @@ sddaoninvalidate(struct cam_periph *periph)
 	 */
 	CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("bioq_flush start\n"));
 	for (int i = 0; i < MMC_PART_MAX; i++) {
-		/* The RPMB partition has no disk. */
-		if ((part = softc->part[i]) != NULL && part->disk != NULL) {
+		if ((part = softc->part[i]) == NULL)
+			continue;
+		/* The RPMB partition has a device node and no disk. */
+		if (part->disk != NULL) {
 			bioq_flush(&part->bio_queue, NULL, ENXIO);
 			disk_gone(part->disk);
 		}
+		if (part->rpmb_dev != NULL)
+			destroy_dev_sched_cb(part->rpmb_dev, sddarpmbgonecb,
+			    periph);
 	}
 	CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("bioq_flush end\n"));
 }
@@ -1930,6 +1939,77 @@ sdda_ioctl_check(struct cam_periph *periph, struct mmc_ioc_cmd *mic,
 }
 
 /*
+ * Select a partition of an eMMC, the periph lock is held.  The partition
+ * the I/O half of the driver last used stays selected, so it has to be told.
+ */
+static int
+sdda_select_part(struct cam_periph *periph, union ccb *ccb, u_int type)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	uint8_t part_config;
+
+	if (softc->part_curr == type)
+		return (0);
+	part_config = (softc->raw_ext_csd[EXT_CSD_PART_CONFIG] &
+	    ~EXT_CSD_PART_CONFIG_ACC_MASK) | type;
+	if (mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
+	    EXT_CSD_PART_CONFIG, part_config, softc->part_time) !=
+	    MMC_ERR_NONE)
+		return (EIO);
+	softc->raw_ext_csd[EXT_CSD_PART_CONFIG] = part_config;
+	softc->part_curr = type;
+	return (0);
+}
+
+/*
+ * The only commands the RPMB partition takes are the transfers of frames of
+ * 512 bytes: the requests are written and the responses are read.
+ */
+static int
+sdda_rpmb_check(const struct mmc_ioc_cmd *mic)
+{
+
+	if (mic->is_acmd != 0 || (mic->opcode != MMC_READ_MULTIPLE_BLOCK &&
+	    mic->opcode != MMC_WRITE_MULTIPLE_BLOCK))
+		return (EPERM);
+	if (mic->blksz != MMC_SECTOR_SIZE || mic->blocks == 0 ||
+	    mic->data_ptr == 0 ||
+	    (mic->opcode == MMC_WRITE_MULTIPLE_BLOCK) != (mic->write_flag != 0))
+		return (EINVAL);
+	return (0);
+}
+
+/*
+ * The card is busy writing after a request to the RPMB partition, wait for
+ * it to be done.  The periph lock is held.
+ */
+static int
+sdda_rpmb_wait_ready(struct cam_periph *periph, union ccb *ccb)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
+	uint32_t status;
+	int i;
+
+	for (i = 0; i < SDDA_IOCTL_TIMEOUT / 10; i++) {
+		cam_fill_mmcio(&ccb->mmcio, 0, NULL, CAM_DIR_NONE,
+		    MMC_SEND_STATUS, (uint32_t)get_rca(periph) << 16,
+		    MMC_RSP_R1 | MMC_CMD_AC, NULL, SDDA_IOCTL_TIMEOUT);
+		cam_periph_runccb(ccb, sddaerror, CAM_FLAG_NONE, 0, NULL);
+		if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP ||
+		    ccb->mmcio.cmd.error != MMC_ERR_NONE)
+			return (EIO);
+		status = ccb->mmcio.cmd.resp[0];
+		if (R1_STATUS(status) != 0)
+			return (EIO);
+		if (R1_CURRENT_STATE(status) != R1_STATE_PRG)
+			return (0);
+		(void)cam_periph_sleep(periph, softc, PRIBIO, "sddarpmb",
+		    MAX(hz / 100, 1));
+	}
+	return (ETIMEDOUT);
+}
+
+/*
  * Send a command from userland to the card.  The periph lock is not held, but
  * the state is SDDA_STATE_IOCTL so that no I/O is started in between.
  */
@@ -1962,6 +2042,11 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 	error = sdda_ioctl_check(periph, mic, &part_config);
 	if (error != 0)
 		return (error);
+	if (part->type == EXT_CSD_PART_CONFIG_ACC_RPMB) {
+		error = sdda_rpmb_check(mic);
+		if (error != 0)
+			return (error);
+	}
 	/* Reads and writes of the blocks go to the partition last selected. */
 	block_cmd = mic->is_acmd == 0 &&
 	    (mic->opcode == MMC_READ_SINGLE_BLOCK ||
@@ -1988,18 +2073,26 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 	}
 	ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
 
-	/* The I/O leaves the partition it used selected, go back to ours. */
-	if (block_cmd && softc->part_curr != part->type) {
-		part_config = (softc->raw_ext_csd[EXT_CSD_PART_CONFIG] &
-		    ~EXT_CSD_PART_CONFIG_ACC_MASK) | part->type;
-		if (mmc_switch(periph, ccb, EXT_CSD_CMD_SET_NORMAL,
-		    EXT_CSD_PART_CONFIG, part_config, softc->part_time) !=
-		    MMC_ERR_NONE) {
+	/* The I/O leaves the partition it used selected, go to ours. */
+	if (block_cmd) {
+		error = sdda_select_part(periph, ccb, part->type);
+		if (error != 0)
+			goto done;
+	}
+
+	/* The frames of the RPMB partition are counted by CMD23. */
+	if (part->type == EXT_CSD_PART_CONFIG_ACC_RPMB) {
+		/* TODO: pause retune, see mmccam-retune. */
+		cam_fill_mmcio(&ccb->mmcio, 0, NULL, CAM_DIR_NONE,
+		    MMC_SET_BLOCK_COUNT, (mic->blocks & 0xffff) |
+		    ((uint32_t)mic->write_flag & (1U << 31)),
+		    MMC_RSP_R1 | MMC_CMD_AC, NULL, SDDA_IOCTL_TIMEOUT);
+		cam_periph_runccb(ccb, sddaerror, CAM_FLAG_NONE, 0, NULL);
+		if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP ||
+		    ccb->mmcio.cmd.error != MMC_ERR_NONE) {
 			error = EIO;
 			goto done;
 		}
-		softc->raw_ext_csd[EXT_CSD_PART_CONFIG] = part_config;
-		softc->part_curr = part->type;
 	}
 
 	if (mic->is_acmd != 0) {
@@ -2014,7 +2107,8 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 		}
 	}
 
-	flags = mic->flags;
+	flags = part->type == EXT_CSD_PART_CONFIG_ACC_RPMB ?
+	    MMC_RSP_R1 | MMC_CMD_ADTC : mic->flags;
 	memset(&data, 0, sizeof(data));
 	dir = CAM_DIR_NONE;
 	if (len != 0) {
@@ -2046,7 +2140,9 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 	cam_fill_mmcio(&ccb->mmcio, 0, NULL, dir, mic->opcode, mic->arg,
 	    flags, len != 0 ? &data : NULL, mic->cmd_timeout_ms != 0 ?
 	    mic->cmd_timeout_ms : SDDA_IOCTL_TIMEOUT);
-	if (len > MMC_SECTOR_SIZE && (mic->opcode == MMC_READ_MULTIPLE_BLOCK ||
+	if (len > MMC_SECTOR_SIZE && part->type !=
+	    EXT_CSD_PART_CONFIG_ACC_RPMB &&
+	    (mic->opcode == MMC_READ_MULTIPLE_BLOCK ||
 	    mic->opcode == MMC_WRITE_MULTIPLE_BLOCK)) {
 		/* Direct h/w to issue CMD12 upon completion */
 		data.flags |= MMC_DATA_MULTI;
@@ -2066,6 +2162,12 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 		goto done;
 	}
 	memcpy(mic->response, ccb->mmcio.cmd.resp, sizeof(mic->response));
+	if (part->type == EXT_CSD_PART_CONFIG_ACC_RPMB &&
+	    mic->write_flag != 0) {
+		error = sdda_rpmb_wait_ready(periph, ccb);
+		if (error != 0)
+			goto done;
+	}
 	/* Keep what the driver has of the EXT_CSD up to date. */
 	if (mic->is_acmd == 0 && mic->opcode == MMC_SWITCH_FUNC &&
 	    (periph->path->device->mmc_ident_data.card_features &
@@ -2127,6 +2229,32 @@ sdda_ioctl_end(struct cam_periph *periph)
 }
 
 /*
+ * Go back to the user area once the commands for the RPMB partition are done:
+ * the I/O half of the driver and the re-tuning expect the partition that is
+ * not selected for an RPMB access.  If it fails, part_curr still says which
+ * partition is selected and the I/O half switches when it needs to.
+ */
+static int
+sdda_ioctl_part_leave(struct cam_periph *periph, struct sdda_part *part)
+{
+	union ccb *ccb;
+	int error;
+
+	if (part->type != EXT_CSD_PART_CONFIG_ACC_RPMB)
+		return (0);
+	cam_periph_lock(periph);
+	if ((periph->flags & CAM_PERIPH_INVALID) != 0) {
+		cam_periph_unlock(periph);
+		return (ENXIO);
+	}
+	ccb = cam_periph_getccb(periph, CAM_PRIORITY_NORMAL);
+	error = sdda_select_part(periph, ccb, EXT_CSD_PART_CONFIG_ACC_DEFAULT);
+	xpt_release_ccb(ccb);
+	cam_periph_unlock(periph);
+	return (error);
+}
+
+/*
  * Run the commands of a MMC_IOC_MULTI_CMD in order, with no I/O started in
  * between, and stop at the first one that fails.  uaddr is the user's buffer:
  * a struct mmc_ioc_multi_cmd followed by its commands.
@@ -2162,6 +2290,9 @@ sdda_ioctl_multi_cmd(struct cam_periph *periph, struct sdda_part *part,
 				if (error != 0)
 					break;
 			}
+			error2 = sdda_ioctl_part_leave(periph, part);
+			if (error == 0)
+				error = error2;
 			sdda_ioctl_end(periph);
 		}
 		/* The responses of the commands that ran go back anyway. */
@@ -2173,22 +2304,15 @@ sdda_ioctl_multi_cmd(struct cam_periph *periph, struct sdda_part *part,
 	return (error);
 }
 
+/*
+ * The requests of userland for the user area and for the RPMB partition.
+ */
 static int
-sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
-    struct thread *td)
+sdda_ioctl_common(struct cam_periph *periph, struct sdda_part *part,
+    u_long cmd, void *data, int fflag, struct thread *td)
 {
-	struct sdda_part *part = (struct sdda_part *)dp->d_drv1;
-	struct sdda_softc *softc = part->sc;
-	struct cam_periph *periph = softc->periph;
-	int error;
+	int error, error2;
 
-	/*
-	 * Only the user area takes them: the boot and general purpose
-	 * partitions can not be selected from userland.
-	 */
-	if ((cmd != MMC_IOC_CMD && cmd != MMC_IOC_MULTI_CMD) ||
-	    part->type != EXT_CSD_PART_CONFIG_ACC_DEFAULT)
-		return (ENOIOCTL);
 	if ((fflag & FREAD) == 0)
 		return (EBADF);
 	error = priv_check(td, PRIV_DRIVER);
@@ -2205,8 +2329,62 @@ sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
 		return (error);
 	error = sdda_ioctl_cmd(periph, part, (struct mmc_ioc_cmd *)data,
 	    fflag);
+	error2 = sdda_ioctl_part_leave(periph, part);
+	if (error == 0)
+		error = error2;
 	sdda_ioctl_end(periph);
 	return (error);
+}
+
+static int
+sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
+    struct thread *td)
+{
+	struct sdda_part *part = (struct sdda_part *)dp->d_drv1;
+	struct sdda_softc *softc = part->sc;
+
+	/*
+	 * Only the user area takes them: the boot and general purpose
+	 * partitions can not be selected from userland.
+	 */
+	if ((cmd != MMC_IOC_CMD && cmd != MMC_IOC_MULTI_CMD) ||
+	    part->type != EXT_CSD_PART_CONFIG_ACC_DEFAULT)
+		return (ENOIOCTL);
+	return (sdda_ioctl_common(softc->periph, part, cmd, data, fflag, td));
+}
+
+static int
+sdda_rpmb_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag,
+    struct thread *td)
+{
+	struct sdda_part *part = dev->si_drv1;
+
+	if (cmd != MMC_IOC_CMD && cmd != MMC_IOC_MULTI_CMD)
+		return (ENOIOCTL);
+	return (sdda_ioctl_common(part->sc->periph, part, cmd, data, fflag,
+	    td));
+}
+
+static struct cdevsw sdda_rpmb_cdevsw = {
+	.d_version	= D_VERSION,
+	.d_name		= "sddarpmb",
+	.d_ioctl	= sdda_rpmb_ioctl
+};
+
+/*
+ * The device node of the RPMB partition is gone, release the reference of the
+ * periph that was held for it.
+ */
+static void
+sddarpmbgonecb(void *arg)
+{
+	struct cam_periph *periph = (struct cam_periph *)arg;
+	struct mtx *mtx = cam_periph_mtx(periph);
+
+	mtx_lock(mtx);
+	cam_periph_release_locked(periph);
+	/* The periph may be gone, do not use cam_periph_unlock(). */
+	mtx_unlock(mtx);
 }
 
 /* Flush the cache of the cards at shutdown, once the filesystems are done. */
@@ -2350,12 +2528,8 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	 * userland tool to operate on the partition or leverage the existing
 	 * tools from sysutils/mmc-utils.
 	 */
-	if (type == EXT_CSD_PART_CONFIG_ACC_RPMB) {
-		/* TODO: Create device, assign IOCTL handler */
-		CAM_DEBUG(periph->path, CAM_DEBUG_PERIPH,
-		    ("Don't know what to do with RPMB partitions yet\n"));
-		return (false);
-	}
+	if (type == EXT_CSD_PART_CONFIG_ACC_RPMB)
+		return (sdda_add_rpmb(periph, part, name));
 
 	bioq_init(&part->bio_queue);
 
@@ -2446,6 +2620,58 @@ sdda_add_part(struct cam_periph *periph, u_int type, const char *name,
 	cam_periph_lock(periph);
 	cam_periph_unhold(periph);
 
+	return (true);
+}
+
+/*
+ * The RPMB partition is a device node that only takes ioctls, mmc-utils and
+ * the like send the frames with MMC_IOC_CMD and MMC_IOC_MULTI_CMD.
+ */
+static bool
+sdda_add_rpmb(struct cam_periph *periph, struct sdda_part *part,
+    const char *name)
+{
+	struct make_dev_args args;
+	struct cdev *alias;
+	char cname[SDDA_PART_NAMELEN];
+
+	(void)cam_periph_hold(periph, PRIBIO);
+	cam_periph_unlock(periph);
+
+	/*
+	 * Acquire a reference to the periph for the device node, released
+	 * once it is gone (sddarpmbgonecb()).
+	 */
+	if (cam_periph_acquire(periph) != 0) {
+		xpt_print(periph->path, "%s: lost periph during "
+		    "registration!\n", __func__);
+		cam_periph_lock(periph);
+		cam_periph_unhold(periph);
+		return (false);
+	}
+	make_dev_args_init(&args);
+	args.mda_flags = MAKEDEV_CHECKNAME | MAKEDEV_WAITOK;
+	args.mda_devsw = &sdda_rpmb_cdevsw;
+	args.mda_uid = UID_ROOT;
+	args.mda_gid = GID_OPERATOR;
+	args.mda_mode = 0640;
+	args.mda_si_drv1 = part;
+	if (make_dev_s(&args, &part->rpmb_dev, "%s", part->name) != 0) {
+		xpt_print(periph->path, "Failed to make the RPMB device\n");
+		part->rpmb_dev = NULL;
+		cam_periph_release(periph);
+		cam_periph_lock(periph);
+		cam_periph_unhold(periph);
+		return (false);
+	}
+	if (sdda_mmcsd_compat) {
+		snprintf(cname, sizeof(cname), name, "mmcsd",
+		    periph->unit_number);
+		(void)make_dev_alias_p(MAKEDEV_CHECKNAME | MAKEDEV_WAITOK,
+		    &alias, part->rpmb_dev, "%s", cname);
+	}
+	cam_periph_lock(periph);
+	cam_periph_unhold(periph);
 	return (true);
 }
 
