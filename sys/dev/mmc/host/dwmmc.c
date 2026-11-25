@@ -365,6 +365,28 @@ dwmmc_cmd_done(struct dwmmc_softc *sc)
 	}
 }
 
+/*
+ * The controller can send the CMD12 that ends a multiple block transfer by
+ * itself, when the request has a stop command.  It must not otherwise: the
+ * block count of a transfer to the RPMB partition is set by CMD23, and the
+ * card does not expect a CMD12 after it.
+ */
+static bool
+dwmmc_use_auto_stop(struct dwmmc_softc *sc, struct mmc_command *cmd)
+{
+
+	if (!sc->use_auto_stop || cmd->data == NULL ||
+	    (cmd->opcode != MMC_WRITE_MULTIPLE_BLOCK &&
+	    cmd->opcode != MMC_READ_MULTIPLE_BLOCK))
+		return (false);
+#ifdef MMCCAM
+	return (sc->ccb != NULL &&
+	    sc->ccb->mmcio.stop.opcode == MMC_STOP_TRANSMISSION);
+#else
+	return (sc->req != NULL && sc->req->stop != NULL);
+#endif
+}
+
 static void
 dwmmc_tasklet(struct dwmmc_softc *sc)
 {
@@ -382,9 +404,7 @@ dwmmc_tasklet(struct dwmmc_softc *sc)
 		dwmmc_next_operation(sc);
 
 	} else if (cmd->data && sc->dto_rcvd) {
-		if ((cmd->opcode == MMC_WRITE_MULTIPLE_BLOCK ||
-		     cmd->opcode == MMC_READ_MULTIPLE_BLOCK) &&
-		     sc->use_auto_stop) {
+		if (dwmmc_use_auto_stop(sc, cmd)) {
 			if (sc->acd_rcvd)
 				dwmmc_next_operation(sc);
 		} else {
@@ -1303,9 +1323,7 @@ dwmmc_start_cmd(struct dwmmc_softc *sc, struct mmc_command *cmd)
 	}
 
 	if (data) {
-		if ((cmd->opcode == MMC_WRITE_MULTIPLE_BLOCK ||
-		     cmd->opcode == MMC_READ_MULTIPLE_BLOCK) &&
-		     sc->use_auto_stop)
+		if (dwmmc_use_auto_stop(sc, cmd))
 			cmdr |= SDMMC_CMD_SEND_ASTOP;
 
 		cmdr |= SDMMC_CMD_DATA_EXP;
