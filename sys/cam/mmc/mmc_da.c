@@ -2042,7 +2042,8 @@ sdda_ioctl_cmd(struct cam_periph *periph, struct sdda_part *part,
 		}
 	}
 	cam_fill_mmcio(&ccb->mmcio, 0, NULL, dir, mic->opcode, mic->arg,
-	    flags, len != 0 ? &data : NULL, SDDA_IOCTL_TIMEOUT);
+	    flags, len != 0 ? &data : NULL, mic->cmd_timeout_ms != 0 ?
+	    mic->cmd_timeout_ms : SDDA_IOCTL_TIMEOUT);
 	if (len > MMC_SECTOR_SIZE && (mic->opcode == MMC_READ_MULTIPLE_BLOCK ||
 	    mic->opcode == MMC_WRITE_MULTIPLE_BLOCK)) {
 		/* Direct h/w to issue CMD12 upon completion */
@@ -2080,35 +2081,16 @@ out:
 	return (error);
 }
 
+/*
+ * Wait for a TRIM or another command to be done, and keep the I/O from
+ * starting until sdda_ioctl_end().
+ */
 static int
-sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
-    struct thread *td)
+sdda_ioctl_begin(struct cam_periph *periph)
 {
-	struct sdda_part *part = (struct sdda_part *)dp->d_drv1;
-	struct sdda_softc *softc = part->sc;
-	struct cam_periph *periph = softc->periph;
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
 	int error;
 
-	/*
-	 * Only the user area takes them: the boot and general purpose
-	 * partitions can not be selected from userland.
-	 *
-	 * MMC_IOC_MULTI_CMD is not supported, the commands that follow the
-	 * header can not be read as the ioctl framework only copies in the
-	 * size of the header.
-	 */
-	if (cmd != MMC_IOC_CMD || part->type != EXT_CSD_PART_CONFIG_ACC_DEFAULT)
-		return (ENOIOCTL);
-	if ((fflag & FREAD) == 0)
-		return (EBADF);
-	error = priv_check(td, PRIV_DRIVER);
-	if (error != 0)
-		return (error);
-
-	/*
-	 * Wait for a TRIM or another command to be done, and keep the I/O
-	 * from starting meanwhile.
-	 */
 	cam_periph_lock(periph);
 	while (softc->state != SDDA_STATE_NORMAL) {
 		if ((periph->flags & CAM_PERIPH_INVALID) != 0) {
@@ -2124,9 +2106,13 @@ sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
 	}
 	softc->state = SDDA_STATE_IOCTL;
 	cam_periph_unlock(periph);
+	return (0);
+}
 
-	error = sdda_ioctl_cmd(periph, part, (struct mmc_ioc_cmd *)data,
-	    fflag);
+static void
+sdda_ioctl_end(struct cam_periph *periph)
+{
+	struct sdda_softc *softc = (struct sdda_softc *)periph->softc;
 
 	cam_periph_lock(periph);
 	softc->state = SDDA_STATE_NORMAL;
@@ -2136,6 +2122,88 @@ sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
 	else
 		sddaschedule(periph);
 	cam_periph_unlock(periph);
+}
+
+/*
+ * Run the commands of a MMC_IOC_MULTI_CMD in order, with no I/O started in
+ * between, and stop at the first one that fails.  uaddr is the user's buffer:
+ * a struct mmc_ioc_multi_cmd followed by its commands.
+ */
+static int
+sdda_ioctl_multi_cmd(struct cam_periph *periph, struct sdda_part *part,
+    void *uaddr, int fflag)
+{
+	struct mmc_ioc_multi_cmd mimc;
+	struct mmc_ioc_cmd *mic;
+	char *ucmds;
+	size_t size;
+	u_int i;
+	int error, error2;
+
+	error = copyin(uaddr, &mimc, sizeof(mimc));
+	if (error != 0)
+		return (error);
+	if (mimc.num_of_cmds == 0)
+		return (0);
+	if (mimc.num_of_cmds > MMC_IOC_MAX_CMDS)
+		return (EINVAL);
+	ucmds = (char *)uaddr + offsetof(struct mmc_ioc_multi_cmd, cmds);
+	size = mimc.num_of_cmds * sizeof(*mic);
+	mic = malloc(size, M_SDDA, M_WAITOK);
+	error = copyin(ucmds, mic, size);
+	if (error == 0) {
+		error = sdda_ioctl_begin(periph);
+		if (error == 0) {
+			for (i = 0; i < mimc.num_of_cmds; i++) {
+				error = sdda_ioctl_cmd(periph, part, &mic[i],
+				    fflag);
+				if (error != 0)
+					break;
+			}
+			sdda_ioctl_end(periph);
+		}
+		/* The responses of the commands that ran go back anyway. */
+		error2 = copyout(mic, ucmds, size);
+		if (error == 0)
+			error = error2;
+	}
+	free(mic, M_SDDA);
+	return (error);
+}
+
+static int
+sddaioctl(struct disk *dp, u_long cmd, void *data, int fflag,
+    struct thread *td)
+{
+	struct sdda_part *part = (struct sdda_part *)dp->d_drv1;
+	struct sdda_softc *softc = part->sc;
+	struct cam_periph *periph = softc->periph;
+	int error;
+
+	/*
+	 * Only the user area takes them: the boot and general purpose
+	 * partitions can not be selected from userland.
+	 */
+	if ((cmd != MMC_IOC_CMD && cmd != MMC_IOC_MULTI_CMD) ||
+	    part->type != EXT_CSD_PART_CONFIG_ACC_DEFAULT)
+		return (ENOIOCTL);
+	if ((fflag & FREAD) == 0)
+		return (EBADF);
+	error = priv_check(td, PRIV_DRIVER);
+	if (error != 0)
+		return (error);
+
+	/* MMC_IOC_MULTI_CMD has no size: the argument is the user's pointer. */
+	if (cmd == MMC_IOC_MULTI_CMD)
+		return (sdda_ioctl_multi_cmd(periph, part, *(void **)data,
+		    fflag));
+
+	error = sdda_ioctl_begin(periph);
+	if (error != 0)
+		return (error);
+	error = sdda_ioctl_cmd(periph, part, (struct mmc_ioc_cmd *)data,
+	    fflag);
+	sdda_ioctl_end(periph);
 	return (error);
 }
 
