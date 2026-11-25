@@ -1379,8 +1379,11 @@ sdhci_generic_update_ios(device_t brdev, device_t reqdev)
 {
 	struct sdhci_slot *slot = device_get_ivars(reqdev);
 	struct mmc_ios *ios = &slot->host.ios;
+	uint32_t old_clock;
+	bool clock_changed;
 
 	SDHCI_LOCK(slot);
+	old_clock = slot->req_clock;
 	/* Do full reset on bus power down to clear from any state. */
 	if (ios->power_mode == power_off) {
 		WR4(slot, SDHCI_SIGNAL_ENABLE, 0);
@@ -1388,6 +1391,7 @@ sdhci_generic_update_ios(device_t brdev, device_t reqdev)
 	}
 	/* Configure the bus. */
 	sdhci_set_clock(slot, ios->clock);
+	clock_changed = old_clock != slot->req_clock;
 	sdhci_set_power(slot, (ios->power_mode == power_off) ? 0 : ios->vdd);
 	if (ios->bus_width == bus_width_8) {
 		slot->hostctrl |= SDHCI_CTRL_8BITBUS;
@@ -1414,6 +1418,8 @@ sdhci_generic_update_ios(device_t brdev, device_t reqdev)
 		    SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
 	SDHCI_UNLOCK(slot);
+	if (clock_changed)
+		SDHCI_POST_SET_CLOCK(slot->bus, slot);
 	return (0);
 }
 
@@ -2946,11 +2952,14 @@ static int
 sdhci_cam_update_ios(struct sdhci_slot *slot)
 {
 	struct mmc_ios *ios = &slot->host.ios;
+	uint32_t old_clock;
+	bool clock_changed;
 
 	if (sdhci_debug > 1)
 		slot_printf(slot, "%s: power_mode=%d, clk=%d, bus_width=%d, timing=%d\n",
 		    __func__, ios->power_mode, ios->clock, ios->bus_width, ios->timing);
 	SDHCI_LOCK(slot);
+	old_clock = slot->req_clock;
 	/* Do full reset on bus power down to clear from any state. */
 	if (ios->power_mode == power_off) {
 		WR4(slot, SDHCI_SIGNAL_ENABLE, 0);
@@ -2958,6 +2967,7 @@ sdhci_cam_update_ios(struct sdhci_slot *slot)
 	}
 	/* Configure the bus. */
 	sdhci_set_clock(slot, ios->clock);
+	clock_changed = old_clock != slot->req_clock;
 	sdhci_set_power(slot, (ios->power_mode == power_off) ? 0 : ios->vdd);
 	if (ios->bus_width == bus_width_8) {
 		slot->hostctrl |= SDHCI_CTRL_8BITBUS;
@@ -2984,6 +2994,8 @@ sdhci_cam_update_ios(struct sdhci_slot *slot)
 		    SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
 	SDHCI_UNLOCK(slot);
+	if (clock_changed)
+		SDHCI_POST_SET_CLOCK(slot->bus, slot);
 	return (0);
 }
 

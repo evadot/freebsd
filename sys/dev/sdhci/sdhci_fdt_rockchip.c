@@ -114,6 +114,7 @@ static struct ofw_compat_data compat_data[] = {
 struct sdhci_fdt_rockchip_softc {
 	struct sdhci_fdt_softc	sc;
 	struct mmc_helper	helper;
+	int			compat;		/* SDHCI_FDT_* of the device */
 };
 
 static int
@@ -244,6 +245,30 @@ sdhci_fdt_rockchip_set_clock(device_t dev, struct sdhci_slot *slot, int clock)
 	return (sdhci_fdt_set_clock(dev, slot, clock));
 }
 
+/*
+ * The DLL of the RK3399 eMMC PHY has to lock again after each change of the
+ * card clock, otherwise the card sometimes stops answering at HS200 speed.
+ * Power the PHY down and up again once the new clock runs, without any lock
+ * held as it waits for the DLL.
+ */
+static void
+sdhci_fdt_rockchip_post_set_clock(device_t dev, struct sdhci_slot *slot)
+{
+	struct sdhci_fdt_rockchip_softc *rsc = device_get_softc(dev);
+	struct sdhci_fdt_softc *sc = &rsc->sc;
+	int err;
+
+	if (rsc->compat != SDHCI_FDT_RK3399 || sc->phy == NULL ||
+	    slot->clock <= 400000)
+		return;
+
+	err = phy_disable(sc->phy);
+	if (err == 0)
+		err = phy_enable(sc->phy);
+	if (err != 0)
+		device_printf(dev, "Cannot reset the PHY: %d\n", err);
+}
+
 static int
 sdhci_fdt_rockchip_switch_vccq(device_t dev, device_t reqdev)
 {
@@ -303,6 +328,7 @@ sdhci_fdt_rockchip_attach(device_t dev)
 
 	sc->dev = dev;
 	compat = ofw_bus_search_compatible(dev, compat_data)->ocd_data;
+	rsc->compat = compat;
 	switch (compat) {
 	case SDHCI_FDT_RK3399:
 		err = sdhci_init_clocks(dev);
@@ -382,6 +408,7 @@ static device_method_t sdhci_fdt_rockchip_methods[] = {
 
 	/* SDHCI methods */
 	DEVMETHOD(sdhci_set_clock,	sdhci_fdt_rockchip_set_clock),
+	DEVMETHOD(sdhci_post_set_clock,	sdhci_fdt_rockchip_post_set_clock),
 	DEVMETHOD(sdhci_set_uhs_timing,	sdhci_generic_set_uhs_timing),
 	DEVMETHOD(mmcbr_tune,		sdhci_generic_tune),
 	DEVMETHOD(mmcbr_retune,		sdhci_generic_retune),

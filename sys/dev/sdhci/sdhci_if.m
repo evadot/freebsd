@@ -77,6 +77,13 @@ CODE {
 	}
 
 	static void
+	null_post_set_clock(device_t brdev __unused,
+	    struct sdhci_slot *slot __unused)
+	{
+
+	}
+
+	static void
 	null_set_uhs_timing(device_t brdev __unused,
 	    struct sdhci_slot *slot __unused)
 	{
@@ -177,6 +184,16 @@ METHOD int set_clock {
 	struct sdhci_slot	*slot;
 	int			clock;
 } DEFAULT null_set_clock;
+
+#
+# Called after the clock of a slot was changed by sdhci_generic_update_ios()
+# or by the MMCCAM equivalent, once the slot lock is released, so a driver
+# can do the work that needs to sleep or to wait for the new clock.
+#
+METHOD void post_set_clock {
+	device_t		brdev;
+	struct sdhci_slot	*slot;
+} DEFAULT null_post_set_clock;
 
 METHOD void reset {
 	device_t		brdev;

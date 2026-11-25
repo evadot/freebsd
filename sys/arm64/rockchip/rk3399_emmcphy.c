@@ -168,13 +168,16 @@ rk_emmcphy_enable(struct phynode *phynode, bool enable)
 	sc->phy_conf = (struct rk_emmcphy_conf *)ofw_bus_search_compatible(dev,
 	    compat_data)->ocd_data;
 
-	/* Get clock */
-	error = clk_get_by_ofw_name(dev, 0, "emmcclk", &sc->clk);
-	if (error != 0) {
-		device_printf(dev, "cannot get emmcclk clock, continue\n");
-		sc->clk = NULL;
-	} else
-		device_printf(dev, "got emmcclk clock\n");
+	/* Get clock, once: the PHY is enabled again at each clock change */
+	if (sc->clk == NULL) {
+		error = clk_get_by_ofw_name(dev, 0, "emmcclk", &sc->clk);
+		if (error != 0) {
+			device_printf(dev,
+			    "cannot get emmcclk clock, continue\n");
+			sc->clk = NULL;
+		} else
+			device_printf(dev, "got emmcclk clock\n");
+	}
 
 	if (sc->clk) {
 		error = clk_get_freq(sc->clk, &rate);
