@@ -186,6 +186,8 @@ static int mmcsd_ioctl(struct mmcsd_part *part, u_long cmd, void *data,
     int fflag, struct thread *td);
 static int mmcsd_ioctl_cmd(struct mmcsd_part *part, struct mmc_ioc_cmd *mic,
     int fflag);
+static int mmcsd_ioctl_multi_cmd(struct mmcsd_part *part, void *uaddr,
+    int fflag);
 static uintmax_t mmcsd_pretty_size(off_t size, char *unit);
 static daddr_t mmcsd_rw(struct mmcsd_part *part, struct bio *bp);
 static int mmcsd_set_blockcount(struct mmcsd_softc *sc, u_int count, bool rel);
@@ -828,9 +830,7 @@ mmcsd_ioctl(struct mmcsd_part *part, u_long cmd, void *data, int fflag,
     struct thread *td)
 {
 	struct mmc_ioc_cmd *mic;
-	struct mmc_ioc_multi_cmd *mimc;
-	int i, err;
-	u_long cnt, size;
+	int err;
 
 	if ((fflag & FREAD) == 0)
 		return (EBADF);
@@ -846,27 +846,53 @@ mmcsd_ioctl(struct mmcsd_part *part, u_long cmd, void *data, int fflag,
 		err = mmcsd_ioctl_cmd(part, mic, fflag);
 		break;
 	case MMC_IOC_MULTI_CMD:
-		mimc = data;
-		if (mimc->num_of_cmds == 0)
-			break;
-		if (mimc->num_of_cmds > MMC_IOC_MAX_CMDS)
-			return (EINVAL);
-		cnt = mimc->num_of_cmds;
-		size = sizeof(*mic) * cnt;
-		mic = malloc(size, M_TEMP, M_WAITOK);
-		err = copyin((const void *)mimc->cmds, mic, size);
-		if (err == 0) {
-			for (i = 0; i < cnt; i++) {
-				err = mmcsd_ioctl_cmd(part, &mic[i], fflag);
-				if (err != 0)
-					break;
-			}
-		}
-		free(mic, M_TEMP);
+		/* It has no size: the argument is the user's pointer. */
+		err = mmcsd_ioctl_multi_cmd(part, *(void **)data, fflag);
 		break;
 	default:
 		return (ENOIOCTL);
 	}
+	return (err);
+}
+
+/*
+ * Run the commands of a MMC_IOC_MULTI_CMD one after the other.  The bus is
+ * released between them, so unlike for a single command nothing keeps other
+ * users of the bus from running in between.
+ */
+static int
+mmcsd_ioctl_multi_cmd(struct mmcsd_part *part, void *uaddr, int fflag)
+{
+	struct mmc_ioc_multi_cmd mimc;
+	struct mmc_ioc_cmd *mic;
+	char *ucmds;
+	size_t size;
+	u_int i;
+	int err, err2;
+
+	err = copyin(uaddr, &mimc, sizeof(mimc));
+	if (err != 0)
+		return (err);
+	if (mimc.num_of_cmds == 0)
+		return (0);
+	if (mimc.num_of_cmds > MMC_IOC_MAX_CMDS)
+		return (EINVAL);
+	ucmds = (char *)uaddr + offsetof(struct mmc_ioc_multi_cmd, cmds);
+	size = mimc.num_of_cmds * sizeof(*mic);
+	mic = malloc(size, M_TEMP, M_WAITOK);
+	err = copyin(ucmds, mic, size);
+	if (err == 0) {
+		for (i = 0; i < mimc.num_of_cmds; i++) {
+			err = mmcsd_ioctl_cmd(part, &mic[i], fflag);
+			if (err != 0)
+				break;
+		}
+		/* The responses of the commands that ran go back anyway. */
+		err2 = copyout(mic, ucmds, size);
+		if (err == 0)
+			err = err2;
+	}
+	free(mic, M_TEMP);
 	return (err);
 }
 

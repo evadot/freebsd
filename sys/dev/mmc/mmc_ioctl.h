@@ -36,7 +36,10 @@ struct mmc_ioc_cmd {
 	u_int		flags;
 	u_int		blksz;
 	u_int		blocks;
-	u_int		__spare[4];
+	u_int		postsleep_min_us; /* not supported, ignored */
+	u_int		postsleep_max_us; /* not supported, ignored */
+	u_int		data_timeout_ns;  /* not supported, ignored */
+	u_int		cmd_timeout_ms;   /* 0: the default of the driver */
 	uint32_t	__pad;
 	uint64_t	data_ptr;
 };
@@ -52,7 +55,15 @@ struct mmc_ioc_multi_cmd {
 #define	MMC_IOC_BASE		'M'
 
 #define	MMC_IOC_CMD		_IOWR(MMC_IOC_BASE, 0, struct mmc_ioc_cmd)
-#define	MMC_IOC_MULTI_CMD	_IOWR(MMC_IOC_BASE, 1, struct mmc_ioc_multi_cmd)
+/*
+ * The argument of MMC_IOC_MULTI_CMD is a pointer to a struct
+ * mmc_ioc_multi_cmd followed by num_of_cmds struct mmc_ioc_cmd in the same
+ * buffer.  The size is not part of the request, as the generic ioctl code
+ * could only copy in the header: the driver copies the buffer in and out
+ * itself.  The commands run in order and stop at the first one that fails,
+ * the responses of the ones that ran are copied back in any case.
+ */
+#define	MMC_IOC_MULTI_CMD	_IO(MMC_IOC_BASE, 1)
 
 /* Maximum accepted data transfer size */
 #define	MMC_IOC_MAX_BYTES	(512  * 256)
