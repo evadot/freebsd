@@ -671,7 +671,8 @@ sddaoninvalidate(struct cam_periph *periph)
 	 */
 	CAM_DEBUG(periph->path, CAM_DEBUG_TRACE, ("bioq_flush start\n"));
 	for (int i = 0; i < MMC_PART_MAX; i++) {
-		if ((part = softc->part[i]) != NULL) {
+		/* The RPMB partition has no disk. */
+		if ((part = softc->part[i]) != NULL && part->disk != NULL) {
 			bioq_flush(&part->bio_queue, NULL, ENXIO);
 			disk_gone(part->disk);
 		}
@@ -693,7 +694,8 @@ sddacleanup(struct cam_periph *periph)
 
 	for (i = 0; i < MMC_PART_MAX; i++) {
 		if ((part = softc->part[i]) != NULL) {
-			disk_destroy(part->disk);
+			if (part->disk != NULL)
+				disk_destroy(part->disk);
 			free(part, M_DEVBUF);
 			softc->part[i] = NULL;
 		}
