@@ -55,8 +55,6 @@
 #include <dev/dwc/dwc4_reg.h>
 #include <dev/dwc/dwc4_dma.h>
 
-#include "if_dwc_if.h"
-
 struct dwc_hash_maddr_ctx {
 	struct dwc_softc *sc;
 	uint32_t hash[8];
@@ -179,8 +177,6 @@ dwc4_miibus_statchg(device_t dev)
 	else
 		reg &= ~(MACCR_DM);
 	WRITE4(sc, ETH_MACCR, reg);
-
-	IF_DWC_SET_SPEED(dev, IFM_SUBTYPE(mii->mii_media_active));
 
 }
 

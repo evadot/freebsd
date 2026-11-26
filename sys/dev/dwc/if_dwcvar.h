@@ -38,6 +38,8 @@
 #ifndef	__IF_DWCVAR_H__
 #define	__IF_DWCVAR_H__
 
+#include <sys/_task.h>
+
 /*
  * Driver data and defines.
  */
@@ -103,8 +105,10 @@ struct dwc_softc {
 	int			if_flags;
 	struct mtx		mtx;
 	void *			intr_cookie;
-	struct callout		dwc_callout;
+	struct timeout_task	tick_task;
 	bool			link_is_up;
+	bool			speed_busy;	/* IF_DWC_SET_SPEED() runs */
+	u_int			link_gen;	/* Count of the media changes */
 	bool			is_attached;
 	bool			is_detaching;
 	int			tx_watchdog_count;

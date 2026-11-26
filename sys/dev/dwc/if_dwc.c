@@ -48,6 +48,7 @@
 #include <sys/rman.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/taskqueue.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -88,7 +89,7 @@ static struct resource_spec dwc_spec[] = {
 
 static void dwc_stop_locked(struct dwc_softc *sc);
 
-static void dwc_tick(void *arg);
+static void dwc_tick(void *arg, int pending);
 
 /*
  * Media functions
@@ -186,7 +187,7 @@ dwc_init_locked(struct dwc_softc *sc)
 
 	if_setdrvflagbits(ifp, IFF_DRV_RUNNING, IFF_DRV_OACTIVE);
 
-	callout_reset(&sc->dwc_callout, hz, dwc_tick, sc);
+	taskqueue_enqueue_timeout(taskqueue_thread, &sc->tick_task, hz);
 }
 
 static void
@@ -211,7 +212,7 @@ dwc_stop_locked(struct dwc_softc *sc)
 	sc->tx_watchdog_count = 0;
 	sc->stats_harvest_count = 0;
 
-	callout_stop(&sc->dwc_callout);
+	taskqueue_cancel_timeout(taskqueue_thread, &sc->tick_task, NULL);
 
 	sc->ops->dma_stop(sc);
 	sc->ops->core_enable_mac(sc, false);
@@ -318,7 +319,7 @@ dwc_intr(void *arg)
 }
 
 static void
-dwc_tick(void *arg)
+dwc_tick(void *arg, int pending __unused)
 {
 	struct dwc_softc *sc;
 	if_t ifp;
@@ -326,12 +327,14 @@ dwc_tick(void *arg)
 
 	sc = arg;
 
-	DWC_ASSERT_LOCKED(sc);
+	DWC_LOCK(sc);
 
 	ifp = sc->ifp;
 
-	if ((if_getdrvflags(ifp) & IFF_DRV_RUNNING) == 0)
-	    return;
+	if ((if_getdrvflags(ifp) & IFF_DRV_RUNNING) == 0) {
+		DWC_UNLOCK(sc);
+		return;
+	}
 
 	/*
 	 * Typical tx watchdog.  If this fires it indicates that we enqueued
@@ -354,7 +357,8 @@ dwc_tick(void *arg)
 		dwc_txstart_locked(sc);
 
 	/* Schedule another check one second from now. */
-	callout_reset(&sc->dwc_callout, hz, dwc_tick, sc);
+	taskqueue_enqueue_timeout(taskqueue_thread, &sc->tick_task, hz);
+	DWC_UNLOCK(sc);
 }
 
 static int
@@ -661,7 +665,7 @@ dwc_attach(device_t dev)
 	mtx_init(&sc->mtx, device_get_nameunit(sc->dev),
 	    MTX_NETWORK_LOCK, MTX_DEF);
 
-	callout_init_mtx(&sc->dwc_callout, &sc->mtx, 0);
+	TIMEOUT_TASK_INIT(taskqueue_thread, &sc->tick_task, 0, dwc_tick, sc);
 
 	/* Setup interrupt handler. */
 	error = bus_setup_intr(dev, sc->res[1], INTR_TYPE_NET | INTR_MPSAFE,
@@ -734,7 +738,7 @@ dwc_detach(device_t dev)
 		sc->is_detaching = true;
 		dwc_stop_locked(sc);
 		DWC_UNLOCK(sc);
-		callout_drain(&sc->dwc_callout);
+		taskqueue_drain_timeout(taskqueue_thread, &sc->tick_task);
 		ether_ifdetach(sc->ifp);
 	}
 
@@ -772,13 +776,47 @@ dwc_miibus_write_reg(device_t dev, int phy, int reg, int val)
 	return (sc->ops->core_miibus_write_reg(dev, phy, reg, val));
 }
 
+/*
+ * Called with the lock held, from the tick, the media change and the init.
+ *
+ * Setting the speed in the SoC specific code can sleep (it can change a
+ * clock), so the lock is dropped meanwhile.  The link is declared down until
+ * it is done, so that nothing is transmitted at the old speed, and it is
+ * declared up again unless the media changed again in the meantime: that
+ * change takes care of the link then.  Only one speed is set at a time.
+ */
 static void
 dwc_miibus_statchg(device_t dev)
 {
 	struct dwc_softc *sc;
+	u_int gen;
+	int speed;
 
 	sc = device_get_softc(dev);
+	DWC_ASSERT_LOCKED(sc);
+
 	sc->ops->core_miibus_statchg(dev);
+	gen = ++sc->link_gen;
+	if (!sc->link_is_up)
+		return;
+
+	sc->link_is_up = false;
+	speed = IFM_SUBTYPE(sc->mii_softc->mii_media_active);
+	while (sc->speed_busy)
+		msleep(&sc->speed_busy, &sc->mtx, 0, "dwcspd", 0);
+	if (gen != sc->link_gen || sc->is_detaching)
+		return;
+
+	sc->speed_busy = true;
+	DWC_UNLOCK(sc);
+	IF_DWC_SET_SPEED(dev, speed);
+	DWC_LOCK(sc);
+	sc->speed_busy = false;
+	wakeup(&sc->speed_busy);
+	if (gen == sc->link_gen && !sc->is_detaching) {
+		sc->link_is_up = true;
+		dwc_txstart_locked(sc);
+	}
 }
 
 static device_method_t dwc_methods[] = {
