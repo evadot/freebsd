@@ -1431,6 +1431,15 @@ linux_file_mmap_single(struct file *fp, const struct file_operations *fop,
 		rw_wunlock(&linux_vma_lock);
 
 		if (error != 0) {
+			/*
+			 * The mmap method of the driver has already taken a
+			 * reference for this mapping (dropped by the close
+			 * method of its vm_ops).  The vm_area_struct is
+			 * discarded here, so close it first: otherwise every
+			 * second mapping of the same object leaks that
+			 * reference (and the object with it).
+			 */
+			vmap->vm_ops->close(vmap);
 			/* free allocated VM area struct */
 			linux_cdev_handle_free(vmap);
 			/* check for stale VM area struct */
